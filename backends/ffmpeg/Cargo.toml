@@ -1,0 +1,17 @@
+[package]
+name = "claynext-ffmpeg"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[[bin]]
+name = "claynext-ffmpeg"
+path = "src/bin/claynext-ffmpeg.rs"

@@ -1,12 +1,12 @@
-# Jela Studio — Workspace Rules
+# Claynext Studio — Workspace Rules
 
-Architecture, design standards, and operational guidelines for AI agents working in the **Jela Studio** repository (reduced from MinJ; studio/dubbing editor only).
+Architecture, design standards, and operational guidelines for AI agents working in the **Claynext Studio** repository (reduced from MinJ; studio/dubbing editor only).
 
 ---
 
 ## 1. Project Overview & Tech Stack
 
-Jela is a high-performance desktop AI media application built with:
+Claynext is a high-performance desktop AI media application built with:
 - **Language**: Python 3.12+ (strictly with modern typing annotations: `from __future__ import annotations`, `X | None`, `Path`)
 - **GUI Framework**: `PySide6` (Qt 6.11+) with custom Cyber Dark QSS styling
 - **Environment & Dependency Manager**: `uv` (Hatchling build backend in `pyproject.toml`)
@@ -23,10 +23,10 @@ Jela is a high-performance desktop AI media application built with:
 ### Rule 1: Non-Blocking GUI & Thread Safety
 > **CRITICAL**: Heavy computation, AI model inference, network requests, and media transcoding MUST NEVER run on Qt's main GUI thread.
 
-- **Background Worker**: Always use `Worker` from `src/jela/core/worker.py`:
+- **Background Worker**: Always use `Worker` from `src/claynext/core/worker.py`:
   ```python
   from PySide6.QtCore import QThreadPool
-  from jela.core.worker import Worker
+  from claynext.core.worker import Worker
 
   worker = Worker(my_heavy_function, arg1, kwarg2=val)
   worker.signals.progress.connect(self._on_progress)
@@ -41,23 +41,23 @@ Jela is a high-performance desktop AI media application built with:
 ### Rule 2: Cyber Dark Design System Adherence
 > **Do not use hardcoded random colors or ad-hoc QSS stylesheets.**
 
-- Always use tokens from `src/jela/constants/theme_constants.py`
-- High-DPI Scaling is enabled by default in `src/jela/app.py`. Ensure layouts use scalable layouts (`QVBoxLayout`, `QHBoxLayout`, `QGridLayout`) with proper margins and spacing instead of fixed pixel geometries.
+- Always use tokens from `src/claynext/constants/theme_constants.py`
+- High-DPI Scaling is enabled by default in `src/claynext/app.py`. Ensure layouts use scalable layouts (`QVBoxLayout`, `QHBoxLayout`, `QGridLayout`) with proper margins and spacing instead of fixed pixel geometries.
 
 ### Rule 3: Cross-Platform Window Chrome Conventions
-- Windows uses custom frameless chrome (`Qt.FramelessWindowHint` with `src/jela/gui/components/title_bar.py`).
-- macOS / Linux keep native window chrome and system menu bars unless explicitly forced with `JELA_CUSTOM_CHROME=1`.
-- Always respect `CUSTOM_WINDOW_CHROME` from `src/jela/constants/ui_constants.py`.
+- Windows uses custom frameless chrome (`Qt.FramelessWindowHint` with `src/claynext/gui/components/title_bar.py`).
+- macOS / Linux keep native window chrome and system menu bars unless explicitly forced with `CLAYNEXT_CUSTOM_CHROME=1`.
+- Always respect `CUSTOM_WINDOW_CHROME` from `src/claynext/constants/ui_constants.py`.
 
 ### Rule 4: FFmpeg and Media Compatibility
-- Never assume a bare `ffmpeg` is available on the system PATH. Always resolve FFmpeg using `imageio_ffmpeg.get_ffmpeg_exe()` as implemented in `src/jela/core/ffmpeg_tools.py` and `src/jela/core/media_compat.py`.
-- For media playback in Qt, verify and convert files to safe AAC-LC 44.1kHz stereo or generate 720p lightweight H.264 proxies using `src/jela/core/media_compat.py`.
+- Never assume a bare `ffmpeg` is available on the system PATH. Always resolve FFmpeg using `imageio_ffmpeg.get_ffmpeg_exe()` as implemented in `src/claynext/core/ffmpeg_tools.py` and `src/claynext/core/media_compat.py`.
+- For media playback in Qt, verify and convert files to safe AAC-LC 44.1kHz stereo or generate 720p lightweight H.264 proxies using `src/claynext/core/media_compat.py`.
 
 ### Rule 5: Filesystem & Cache Standards
 - Never output temporary or generated files into the project root directory.
 - Model weights: `data/models/`
 - User exports: `data/outputs/`
-- Transcoding / Proxies / Cache: Use `CACHE_DIR` / `PLAYBACK_DIR` from `src/jela/utils/paths.py` and `src/jela/core/media_compat.py`.
+- Transcoding / Proxies / Cache: Use `CACHE_DIR` / `PLAYBACK_DIR` from `src/claynext/utils/paths.py` and `src/claynext/core/media_compat.py`.
 
 ---
 
@@ -79,7 +79,7 @@ uv run main.py --no-splash
 uv run main.py --studio --no-splash
 
 # Run headless smoke test (Qt offscreen)
-QT_QPA_PLATFORM=offscreen uv run python -c "from jela.app import main; print('Ready')"
+QT_QPA_PLATFORM=offscreen uv run python -c "from claynext.app import main; print('Ready')"
 ```
 
 ---
@@ -88,4 +88,4 @@ QT_QPA_PLATFORM=offscreen uv run python -c "from jela.app import main; print('Re
 
 Index | ID | Label | Accent Color | Description
 :--- | :--- | :--- | :--- | :---
-0 | `studio` | Jela Studio | `#a855f7` | AI Movie Dubbing & Timeline Editor
+0 | `studio` | Claynext Studio | `#a855f7` | AI Movie Dubbing & Timeline Editor

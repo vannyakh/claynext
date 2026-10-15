@@ -11,7 +11,7 @@ This skill provides step-by-step instructions for creating, extending, and styli
 
 ## 1. Creating a Standard MinJ Tool View
 
-All main tool views reside in `src/jela/gui/views/` (e.g. `asr_view.py`, `dubbing_view.py`).
+All main tool views reside in `src/claynext/gui/views/` (e.g. `asr_view.py`, `dubbing_view.py`).
 
 ### Standard View Template:
 ```python
@@ -21,11 +21,11 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
 )
 from PySide6.QtCore import Qt, QThreadPool
-from jela.constants.theme_constants import (
+from claynext.constants.theme_constants import (
     COLOR_BG_CARD, COLOR_BORDER, COLOR_PRIMARY, COLOR_TEXT_MAIN, COLOR_TEXT_MUTED
 )
-from jela.gui.components.drop_zone import DropZone
-from jela.core.worker import Worker
+from claynext.gui.components.drop_zone import DropZone
+from claynext.core.worker import Worker
 
 
 class CustomToolView(QWidget):
@@ -86,25 +86,25 @@ class CustomToolView(QWidget):
 
 ## 2. Using Built-In Reusable Components
 
-### DropZone ([drop_zone.py](file:///Users/vannya/Desktop/MinJ/src/jela/gui/components/drop_zone.py))
+### DropZone ([drop_zone.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/components/drop_zone.py))
 - Interactive drag-and-drop zone with animated hover border, file browser dialog, and icon preview.
 - Emits `file_selected(str)` signal when a file is accepted.
 
-### MediaPreviewWidget ([media_preview.py](file:///Users/vannya/Desktop/MinJ/src/jela/gui/components/media_preview.py))
+### MediaPreviewWidget ([media_preview.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/components/media_preview.py))
 - Combines `QMediaPlayer`, `QVideoWidget` / `QAudioOutput`, transport bar (Play, Pause, Scrub, Volume, Timecode), and resolution tags.
 - Load media with `widget.load_media(media_path)`.
 
-### TimelinePanel ([timeline_panel.py](file:///Users/vannya/Desktop/MinJ/src/jela/gui/components/timeline_panel.py))
+### TimelinePanel ([timeline_panel.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/components/timeline_panel.py))
 - Multi-track timeline (Video, Dialogue, Music, Sound Effects).
 - Supports draggable clip blocks, playhead scrub, snapping, and zoom.
 
-### WaveVisualizer ([wave_visualizer.py](file:///Users/vannya/Desktop/MinJ/src/jela/gui/components/wave_visualizer.py))
+### WaveVisualizer ([wave_visualizer.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/components/wave_visualizer.py))
 - Renders audio waveform amplitudes using `QPainter` with gradient fills matching tool accent colors.
 
 ---
 
 ## 3. Styling Guidelines
 
-1. **Avoid Hardcoded QSS Stylesheets**: Always build dynamic stylesheets using tokens from `theme_constants.py` or extend `src/jela/gui/styles.py` (`build_stylesheet()`).
+1. **Avoid Hardcoded QSS Stylesheets**: Always build dynamic stylesheets using tokens from `theme_constants.py` or extend `src/claynext/gui/styles.py` (`build_stylesheet()`).
 2. **Interactive States**: Always include `:hover`, `:pressed`, and `:disabled` pseudo-states for interactive controls.
 3. **Margins & Spacing**: Use standard multiples of 4 or 8 (`4px`, `8px`, `12px`, `16px`, `24px`) for visual harmony.

@@ -11,7 +11,7 @@ Usage:
     --chunk-size 15 \\
     --device cuda
 """
-from jela.tools.extract_dubbing_batches import main
+from claynext.services.dubbing_plan import main
 
 if __name__ == "__main__":
     raise SystemExit(main())

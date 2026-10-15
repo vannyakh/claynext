@@ -35,7 +35,7 @@ QT_QPA_PLATFORM=offscreen uv run python -c "
 import os
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 from PySide6.QtWidgets import QApplication
-from jela.app import main
+from claynext.app import main
 print('Imports and GUI init verified headlessly!')
 "
 ```
@@ -45,4 +45,4 @@ print('Imports and GUI init verified headlessly!')
 - `data/models/`: Local cache of downloaded AI model weights.
 - `data/outputs/`: Default destination for user-exported media, subtitles, and audio.
 - `data/cache/`: Transcoded proxies, waveforms, and temporary audio files.
-- `src/jela/`: All application source code.
+- `src/claynext/`: All application source code.

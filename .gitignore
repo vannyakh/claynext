@@ -10,3 +10,8 @@ wheels/
 .venv
 data/
 *.mp3
+
+# Rust target artifacts
+target/
+backends/target/
+.DS_Store

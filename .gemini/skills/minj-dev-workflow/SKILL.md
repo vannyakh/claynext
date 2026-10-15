@@ -37,7 +37,7 @@ QT_QPA_PLATFORM=offscreen uv run python -c "
 import os
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 from PySide6.QtWidgets import QApplication
-from jela.gui.views.asr_view import ASRView
+from claynext.gui.views.asr_view import ASRView
 app = QApplication.instance() or QApplication(['test', '-platform', 'offscreen'])
 view = ASRView()
 assert view is not None
@@ -46,7 +46,7 @@ print('ASRView instantiated successfully!')
 ```
 
 Replace `ASRView` with the target view or widget:
-- `StudioView` (`jela.gui.views.studio_view`)
+- `StudioView` (`claynext.gui.views.studio_view`)
 - `TTSView` (`minj.gui.views.tts_view`)
 - `TranslateView` (`minj.gui.views.translate_view`)
 - `OCRView` (`minj.gui.views.ocr_view`)
@@ -79,7 +79,7 @@ Replace `ASRView` with the target view or widget:
 ### Check CUDA / Hardware Device Acceleration
 ```bash
 uv run python -c "
-from jela.core.sysinfo import get_system_info
+from claynext.core.sysinfo import get_system_info
 info = get_system_info()
 print('System Devices:', info)
 "
@@ -88,7 +88,7 @@ print('System Devices:', info)
 ### Verify Audio/Video FFmpeg Probing
 ```bash
 uv run python -c "
-from jela.core.ffmpeg_tools import probe_duration, ffmpeg_exe
+from claynext.core.ffmpeg_tools import probe_duration, ffmpeg_exe
 print('FFmpeg binary:', ffmpeg_exe())
 "
 ```

@@ -43,19 +43,19 @@ Skill | Location | Purpose
 
 ## 📋 Core Architectural Rules
 
-1. **Non-Blocking GUI**: Heavy tasks must execute on `Worker` ([worker.py](file:///Users/vannya/Desktop/MinJ/src/jela/core/worker.py)) via `QThreadPool.globalInstance().start(worker)`. Never freeze the UI.
-2. **Design System**: Use tokens from [theme_constants.py](file:///Users/vannya/Desktop/MinJ/src/jela/constants/theme_constants.py) (`COLOR_BG_DARK`, `COLOR_BG_CARD`, `COLOR_PRIMARY`, etc.) and `build_stylesheet()` in [styles.py](file:///Users/vannya/Desktop/MinJ/src/jela/gui/styles.py).
+1. **Non-Blocking GUI**: Heavy tasks must execute on `Worker` ([worker.py](file:///Users/vannya/Desktop/MinJ/src/claynext/core/worker.py)) via `QThreadPool.globalInstance().start(worker)`. Never freeze the UI.
+2. **Design System**: Use tokens from [theme_constants.py](file:///Users/vannya/Desktop/MinJ/src/claynext/constants/theme_constants.py) (`COLOR_BG_DARK`, `COLOR_BG_CARD`, `COLOR_PRIMARY`, etc.) and `build_stylesheet()` in [styles.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/styles.py).
 3. **FFmpeg Resolution**: Resolve FFmpeg via `imageio_ffmpeg.get_ffmpeg_exe()`. Never assume a bare `ffmpeg` on PATH.
-4. **Media Compatibility**: Use [media_compat.py](file:///Users/vannya/Desktop/MinJ/src/jela/core/media_compat.py) for Qt-safe audio (AAC-LC 44.1kHz) and 720p H.264 proxy rendering.
+4. **Media Compatibility**: Use [media_compat.py](file:///Users/vannya/Desktop/MinJ/src/claynext/core/media_compat.py) for Qt-safe audio (AAC-LC 44.1kHz) and 720p H.264 proxy rendering.
 5. **Headless Verification**: Test UI code with `QT_QPA_PLATFORM=offscreen uv run python ...`.
 
 ---
 
 ## 📁 Key Directories
 
-- `src/jela/core/`: Headless engine logic (ASR, Dubbing, TTS, OCR, FFmpeg).
-- `src/jela/gui/`: PySide6 views, components (timeline, media preview, drop zone), and launcher.
-- `src/jela/constants/`: Layout dimensions, navigation items, and Cyber Dark theme tokens.
+- `src/claynext/core/`: Headless engine logic (ASR, Dubbing, TTS, OCR, FFmpeg).
+- `src/claynext/gui/`: PySide6 views, components (timeline, media preview, drop zone), and launcher.
+- `src/claynext/constants/`: Layout dimensions, navigation items, and Cyber Dark theme tokens.
 - `data/models/`: Cached AI weights.
 - `data/outputs/`: Rendered and exported media files.
 - `data/cache/`: Playback proxies and temporary audio chunks.

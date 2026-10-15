@@ -17,12 +17,12 @@ Command | Purpose | View Loaded
 :--- | :--- | :---
 `uv run main.py` | Full flow: Splash Screen → Launcher Hub | Launcher Window
 `uv run main.py --no-splash` | Skip splash, open launcher directly | Launcher Window
-`uv run main.py --tool asr --no-splash` | Launch Transcript & ASR Studio | [asr_view.py](file:///Users/vannya/Desktop/MinJ/src/jela/gui/views/asr_view.py)
-`uv run main.py --tool dubbing --no-splash` | Launch AI Movie Dubbing Studio | [dubbing_view.py](file:///Users/vannya/Desktop/MinJ/src/jela/gui/views/dubbing_view.py)
-`uv run main.py --tool tts --no-splash` | Launch Neural TTS Studio | [tts_view.py](file:///Users/vannya/Desktop/MinJ/src/jela/gui/views/tts_view.py)
-`uv run main.py --tool translate --no-splash` | Launch Caption Translator | [translate_view.py](file:///Users/vannya/Desktop/MinJ/src/jela/gui/views/translate_view.py)
-`uv run main.py --tool ocr --no-splash` | Launch Video/Image Text OCR | [ocr_view.py](file:///Users/vannya/Desktop/MinJ/src/jela/gui/views/ocr_view.py)
-`uv run main.py --tool video --no-splash` | Launch FFmpeg Video Tools | [video_view.py](file:///Users/vannya/Desktop/MinJ/src/jela/gui/views/video_view.py)
+`uv run main.py --tool asr --no-splash` | Launch Transcript & ASR Studio | [asr_view.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/views/asr_view.py)
+`uv run main.py --tool dubbing --no-splash` | Launch AI Movie Dubbing Studio | [dubbing_view.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/views/dubbing_view.py)
+`uv run main.py --tool tts --no-splash` | Launch Neural TTS Studio | [tts_view.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/views/tts_view.py)
+`uv run main.py --tool translate --no-splash` | Launch Caption Translator | [translate_view.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/views/translate_view.py)
+`uv run main.py --tool ocr --no-splash` | Launch Video/Image Text OCR | [ocr_view.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/views/ocr_view.py)
+`uv run main.py --tool video --no-splash` | Launch FFmpeg Video Tools | [video_view.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/views/video_view.py)
 
 ---
 
@@ -37,7 +37,7 @@ MinJ/
 │   ├── cache/                  # Playback audio & 720p H.264 proxy renders
 │   ├── models/                 # Cached AI models (Whisper, EasyOCR)
 │   └── outputs/                # User exports (.srt, .vtt, .wav, .mp4)
-└── src/jela/
+└── src/claynext/
     ├── app.py                  # High-DPI setup, splash screen orchestration
     ├── constants/              # UI layout constants & Cyber Dark theme tokens
     ├── core/                   # Headless engines & background workers
@@ -64,8 +64,8 @@ MinJ/
 Always test modules and GUI imports headlessly before reporting completion:
 ```bash
 QT_QPA_PLATFORM=offscreen uv run python -c "
-from jela.gui.styles import build_stylesheet
-from jela.constants import NAV_ITEMS
+from claynext.gui.styles import build_stylesheet
+from claynext.constants import NAV_ITEMS
 print(f'Styles loaded ({len(build_stylesheet())} bytes), {len(NAV_ITEMS)} tools ready.')
 "
 ```
@@ -74,7 +74,7 @@ print(f'Styles loaded ({len(build_stylesheet())} bytes), {len(NAV_ITEMS)} tools 
 Never execute long operations synchronously on the UI thread:
 ```python
 from PySide6.QtCore import QThreadPool
-from jela.core.worker import Worker
+from claynext.core.worker import Worker
 
 worker = Worker(self.engine.process_media, media_path)
 worker.signals.progress.connect(self._update_progress)
@@ -84,7 +84,7 @@ QThreadPool.globalInstance().start(worker)
 ```
 
 ### C. Color Token Rule
-Always use `src/jela/constants/theme_constants.py`:
+Always use `src/claynext/constants/theme_constants.py`:
 - `COLOR_BG_DARK`: `#080c12`
 - `COLOR_BG_CARD`: `#121a26`
 - `COLOR_PRIMARY`: `#6366f1`

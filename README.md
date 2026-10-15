@@ -1,4 +1,4 @@
-# Jela Studio
+# Claynext Studio
 
 Desktop AI movie dubbing & timeline editor (Python 3.12+, PySide6, `uv`).
 
@@ -16,12 +16,12 @@ uv run main.py --studio --no-splash   # open editor directly
 ## Layout
 
 ```
-Jela/
+Claynext/
 ├── main.py
 ├── pyproject.toml
 ├── assets/
 ├── data/                 # models, cache, outputs, projects
-└── src/jela/
+└── src/claynext/
     ├── app.py
     ├── constants/
     ├── core/             # engines (ASR/TTS/ffmpeg/dubbing pipeline)
@@ -34,7 +34,7 @@ Jela/
 
 ## Notes
 
-- Package import root is `jela` (not `minj`).
+- Package import root is `claynext` (not `minj`).
 - Tool id is `studio` (legacy `--tool dubbing` still accepted).
 - Core pipeline modules may still use `dubbing_*` names internally.
 

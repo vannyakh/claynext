@@ -17,7 +17,7 @@ def ffmpeg_exe() -> str:
 
 ## 2. Media Compatibility for Qt Playback
 Qt's `QMediaPlayer` can fail or stutter on non-standard video/audio formats (variable frame rate, HE-AACv2, 10-bit color, high-bitrate 4K/8K).
-- Always use [media_compat.py](file:///Users/vannya/Desktop/MinJ/src/jela/core/media_compat.py):
+- Always use [media_compat.py](file:///Users/vannya/Desktop/MinJ/src/claynext/core/media_compat.py):
   - `ready_playback_path(media_path)` checks for a pre-rendered compliant proxy or audio stream.
   - Generates lightweight 720p H.264 MP4 proxies (`PROXY_DIR`) or normalized AAC-LC 44.1kHz audio (`PLAYBACK_DIR`).
   - Cache files are named using SHA1 hashes of `(file_path, mtime, size)`.
@@ -35,4 +35,4 @@ Qt's `QMediaPlayer` can fail or stutter on non-standard video/audio formats (var
   - Save project state using `DubbingProject` / `dub_project.py`.
 - **OCR (EasyOCR)**:
   - Extract frames at specified timestamps using FFmpeg snapshot extraction.
-  - Return bounding box coordinates normalized for display on `OverlayCanvas` ([overlay_canvas.py](file:///Users/vannya/Desktop/MinJ/src/jela/gui/components/overlay_canvas.py)).
+  - Return bounding box coordinates normalized for display on `OverlayCanvas` ([overlay_canvas.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/components/overlay_canvas.py)).

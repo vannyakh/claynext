@@ -34,7 +34,7 @@ def run_smoke_test() -> int:
 
     # 2. FFmpeg Binary Check
     try:
-        from jela.core.ffmpeg_tools import ffmpeg_exe
+        from claynext.core.ffmpeg_tools import ffmpeg_exe
         exe = ffmpeg_exe()
         print(f"[*] FFmpeg Binary: {exe}")
         if not exe or not os.path.exists(exe):
@@ -46,18 +46,18 @@ def run_smoke_test() -> int:
 
     # 3. Core Engine Imports
     core_modules = [
-        "jela.constants.theme_constants",
-        "jela.constants.ui_constants",
-        "jela.utils.config",
-        "jela.core.worker",
-        "jela.core.media_compat",
-        "jela.core.ffmpeg_tools",
-        "jela.core.asr_engine",
-        "jela.core.tts_engine",
-        "jela.core.translate_engine",
-        "jela.core.ocr_engine",
-        "jela.core.dubbing_engine",
-        "jela.core.dub_project",
+        "claynext.constants.theme_constants",
+        "claynext.constants.ui_constants",
+        "claynext.utils.config",
+        "claynext.core.worker",
+        "claynext.core.media_compat",
+        "claynext.core.ffmpeg_tools",
+        "claynext.core.asr_engine",
+        "claynext.core.tts_engine",
+        "claynext.core.translate_engine",
+        "claynext.core.ocr_engine",
+        "claynext.core.dubbing_engine",
+        "claynext.core.dub_project",
     ]
     print("[*] Verifying Core Engine Modules...")
     for mod in core_modules:
@@ -72,14 +72,14 @@ def run_smoke_test() -> int:
     print("[*] Verifying Headless PySide6 & Theme System...")
     try:
         from PySide6.QtWidgets import QApplication
-        from jela.gui.styles import build_stylesheet
-        from jela.gui.main_window import ToolWindow
-        from jela.gui.components.tool_loader import ToolLoaderScreen
-        from jela.constants import NAV_ITEMS
+        from claynext.gui.styles import build_stylesheet
+        from claynext.gui.main_window import ToolWindow
+        from claynext.gui.components.tool_loader import ToolLoaderScreen
+        from claynext.constants import NAV_ITEMS
 
         app = QApplication.instance()
         if not app:
-            app = QApplication(["jela_smoke_test", "-platform", "offscreen"])
+            app = QApplication(["claynext_smoke_test", "-platform", "offscreen"])
 
         qss = build_stylesheet()
         print(f"    [✓] Compiled QSS Stylesheet: {len(qss)} characters")
@@ -103,7 +103,7 @@ def run_smoke_test() -> int:
             print(f"   - {f}")
         return 1
 
-    print("✅ All Smoke Tests PASSED! Jela environment is fully operational.")
+    print("✅ All Smoke Tests PASSED! Claynext environment is fully operational.")
     return 0
 
 

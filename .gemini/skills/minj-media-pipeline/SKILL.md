@@ -13,14 +13,14 @@ This skill guides you through interacting with, testing, and debugging the core 
 
 MinJ uses `faster-whisper` for fast CTranslate2-accelerated transcription.
 
-### Key Class: `ASREngine` ([asr_engine.py](file:///Users/vannya/Desktop/MinJ/src/jela/core/asr_engine.py))
+### Key Class: `ASREngine` ([asr_engine.py](file:///Users/vannya/Desktop/MinJ/src/claynext/core/asr_engine.py))
 - **Model Sizes**: `tiny`, `base`, `small`, `medium`, `large-v3`.
 - **Supported Formats**: `.mp4`, `.mkv`, `.avi`, `.mov`, `.mp3`, `.wav`, `.flac`, `.m4a`.
 - **Device Support**: Auto-detects CUDA (`float16`) or CPU (`int8`).
 
 ### Testing ASR Headlessly via Python:
 ```python
-from jela.core.asr_engine import ASREngine
+from claynext.core.asr_engine import ASREngine
 
 engine = ASREngine(model_size="tiny", device="cpu")
 segments, info = engine.transcribe("path/to/audio.wav")
@@ -40,14 +40,14 @@ for s in segments:
 
 MinJ integrates Microsoft Edge TTS neural voices with pitch and speed modulation.
 
-### Key Class: `TTSEngine` ([tts_engine.py](file:///Users/vannya/Desktop/MinJ/src/jela/core/tts_engine.py))
+### Key Class: `TTSEngine` ([tts_engine.py](file:///Users/vannya/Desktop/MinJ/src/claynext/core/tts_engine.py))
 - **Voices**: 100+ multi-lingual neural voices (e.g. `en-US-AriaNeural`, `en-US-GuyNeural`, `es-ES-AlvaroNeural`, `fr-FR-HenriNeural`).
 - **Modifiers**: Rate adjustment (`+0%`, `+20%`, `-10%`), pitch adjustment (`+0Hz`, `+5Hz`).
 
 ### Testing TTS Headlessly:
 ```python
 import asyncio
-from jela.core.tts_engine import TTSEngine
+from claynext.core.tts_engine import TTSEngine
 
 engine = TTSEngine()
 output_path = "data/outputs/test_tts.mp3"
@@ -79,10 +79,10 @@ uv run main.py --tool dubbing --no-splash
 ## 4. Media Compatibility & Proxy Processor
 
 Qt's `QMediaPlayer` can fail on variable framerates or heavy 4K/8K codecs.
-Always route media through [media_compat.py](file:///Users/vannya/Desktop/MinJ/src/jela/core/media_compat.py):
+Always route media through [media_compat.py](file:///Users/vannya/Desktop/MinJ/src/claynext/core/media_compat.py):
 
 ```python
-from jela.core.media_compat import ready_playback_path, prepare_playback_media
+from claynext.core.media_compat import ready_playback_path, prepare_playback_media
 
 # Check if a Qt-safe cached path exists:
 safe_path = ready_playback_path(video_path)
