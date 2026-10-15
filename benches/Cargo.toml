@@ -1,0 +1,20 @@
+[package]
+name = "claynext-benchmarks"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "claynext-bench"
+path = "src/main.rs"
+
+[dependencies]
+editor-types = { path = "../crates/editor-types" }
+editor-media = { path = "../crates/editor-media" }
+editor-audio = { path = "../crates/editor-audio" }
+editor-video = { path = "../crates/editor-video" }
+editor-timeline = { path = "../crates/editor-timeline" }
+claynext-cpu = { path = "../backends/cpu" }
+serde = { workspace = true }
+serde_json = { workspace = true }

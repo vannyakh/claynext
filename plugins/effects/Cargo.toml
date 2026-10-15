@@ -1,0 +1,12 @@
+[package]
+name = "claynext-plugin-effects"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+editor-types = { path = "../../crates/editor-types" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

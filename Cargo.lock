@@ -97,6 +97,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "claynext-benchmarks"
+version = "0.1.0"
+dependencies = [
+ "claynext-cpu",
+ "editor-audio",
+ "editor-media",
+ "editor-timeline",
+ "editor-types",
+ "editor-video",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "claynext-cpu"
 version = "0.1.0"
 dependencies = [
@@ -127,6 +141,37 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tracing",
+]
+
+[[package]]
+name = "claynext-plugin-effects"
+version = "0.1.0"
+dependencies = [
+ "editor-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "claynext-plugin-exporters"
+version = "0.1.0"
+dependencies = [
+ "editor-render",
+ "editor-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "claynext-plugin-transitions"
+version = "0.1.0"
+dependencies = [
+ "editor-types",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

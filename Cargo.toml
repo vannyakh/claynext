@@ -21,6 +21,14 @@ members = [
     "backends/wgpu",
     "backends/ai-runtime",
     "backends/hardware-codecs",
+
+    # Plugins
+    "plugins/effects",
+    "plugins/transitions",
+    "plugins/exporters",
+
+    # Benchmarks
+    "benches",
 ]
 
 [workspace.package]

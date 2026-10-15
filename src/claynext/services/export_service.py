@@ -1,7 +1,7 @@
 """
 Video and audio export service.
 
-Coordinates transcode jobs using optimal hardware encoders (NVENC/QSV/AMF) via Rust core.
+Coordinates transcode jobs using optimal hardware encoders (NVENC/QSV/AMF) via native Rust backends.
 """
 from __future__ import annotations
 
@@ -10,16 +10,36 @@ from pathlib import Path
 from typing import Callable
 
 from claynext.adapters.hardware_codecs_adapter import get_recommended_encoder
+from claynext.adapters.rendering import get_rendering_adapter
 from claynext.models.hardware import CodecProfile
 
 logger = logging.getLogger("claynext.services.export")
 
 
 class ExportService:
+    """Manages composition rendering and hardware encoder selection via native Rust core."""
+
     @staticmethod
     def get_optimal_video_profile(prefer_hevc: bool = True) -> CodecProfile:
-        """Select best hardware encoder profile available on system."""
+        """Select best hardware encoder profile available on system via Rust hardware codecs."""
         return get_recommended_encoder(prefer_hevc=prefer_hevc)
+
+    @staticmethod
+    def render_export(
+        input_path: str | Path,
+        output_path: str | Path,
+        video_codec: str | None = None,
+        crf: int = 21,
+        progress_callback: Callable[[float], None] | None = None,
+    ) -> bool:
+        """Execute composition export directly via native Rust rendering pipeline."""
+        return get_rendering_adapter().render_file(
+            input_path=input_path,
+            output_path=output_path,
+            video_codec=video_codec,
+            crf=crf,
+            progress_callback=progress_callback,
+        )
 
     @staticmethod
     def build_export_command(
