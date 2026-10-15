@@ -340,11 +340,8 @@ class ProjectTools:
         self.log.info(f"Opened · {os.path.basename(path)}")
 
     def _refresh_project_info(self):
-        self.project_info.bind(self._project, self._media_info)
-        dock = self.workspace.dock("preview") if hasattr(self, "workspace") else None
-        if dock:
-            name = str(self._project.get("timeline_name") or self._project.get("name") or "Timeline 01")
-            dock.setWindowTitle(f"Preview · {name}")
+        if hasattr(self, "project_info") and self.project_info:
+            self.project_info.bind(self._project, self._media_info)
 
     def _open_project_settings(self):
         dlg = ProjectSettingsDialog(self._project, self)

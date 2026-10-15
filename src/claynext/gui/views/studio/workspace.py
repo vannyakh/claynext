@@ -114,9 +114,11 @@ class WorkspaceTools:
             self.act_timeline.setChecked(bool(getattr(self, "_timeline_open", True)))
             self.act_timeline.triggered.connect(self._toggle_timeline)
             view_menu.addAction(self.act_timeline)
-            panels_menu = view_menu.addMenu("&Panels")
-            for key, act in self._panel_actions.items():
-                panels_menu.addAction(act)
+            panels = getattr(self, "_panel_actions", {})
+            if panels:
+                panels_menu = view_menu.addMenu("&Panels")
+                for key, act in panels.items():
+                    panels_menu.addAction(act)
             act_reset = QAction("&Reset Layout", self)
             act_reset.triggered.connect(self.reset_layout)
             view_menu.addAction(act_reset)
