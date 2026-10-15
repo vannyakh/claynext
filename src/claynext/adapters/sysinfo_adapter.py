@@ -341,3 +341,27 @@ def process_summary():
     if rss:
         tooltip += f"\nMemory in use: {human_bytes(rss)}"
     return label, tooltip
+
+
+class SysInfoAdapter:
+    """System information and hardware statistics provider."""
+
+    @staticmethod
+    def get_summary() -> dict:
+        return {
+            "ram": ram_summary(),
+            "cpu": cpu_summary(),
+            "gpu": gpu_summary(),
+            "process": process_summary(),
+        }
+
+
+_sysinfo_adapter: SysInfoAdapter | None = None
+
+
+def get_sysinfo() -> SysInfoAdapter:
+    global _sysinfo_adapter
+    if _sysinfo_adapter is None:
+        _sysinfo_adapter = SysInfoAdapter()
+    return _sysinfo_adapter
+

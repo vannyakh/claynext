@@ -33,3 +33,7 @@ class ProjectDocument:
     fx: list[dict[str, Any]] = field(default_factory=list)
     tasks: list[dict[str, Any]] = field(default_factory=list)
     takes: list[dict[str, Any]] = field(default_factory=list)
+
+
+Project = ProjectDocument
+

@@ -1,0 +1,20 @@
+[package]
+name = "editor-python"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "claynext-engine"
+path = "src/main.rs"
+
+[dependencies]
+editor-types = { path = "../editor-types" }
+editor-api = { path = "../editor-api" }
+editor-core = { path = "../editor-core" }
+editor-timeline = { path = "../editor-timeline" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }

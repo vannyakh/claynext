@@ -14,6 +14,7 @@ def project_root() -> Path:
 
 
 BASE_DIR = project_root()
+APP_DIR = BASE_DIR
 DATA_DIR = BASE_DIR / "data"
 MODELS_DIR = DATA_DIR / "models"
 OUTPUTS_DIR = DATA_DIR / "outputs"

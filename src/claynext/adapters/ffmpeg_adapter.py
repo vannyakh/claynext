@@ -43,3 +43,22 @@ def probe_media(file_path: str | Path) -> MediaMetadata:
     except Exception as e:
         logger.warning(f"Fallback probe error on {p}: {e}")
         return MediaMetadata(path=str(p), media_type=MediaType.UNKNOWN)
+
+
+class FFmpegAdapter:
+    """Orchestrates media probing and stream processing."""
+
+    @staticmethod
+    def probe(file_path: str | Path) -> MediaMetadata:
+        return probe_media(file_path)
+
+
+_ffmpeg_adapter: FFmpegAdapter | None = None
+
+
+def get_ffmpeg_adapter() -> FFmpegAdapter:
+    global _ffmpeg_adapter
+    if _ffmpeg_adapter is None:
+        _ffmpeg_adapter = FFmpegAdapter()
+    return _ffmpeg_adapter
+

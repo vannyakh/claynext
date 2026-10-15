@@ -40,3 +40,8 @@ class TrackModel:
     solo: bool = False
     locked: bool = False
     clips: list[ClipModel] = field(default_factory=list)
+
+
+TimelineClip = ClipModel
+TimelineTrack = TrackModel
+

@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = [
+    # Engine Crates
+    "crates/editor-types",
+    "crates/editor-api",
+    "crates/editor-core",
+    "crates/editor-timeline",
+    "crates/editor-media",
+    "crates/editor-audio",
+    "crates/editor-video",
+    "crates/editor-effects",
+    "crates/editor-transitions",
+    "crates/editor-subtitles",
+    "crates/editor-render",
+    "crates/editor-python",
+
+    # Native Backends
+    "backends/ffmpeg",
+    "backends/cpu",
+    "backends/wgpu",
+    "backends/ai-runtime",
+    "backends/hardware-codecs",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Claynext Studio Team"]
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+uuid = { version = "1.10", features = ["v4", "serde"] }
+tempfile = "3.10"
+log = "0.4"
+env_logger = "0.11"

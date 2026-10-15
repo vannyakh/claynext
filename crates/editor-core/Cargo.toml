@@ -1,0 +1,23 @@
+[package]
+name = "editor-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+editor-types = { path = "../editor-types" }
+editor-api = { path = "../editor-api" }
+editor-timeline = { path = "../editor-timeline" }
+editor-audio = { path = "../editor-audio" }
+editor-video = { path = "../editor-video" }
+editor-effects = { path = "../editor-effects" }
+editor-transitions = { path = "../editor-transitions" }
+editor-subtitles = { path = "../editor-subtitles" }
+editor-media = { path = "../editor-media" }
+editor-render = { path = "../editor-render" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+log = { workspace = true }

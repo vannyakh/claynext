@@ -30,3 +30,27 @@ def get_recommended_encoder(prefer_hevc: bool = True) -> CodecProfile:
         is_hardware=is_hw,
         encoder_args=args,
     )
+
+
+class HardwareCodecsAdapter:
+    """Discovers GPUs and provides hardware-accelerated encoder profiles."""
+
+    @staticmethod
+    def detect_gpus() -> list[GpuCapability]:
+        return detect_system_gpus()
+
+    @staticmethod
+    def get_recommended_encoder(prefer_hevc: bool = True) -> str:
+        prof = get_recommended_encoder(prefer_hevc=prefer_hevc)
+        return prof.codec_name
+
+
+_codecs_adapter: HardwareCodecsAdapter | None = None
+
+
+def get_hardware_codecs() -> HardwareCodecsAdapter:
+    global _codecs_adapter
+    if _codecs_adapter is None:
+        _codecs_adapter = HardwareCodecsAdapter()
+    return _codecs_adapter
+

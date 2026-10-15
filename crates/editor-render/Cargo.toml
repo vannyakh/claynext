@@ -1,0 +1,13 @@
+[package]
+name = "editor-render"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+editor-types = { path = "../editor-types" }
+editor-timeline = { path = "../editor-timeline" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
