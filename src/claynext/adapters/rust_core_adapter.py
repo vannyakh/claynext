@@ -31,14 +31,16 @@ from claynext.utils.paths import BASE_DIR
 logger = logging.getLogger("claynext.adapters.rust")
 
 BACKENDS_DIR = BASE_DIR / "backends"
-TARGET_DIR = BACKENDS_DIR / "target" / "debug"
-RELEASE_TARGET_DIR = BACKENDS_DIR / "target" / "release"
+TARGET_DIR = BASE_DIR / "target" / "debug"
+RELEASE_TARGET_DIR = BASE_DIR / "target" / "release"
+LEGACY_TARGET_DIR = BACKENDS_DIR / "target" / "debug"
+LEGACY_RELEASE_TARGET_DIR = BACKENDS_DIR / "target" / "release"
 
 
 def _find_binary(bin_name: str) -> Path | None:
     ext = ".exe" if os.name == "nt" else ""
     full_name = f"{bin_name}{ext}"
-    for candidate_dir in (RELEASE_TARGET_DIR, TARGET_DIR):
+    for candidate_dir in (RELEASE_TARGET_DIR, TARGET_DIR, LEGACY_RELEASE_TARGET_DIR, LEGACY_TARGET_DIR):
         p = candidate_dir / full_name
         if p.is_file():
             return p

@@ -1,6 +1,8 @@
 # Claynext Rust Core Backends
 
-High-performance native multimedia and AI engine written in Rust for **Claynext Studio**.
+High-performance native multimedia and hardware acceleration backends for **Claynext Studio**.
+
+These backend crates are unified members of the root **Claynext Workspace** (`/Cargo.toml`). All binaries compile directly into the root `target/` directory.
 
 ---
 
@@ -8,24 +10,25 @@ High-performance native multimedia and AI engine written in Rust for **Claynext 
 
 ```text
 backends/
-├── Cargo.toml               # Workspace root configuration
-├── README.md                # Architecture & integration documentation
 ├── ffmpeg/                  # Fast FFmpeg/FFprobe demuxing, remuxing & filtering
 │   ├── Cargo.toml
-│   └── src/
-│       ├── lib.rs
-│       ├── probe.rs         # JSON stream inspection & metadata extraction
-│       ├── demux.rs         # Fast PCM WAV extraction & time slicing
-│       ├── remux.rs         # Stream-copy audio replacement & remuxing
-│       ├── filter.rs        # EBU R128 Loudnorm & sidechain ducking filter graph
-│       └── bin/claynext-ffmpeg.rs
+│   ├── src/
+│   │   ├── lib.rs
+│   │   ├── probe.rs         # JSON stream inspection & metadata extraction
+│   │   ├── transcode.rs     # Video/audio transcode with atomic cancel token
+│   │   ├── extract.rs       # Raw frame & PCM stream decoders
+│   │   ├── stream.rs        # Stream-copy demuxing & container muxing
+│   │   ├── process.rs       # Async child process execution & progress parser
+│   │   └── error.rs         # Structured FfmpegError enum
+│   ├── src/bin/claynext-ffmpeg.rs
+│   └── tests/integration_tests.rs
 ├── cpu/                     # Multi-threaded SIMD audio & DSP compute
 │   ├── Cargo.toml
 │   └── src/
 │       ├── lib.rs
 │       ├── resample.rs      # High-performance linear interpolation resampler
-│       ├── mixer.rs         # Multi-track mixing & ducking envelopes
-│       ├── simd.rs          # Peak/RMS calculations & waveform visualizer bins
+│       ├── mix.rs           # Multi-track mixing & ducking envelopes
+│       ├── stats.rs         # Peak/RMS calculations & waveform visualizer bins
 │       ├── threadpool.rs    # Cross-platform worker threadpool
 │       └── bin/claynext-cpu.rs
 ├── wgpu/                    # GPU compute shaders & timeline compositing
@@ -33,107 +36,38 @@ backends/
 │   └── src/
 │       ├── lib.rs
 │       ├── device.rs        # WGPU device/adapter descriptors & format selection
-│       ├── compositor.rs    # Multi-track timeline layers & blend modes
+│       ├── pipeline.rs      # Pipeline state & bind groups
 │       ├── shaders.rs       # WGSL shaders for color grade & blur
-│       ├── textures.rs      # RGBA8 texture buffers & dimensions
 │       └── bin/claynext-wgpu.rs
 ├── ai-runtime/              # Unified AI inference runtime
 │   ├── Cargo.toml
 │   └── src/
 │       ├── lib.rs
-│       ├── engine.rs        # DirectML, CUDA, CoreML, CPU execution provider
-│       ├── vad.rs           # Voice Activity Detection energy chunking
-│       ├── asr.rs           # Whisper model configurations & transcription structures
-│       ├── tts.rs           # Neural voice synthesis specifications
-│       ├── model_cache.rs   # Model weight path resolution & integrity checks
+│       ├── vad.rs           # Energy-based voice activity detection
+│       ├── providers.rs     # DirectML, CUDA, and CPU execution provider selection
 │       └── bin/claynext-ai.rs
-└── hardware-codecs/         # Hardware encoder detection & optimal profile selector
+└── hardware-codecs/         # Hardware encoder auto-selection
     ├── Cargo.toml
     └── src/
         ├── lib.rs
-        ├── detect.rs        # GPU vendor detection (NVIDIA, AMD, Intel, Apple)
-        ├── nvenc.rs         # NVIDIA NVENC / NVDEC hardware acceleration
-        ├── qsv.rs           # Intel QuickSync Video profiles
-        ├── amf.rs           # AMD Advanced Media Framework profiles
-        ├── media_foundation.rs # Windows Media Foundation hardware encoders
-        ├── profile.rs       # Automatic selection of optimal hardware encoder
+        ├── detect.rs        # GPU discovery (Intel QSV, AMD AMF, NVIDIA NVENC)
+        ├── profiles.rs      # Optimal FFmpeg encoder arguments
         └── bin/claynext-codecs.rs
 ```
 
 ---
 
-## 2. CLI Tool Usage
+## 2. Compiling and Testing
 
-Each backend crate provides a dedicated binary CLI tool:
+From the project root:
 
-### Hardware Codecs
 ```bash
-# Detect system GPUs and hardware encoding capabilities
-cargo run -p claynext-hardware-codecs --bin claynext-codecs -- detect
+# Build all backends and engine crates
+cargo build --workspace
 
-# Get optimal encoder for system (JSON)
-cargo run -p claynext-hardware-codecs --bin claynext-codecs -- optimal --hevc
+# Run all backend unit and integration tests
+cargo test --workspace
 
-# Output raw FFmpeg command line arguments
-cargo run -p claynext-hardware-codecs --bin claynext-codecs -- ffmpeg-args --hevc
-```
-
-### FFmpeg Backend
-```bash
-# Fast JSON probe of any media file
-cargo run -p claynext-ffmpeg --bin claynext-ffmpeg -- probe path/to/video.mp4
-
-# Extract 16kHz mono WAV for Whisper
-cargo run -p claynext-ffmpeg --bin claynext-ffmpeg -- extract-audio input.mp4 output.wav 16000 1
-
-# Stream-copy replace audio track in video
-cargo run -p claynext-ffmpeg --bin claynext-ffmpeg -- remux-audio video.mp4 dubbed.wav final.mp4
-```
-
-### CPU Backend
-```bash
-# Run SIMD audio statistics and resampling benchmark
-cargo run -p claynext-cpu --bin claynext-cpu -- benchmark
-```
-
-### WGPU Backend
-```bash
-# Print GPU compute device info and capabilities
-cargo run -p claynext-wgpu --bin claynext-wgpu -- info
-
-# View color grading WGSL compute shader
-cargo run -p claynext-wgpu --bin claynext-wgpu -- shader
-```
-
-### AI Runtime
-```bash
-# View active execution provider (DirectML / CUDA / CPU)
-cargo run -p claynext-ai-runtime --bin claynext-ai -- device
-
-# Run VAD speech chunking simulation
-cargo run -p claynext-ai-runtime --bin claynext-ai -- vad-sim
-```
-
----
-
-## 3. Python Integration
-
-Claynext tools connect to these Rust backends via `claynext.core.rust_backends`:
-
-```python
-from claynext.core.rust_backends import (
-    detect_hardware_gpus,
-    get_optimal_encoder_args,
-    rust_probe_file,
-    run_cpu_benchmark,
-    get_ai_device_config,
-    get_wgpu_info,
-)
-
-# Detect hardware encoders
-gpus = detect_hardware_gpus()
-
-# Automatically choose best NVENC/QSV/AMF flags for video export
-encoder_args = get_optimal_encoder_args(prefer_hevc=True)
-# -> ['-c:v', 'hevc_nvenc', '-preset', 'p4', '-tune', 'hq', ...]
+# Run strict clippy linting
+cargo clippy --workspace --all-targets -- -D warnings
 ```
