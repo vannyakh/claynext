@@ -122,3 +122,4 @@ class LogPanel(QWidget):
     def clear(self):
         self.view.clear()
         self.cleared.emit()
+

@@ -411,3 +411,4 @@ QSlider#media_seek::handle:horizontal:hover {{
 
 
 """
+

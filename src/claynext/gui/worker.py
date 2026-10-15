@@ -58,3 +58,4 @@ class Worker(QRunnable):
             self.signals.error.emit(str(e), tb_str)
         finally:
             self.signals.finished.emit()
+

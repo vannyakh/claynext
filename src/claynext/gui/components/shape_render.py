@@ -587,3 +587,4 @@ def shape_icon(key: str, color: str = "#e7ecf3", side: int = 40) -> QIcon:
         p.fillPath(path, QColor(color))
     p.end()
     return QIcon(pix)
+

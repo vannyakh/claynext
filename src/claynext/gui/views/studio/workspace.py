@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit, QTextEdit,
 )
 
-from claynext.services.dub_project import list_presets
+from claynext.models.dub_project import list_presets
 from claynext.gui.views.studio.constants import LAYOUT_META_KEY, SETTINGS_KEY
 
 _PANEL_KEYS = ("shelf", "preview", "props", "log")
@@ -456,3 +456,4 @@ class WorkspaceTools:
             self._stop_clip_lanes()
         if hasattr(self, "stop_voice_preview"):
             self.stop_voice_preview()
+

@@ -1,0 +1,131 @@
+"""Visual effects and LUT look presentation models."""
+from __future__ import annotations
+
+from typing import Any
+
+DEFAULT_INTENSITY = {"effect": 80, "filter": 80}
+
+EFFECTS = (
+    ("none", "None", "No effect"),
+    ("vignette", "Vignette", "Darken video edges"),
+    ("glow", "Glow", "Soft radiant highlights"),
+    ("grayscale", "Grayscale", "Classic monochrome"),
+    ("sepia", "Sepia", "Warm vintage tone"),
+    ("blur", "Blur", "Gaussian smoothing"),
+    ("sharpen", "Sharpen", "Crisp edge boost"),
+    ("invert", "Invert", "Negative colors"),
+)
+
+TIMED_EFFECTS = ("zoom_in", "zoom_out", "shake", "flash")
+
+FILTER_LOOKS = (
+    ("clean", "Clean"),
+    ("cinematic", "Cinematic"),
+    ("bleach", "Bleach Bypass"),
+    ("teal_orange", "Teal & Orange"),
+    ("noir", "Film Noir"),
+)
+
+EFFECT_LABELS = {k: label for k, label, *_ in EFFECTS}
+
+
+def clean_fx(kind_or_data: Any = None, data: dict | None = None) -> dict:
+    if data is not None:
+        kind = str(kind_or_data or "effect")
+        src = data if isinstance(data, dict) else {}
+    elif isinstance(kind_or_data, str):
+        kind = kind_or_data
+        src = {}
+    elif isinstance(kind_or_data, dict):
+        src = kind_or_data
+        kind = src.get("kind", "effect")
+    else:
+        src = {}
+        kind = "effect"
+
+    def_intensity = DEFAULT_INTENSITY.get(kind, 80) if isinstance(DEFAULT_INTENSITY, dict) else DEFAULT_INTENSITY
+    return {
+        "kind": kind,
+        "effect": src.get("effect", "none"),
+        "intensity": max(0, min(100, int(src.get("intensity", def_intensity)))),
+        "look": src.get("look", "clean"),
+        "duration": float(src.get("duration", 1.0)),
+    }
+
+
+def fx_label(data: dict | None) -> str:
+    c = clean_fx(data)
+    eff = EFFECT_LABELS.get(c["effect"], c["effect"].title())
+    return eff if c["effect"] != "none" else ""
+
+
+import numpy as np
+
+
+def fx_filters(fx_data: dict | list | None, src_w: int = 1920, src_h: int = 1080) -> list[str]:
+    if isinstance(fx_data, list):
+        out = []
+        for item in fx_data:
+            out.extend(fx_filters(item, src_w, src_h))
+        return out
+    c = clean_fx(fx_data)
+    filters = []
+    if c["effect"] == "vignette":
+        filters.append(f"vignette=PI/{max(1, int(100 - c['intensity']))}")
+    elif c["effect"] == "grayscale":
+        filters.append("colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3")
+    elif c["effect"] == "sepia":
+        filters.append("colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131")
+    return filters
+
+
+def apply_fx(rgb: Any, spans: list[dict] | dict | None = None, now_ms: int = 0) -> Any:
+    """Apply visual effects/filters to an RGB image array or bytes."""
+    if rgb is None or not spans:
+        return rgb
+    if not isinstance(rgb, np.ndarray):
+        return rgb
+    if rgb.ndim != 3 or rgb.shape[2] < 3:
+        return rgb
+
+    span_list = [spans] if isinstance(spans, dict) else list(spans)
+    out = rgb.copy()
+
+    for item in span_list:
+        if not isinstance(item, dict):
+            continue
+        kind = item.get("kind", "effect")
+        key = item.get(kind) or item.get("effect") or item.get("filter") or item.get("transition") or "none"
+        intensity = float(item.get("intensity", 80)) / 100.0
+
+        if key in ("none", ""):
+            continue
+        elif key in ("grayscale", "noir"):
+            gray = (out[:, :, 0] * 0.299 + out[:, :, 1] * 0.587 + out[:, :, 2] * 0.114).astype(np.uint8)
+            for ch in range(3):
+                out[:, :, ch] = (out[:, :, ch] * (1.0 - intensity) + gray * intensity).astype(np.uint8)
+        elif key == "invert":
+            inv = 255 - out
+            out = (out * (1.0 - intensity) + inv * intensity).astype(np.uint8)
+        elif key == "sepia":
+            r = out[:, :, 0] * 0.393 + out[:, :, 1] * 0.769 + out[:, :, 2] * 0.189
+            g = out[:, :, 0] * 0.349 + out[:, :, 1] * 0.686 + out[:, :, 2] * 0.168
+            b = out[:, :, 0] * 0.272 + out[:, :, 1] * 0.534 + out[:, :, 2] * 0.131
+            sep = np.clip(np.stack([r, g, b], axis=2), 0, 255).astype(np.uint8)
+            out = (out * (1.0 - intensity) + sep * intensity).astype(np.uint8)
+        elif key == "vignette":
+            h, w = out.shape[:2]
+            y, x = np.ogrid[:h, :w]
+            cx, cy = w / 2.0, h / 2.0
+            max_dist = max(1.0, float(np.sqrt(cx**2 + cy**2)))
+            dist = np.sqrt((x - cx)**2 + (y - cy)**2) / max_dist
+            mask = np.clip(1.0 - (dist ** 1.5) * intensity, 0.0, 1.0)[:, :, np.newaxis]
+            out = np.clip(out * mask, 0, 255).astype(np.uint8)
+        elif key == "flash":
+            out = np.clip(out.astype(np.float32) + 255 * intensity * 0.5, 0, 255).astype(np.uint8)
+        elif key == "fade_black":
+            ratio = max(0.0, min(1.0, 1.0 - intensity))
+            out = (out * ratio).astype(np.uint8)
+
+    return out
+

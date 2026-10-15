@@ -100,3 +100,4 @@ class HomeProjectCard(QWidget):
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.clicked.connect(lambda: self.open_requested.emit(self._path))
         lay.addWidget(btn)
+

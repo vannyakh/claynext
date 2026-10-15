@@ -203,3 +203,4 @@ class ExportDialog(QDialog):
             "audio": self.combo_audio.currentData() or "256k",
             "overlays": self.chk_overlays.isChecked(),
         }
+

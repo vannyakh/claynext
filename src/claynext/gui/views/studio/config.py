@@ -9,10 +9,10 @@ from PySide6.QtWidgets import (
     QFrame, QLineEdit, QCheckBox,
 )
 
-from claynext.services.asr_service import ASREngine
-from claynext.services.thumbnails import VIDEO_EXTS
-from claynext.services.translate_service import TranslateEngine
-from claynext.services.tts_service import TTSEngine
+from claynext.models.asr_service import ASREngine
+from claynext.models.thumbnails import VIDEO_EXTS
+from claynext.models.translate_service import TranslateEngine
+from claynext.models.tts_service import TTSEngine
 from claynext.gui.components.scrub_spin import ScrubSpinBox
 from claynext.gui.views.studio.constants import SOURCE_LANGS
 
@@ -221,3 +221,4 @@ class ConfigTools:
     def _sync_translator_fields(self):
         eid = self.combo_translator.currentData() or "auto"
         self.edit_ollama.setEnabled(eid in {"auto", "ollama"})
+

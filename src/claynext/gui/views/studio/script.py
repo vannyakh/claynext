@@ -17,14 +17,14 @@ from PySide6.QtWidgets import (
     QDialogButtonBox, QApplication, QSizePolicy, QToolButton, QGridLayout,
 )
 
-from claynext.services.dubbing_service import timestamp_to_sec
-from claynext.services.ffmpeg_service import concat_videos, mix_timeline_audio, render_timeline, run_ffmpeg
+from claynext.models.dubbing_service import timestamp_to_sec
+from claynext.adapters.ffmpeg_service import concat_videos, mix_timeline_audio, render_timeline, run_ffmpeg
 from claynext.gui.icons import icon
-from claynext.services.thumbnails import VIDEO_EXTS
-from claynext.services.translate_service import TranslateEngine
-from claynext.services.tts_service import TTSEngine
-from claynext.services.tts_expression import EXPRESSION_CHIPS
-from claynext.services.video_canvas import is_neutral
+from claynext.models.thumbnails import VIDEO_EXTS
+from claynext.models.translate_service import TranslateEngine
+from claynext.models.tts_service import TTSEngine
+from claynext.models.tts_expression import EXPRESSION_CHIPS
+from claynext.models.canvas import is_neutral
 from claynext.gui.worker import Worker
 from claynext.gui.components.field_controls import SearchField, SelectField
 from claynext.gui.components.shelf_header import make_shelf_header
@@ -1275,7 +1275,7 @@ class ScriptTools:
         self.log.info(f"Retry TTS · {len(work)} line(s)")
 
         def _job(items=work, mode=sync_mode, progress_callback=None):
-            from claynext.services.ffmpeg_service import fit_duration
+            from claynext.adapters.ffmpeg_service import fit_duration
 
             folder = CACHE_DIR / "script_tts"
             folder.mkdir(parents=True, exist_ok=True)
@@ -1429,7 +1429,7 @@ class ScriptTools:
 
     def _cast_voice_choices(self) -> list[dict]:
         """TTS voices for the target language — used as character cast options."""
-        from claynext.services.gender_voices import voices_for_lang
+        from claynext.models.gender_voices import voices_for_lang
 
         return voices_for_lang(self._voice_lang())
 
@@ -1442,7 +1442,7 @@ class ScriptTools:
                 names.append(label)
         if not names:
             lead, co = self._primary_voices()
-            from claynext.services.gender_voices import voice_display_name
+            from claynext.models.gender_voices import voice_display_name
             for vid in (lead, co):
                 if vid:
                     label = voice_display_name(vid)
@@ -1458,7 +1458,7 @@ class ScriptTools:
         for seg in self._segments:
             if str(seg.get("speaker") or "") == label:
                 return str(seg.get("tts_voice_hint") or seg.get("voice_id") or "")
-        from claynext.services.gender_voices import voice_display_name
+        from claynext.models.gender_voices import voice_display_name
         lead, co = self._primary_voices()
         for vid in (lead, co):
             if vid and voice_display_name(vid) == label:
@@ -1474,7 +1474,7 @@ class ScriptTools:
         return str(lead or ""), str(co_star or lead or "")
 
     def _voice_for_character(self, name: str, skip: int = -1, gender: str = "") -> str:
-        from claynext.services.gender_voices import pick_voice_for_gender
+        from claynext.models.gender_voices import pick_voice_for_gender
 
         lead, co_star = self._primary_voices()
         for index, seg in enumerate(self._segments):
@@ -1493,7 +1493,7 @@ class ScriptTools:
         return lead
 
     def _reassign_character_voices(self, *, force_redetect: bool = False):
-        from claynext.services.gender_voices import assign_gender_and_voices
+        from claynext.models.gender_voices import assign_gender_and_voices
 
         lead, co_star = self._primary_voices()
         assign_gender_and_voices(
@@ -1640,7 +1640,7 @@ class ScriptTools:
             if vid:
                 changes["tts_voice_hint"] = vid
                 changes["voice_id"] = vid
-                from claynext.services.gender_voices import voice_entry_gender
+                from claynext.models.gender_voices import voice_entry_gender
                 g = voice_entry_gender(vid)
                 if g != "Unknown":
                     changes["gender"] = g
@@ -1653,7 +1653,7 @@ class ScriptTools:
             self.log.info(f"{changed} line(s) · {speaker}" + (f" · {vid}" if vid else "") + " · pending")
 
     def _change_genders(self, rows: list[int], gender: str):
-        from claynext.services.gender_voices import apply_manual_gender
+        from claynext.models.gender_voices import apply_manual_gender
 
         lead, co_star = self._primary_voices()
         apply_manual_gender(
@@ -1697,8 +1697,8 @@ class ScriptTools:
                 audio = source
 
         def _job(progress_callback=None):
-            from claynext.services.gender_audio import enrich_segments_with_audio_gender, gender_model_available
-            from claynext.services.gender_voices import assign_gender_and_voices
+            from claynext.models.gender_audio import enrich_segments_with_audio_gender, gender_model_available
+            from claynext.models.gender_voices import assign_gender_and_voices
 
             segs = list(self._segments)
             used_audio = False
@@ -1899,3 +1899,4 @@ class ScriptTools:
         self.empty_hint.setText(
             "Select a movie and dub, or Import a script (SRT / VTT / JSON)"
         )
+

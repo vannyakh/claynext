@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from claynext.services.llm_keys import PROVIDERS, get_key_pool, _parse_iso, _now
+from claynext.models.llm_keys import PROVIDERS, get_key_pool, _parse_iso, _now
 from claynext.controllers.store import get_store
 
 
@@ -181,3 +181,4 @@ class ApiKeysDialog(QDialog):
         for rec in self._pool.list_keys(self._provider_id()):
             store.update_api_key_state(int(rec["id"]), fail_count=0, clear_cooldown=True)
         self._reload()
+

@@ -217,3 +217,4 @@ def launcher_qss(accent: str, wash: str) -> str:
 }}
 
 """
+

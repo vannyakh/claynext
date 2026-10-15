@@ -734,3 +734,4 @@ class TextInspector(QWidget):
             f"{'Speed' if self._anim_slot == 'anim_loop' else 'Duration'} · {int(value) / 1000:.1f}s"
         )
         self._emit()
+

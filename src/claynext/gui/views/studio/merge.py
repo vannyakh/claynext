@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from claynext.gui.worker import Worker
-from claynext.services.ffmpeg_service import probe_duration
+from claynext.adapters.ffmpeg_service import probe_duration
 from claynext.gui.components.timeline.helpers import fmt_ms
 
 
@@ -133,3 +133,4 @@ class MergeOrderDialog(QDialog):
             if path:
                 paths.append(str(path))
         return paths
+

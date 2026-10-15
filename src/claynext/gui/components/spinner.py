@@ -49,3 +49,4 @@ class Spinner(QWidget):
         painter.setPen(pen)
         painter.drawArc(rect, 0, 360 * 16)
         painter.end()
+

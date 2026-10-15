@@ -1,4 +1,4 @@
-from claynext.services.ffmpeg_service import probe_media
+from claynext.adapters.ffmpeg_adapter import probe_media
 import os
 import time
 
@@ -14,12 +14,12 @@ from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput, QVideoSink
 from claynext.constants.theme_constants import (
     COLOR_BG_CARD, COLOR_BG_SIDEBAR, COLOR_PRIMARY, COLOR_TEXT_SUB,
 )
-from claynext.services.video_adjust import clean_adjust, grade_rgb
-from claynext.services.video_fx import TIMED_EFFECTS, apply_fx
+from claynext.models.adjust import clean_adjust, grade_rgb
+from claynext.models.fx import TIMED_EFFECTS, apply_fx
 from claynext.gui.icons import icon
-from claynext.services.thumbnails import pixmap_for, VIDEO_EXTS
-from claynext.services.media_compat import ensure_playback_file, ready_playback_path
-from claynext.services.video_canvas import (
+from claynext.models.thumbnails import pixmap_for, VIDEO_EXTS
+from claynext.adapters.media import ensure_playback_file, ready_playback_path
+from claynext.models.canvas import (
     DEFAULT_CANVAS, PREVIEW_BLUR_DIV, clean_canvas, covers_canvas, ratio_value, video_box,
 )
 from claynext.gui.worker import Worker
@@ -1576,7 +1576,8 @@ class MediaPreviewWidget(QWidget):
         # Auto-recover using proxy processor if playback stream errors out
         if self._path and not getattr(self, "_proxy_recovering", False):
             self._proxy_recovering = True
-            from claynext.services.media_compat import ensure_proxy_render
+            # pyrefly: ignore [missing-import]
+            from claynext.models.media_service import ensure_proxy_render
             gen = self._load_gen
             worker = Worker(ensure_proxy_render, self._path)
             worker.signals.result.connect(lambda proxy_path, g=gen: self._on_proxy_recovered(g, proxy_path))
@@ -1608,3 +1609,4 @@ class MediaPreviewWidget(QWidget):
             and self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState
         ):
             self._show_poster(self._path)
+

@@ -239,3 +239,4 @@ QSplitter::handle:vertical {{
 }}
 
 """
+

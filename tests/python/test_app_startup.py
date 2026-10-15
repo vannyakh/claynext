@@ -28,6 +28,27 @@ class TestAppStartup(unittest.TestCase):
         engine = get_rust_engine()
         self.assertIsNotNone(engine)
 
+    def test_rust_ai_adapter(self):
+        from claynext.adapters.rust_core_adapter import RustAiAdapter
+
+        # Test rate limit parsing via Rust AI binary
+        limited, retry_after = RustAiAdapter.parse_retry_after(429, header="35", body="Rate limited")
+        self.assertTrue(limited)
+        self.assertGreaterEqual(retry_after, 20.0)
+
+        # Test expression tags parsing
+        tags = RustAiAdapter.parse_expression_tags("Hello! [pause: 0.5s] [excited] Wow!")
+        self.assertGreaterEqual(len(tags), 2)
+
+    def test_llm_keys_pool(self):
+        from claynext.models.llm_keys import parse_retry_after, is_rate_limit
+
+        self.assertTrue(is_rate_limit(429))
+        self.assertTrue(is_rate_limit(200, "RESOURCE_EXHAUSTED"))
+        self.assertFalse(is_rate_limit(200, "success"))
+        self.assertGreaterEqual(parse_retry_after(headers={"Retry-After": "45"}), 20.0)
+
 
 if __name__ == "__main__":
     unittest.main()
+

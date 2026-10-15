@@ -58,3 +58,4 @@ class WaveVisualizerWidget(QWidget):
         # Center timeline indicator line
         painter.setPen(QPen(QColor(52, 211, 153, 180), 2, Qt.PenStyle.DashLine))
         painter.drawLine(int(width / 2), 10, int(width / 2), height - 10)
+

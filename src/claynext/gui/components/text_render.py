@@ -498,3 +498,4 @@ def anim_preview_pixmap(
     _fit_paint(p, style, text, w, h, frame=frame, fill=0.58)
     p.end()
     return pix
+

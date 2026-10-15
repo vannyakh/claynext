@@ -8,8 +8,8 @@ from PySide6.QtGui import QBrush, QColor
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy
 
-from claynext.services.dubbing_service import timestamp_to_sec
-from claynext.services.video_canvas import ratio_value
+from claynext.models.dubbing_service import timestamp_to_sec
+from claynext.models.canvas import ratio_value
 from claynext.gui.components.media_preview import MediaPlaybackWidget, MediaPreviewWidget
 from claynext.gui.components.overlay_canvas import OverlayCanvas, PreviewStageHost
 
@@ -410,3 +410,4 @@ class PreviewTools:
                 item = self.table.item(r, c)
                 if item:
                     item.setBackground(brush)
+

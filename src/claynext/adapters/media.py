@@ -3,17 +3,92 @@ Media Adapter: Native Rust media inspection and audio extraction operations.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
-from claynext.adapters.rust_core_adapter import get_rust_core
+from claynext.adapters.rust_core_adapter import RustCpuAdapter, RustFfmpegAdapter, get_rust_core
+from claynext.models.media import MediaMetadata
+from claynext.utils.paths import PLAYBACK_DIR, PROXY_DIR, THUMB_DIR
 
 logger = logging.getLogger("claynext.adapters.media")
 
+_SAFE_EXTS = {".mp3", ".wav", ".flac", ".ogg"}
+
+
+def _cache_path(media_path: str, suffix: str = "aaclc-v3") -> Path:
+    abs_path = os.path.abspath(media_path)
+    try:
+        stamp = f"{os.path.getmtime(abs_path)}|{os.path.getsize(abs_path)}"
+    except OSError:
+        stamp = "0"
+    key = hashlib.sha1(f"{abs_path}|{stamp}|{suffix}".encode()).hexdigest()
+    return PLAYBACK_DIR / f"{key}.mp4"
+
+
+def ready_playback_path(media_path: str) -> str | None:
+    """Return a Qt-safe path if one is already available."""
+    if not media_path or not os.path.isfile(media_path):
+        return None
+    abs_path = os.path.abspath(media_path)
+    ext = os.path.splitext(abs_path)[1].lower()
+    if ext in _SAFE_EXTS:
+        return abs_path
+    cached = _cache_path(abs_path)
+    if cached.is_file() and cached.stat().st_size > 0:
+        return str(cached)
+    return None
+
+
+def ensure_playback_file(media_path: str) -> str:
+    """Ensure media file is in a safe format for fluid playback via Rust transcode."""
+    ready = ready_playback_path(media_path)
+    if ready:
+        return ready
+
+    abs_path = os.path.abspath(media_path)
+    cached = _cache_path(abs_path)
+    PLAYBACK_DIR.mkdir(parents=True, exist_ok=True)
+
+    success = RustFfmpegAdapter.transcode_video(
+        input_path=abs_path,
+        output_path=cached,
+        video_codec="copy",
+        crf=23,
+    )
+    if success and cached.is_file():
+        return str(cached)
+    return abs_path
+
+
+def ensure_proxy_render(media_path: str) -> str:
+    """Generate 720p lightweight H.264 proxy via Rust transcode."""
+    abs_path = os.path.abspath(media_path)
+    key = hashlib.sha1(f"{abs_path}|proxy_720p".encode()).hexdigest()
+    PROXY_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = PROXY_DIR / f"{key}.mp4"
+    if out_path.is_file() and out_path.stat().st_size > 0:
+        return str(out_path)
+
+    RustFfmpegAdapter.transcode_video(
+        input_path=abs_path,
+        output_path=out_path,
+        video_codec="libx264",
+        crf=26,
+    )
+    return str(out_path) if out_path.is_file() else abs_path
+
+
+def inspect_media(file_path: str | Path) -> MediaMetadata:
+    """Inspect media format and stream details using native Rust core."""
+    from claynext.adapters.ffmpeg_adapter import probe_media
+    return probe_media(file_path)
+
 
 class MediaAdapter:
-    """Provides high-performance media probe and inspection via native Rust core."""
+    """Provides high-performance media probe, waveform and inspection via native Rust core."""
 
     def __init__(self) -> None:
         self._rust = get_rust_core()
@@ -42,6 +117,10 @@ class MediaAdapter:
         """Extract raw 32-bit floating point PCM audio stream from video/audio container."""
         return self._rust.extract_pcm_stream(media_path, sample_rate=sample_rate, channels=channels)
 
+    def generate_waveform_peaks(self, raw_pcm_f32: bytes, target_bins: int = 2000) -> list[dict[str, float]]:
+        """Compute visualizer waveform peaks using native Rust CPU downsampler."""
+        return RustCpuAdapter.downsample_waveform(raw_pcm_f32, target_bins=target_bins)
+
 
 _media_adapter: MediaAdapter | None = None
 
@@ -51,3 +130,4 @@ def get_media_adapter() -> MediaAdapter:
     if _media_adapter is None:
         _media_adapter = MediaAdapter()
     return _media_adapter
+

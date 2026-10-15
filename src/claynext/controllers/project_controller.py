@@ -6,13 +6,13 @@ delegating state and file operations to native Rust engine.
 """
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
 
 from claynext.adapters.rust_engine import get_rust_engine
 from claynext.models.project import ProjectDocument, ProjectSettings
-from claynext.services.project_service import ProjectService
 from claynext.utils.paths import PROJECT_DIR
 
 logger = logging.getLogger("claynext.controllers.project")
@@ -44,8 +44,21 @@ class ProjectController:
             settings=settings,
             media=settings.media_path,
         )
-        saved_path = ProjectService.save_project_file(dest, doc)
-        return str(saved_path)
+        payload = {
+            "name": doc.name,
+            "format": doc.format,
+            "version": doc.version,
+            "saved_at": doc.saved_at,
+            "media": doc.media,
+            "tracks": doc.tracks,
+            "segments": doc.segments,
+            "overlays": doc.overlays,
+            "fx": doc.fx,
+            "tasks": doc.tasks,
+            "takes": doc.takes,
+        }
+        dest.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        return str(dest)
 
     @staticmethod
     def load_project(file_path: str | Path) -> dict[str, Any]:
@@ -53,4 +66,7 @@ class ProjectController:
         engine = get_rust_engine()
         if engine.is_available():
             engine.open_project(str(file_path))
-        return ProjectService.load_project_file(file_path)
+        p = Path(file_path)
+        if not p.is_file():
+            raise FileNotFoundError(f"Project not found: {p}")
+        return json.loads(p.read_text(encoding="utf-8"))

@@ -269,7 +269,7 @@ class RustCpuAdapter:
 
 
 class RustAiAdapter:
-    """Interfaces with `backends/ai-runtime` (claynext-ai)."""
+    """Interfaces with `backends/ai-runtime` (claynext-ai) and `crates/editor-ai`."""
 
     @classmethod
     def get_device_config(cls) -> dict[str, Any]:
@@ -283,6 +283,120 @@ class RustAiAdapter:
             except Exception as e:
                 logger.warning(f"Rust AI device config failed: {e}")
         return {"provider": "DirectML", "device_id": 0, "num_threads": 4, "enable_fp16": True}
+
+    @classmethod
+    def vad_chunk(cls) -> list[dict[str, Any]]:
+        binary = _find_binary("claynext-ai")
+        if binary:
+            try:
+                res = subprocess.run(
+                    [str(binary), "vad-sim"], capture_output=True, text=True, check=True
+                )
+                return json.loads(res.stdout)
+            except Exception as e:
+                logger.warning(f"Rust AI vad-sim failed: {e}")
+        return []
+
+    @classmethod
+    def parse_retry_after(cls, status: int, header: str | None = None, body: str = "") -> tuple[bool, float]:
+        binary = _find_binary("claynext-ai")
+        if binary:
+            try:
+                args = [str(binary), "llm-parse-retry", str(status), header or "", body or ""]
+                res = subprocess.run(args, capture_output=True, text=True, check=True)
+                data = json.loads(res.stdout.strip())
+                return bool(data.get("is_rate_limit", False)), float(data.get("retry_after_secs", 20.0))
+            except Exception as e:
+                logger.debug(f"Rust parse-retry failed, falling back: {e}")
+        # Python fallback
+        limited = status == 429 or "rate limit" in body.lower() or "resource_exhausted" in body.lower()
+        return limited, 20.0
+
+    @classmethod
+    def acquire_llm_key(cls, keys: list[dict[str, Any]], provider: str) -> dict[str, Any] | None:
+        binary = _find_binary("claynext-ai")
+        if binary:
+            try:
+                keys_json = json.dumps(keys)
+                res = subprocess.run(
+                    [str(binary), "llm-acquire", keys_json, provider],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                raw = res.stdout.strip()
+                if raw and raw != "null":
+                    return json.loads(raw)
+            except Exception as e:
+                logger.debug(f"Rust acquire-key failed, falling back: {e}")
+        return None
+
+    @classmethod
+    def soonest_cooldown(cls, keys: list[dict[str, Any]], provider: str) -> float:
+        binary = _find_binary("claynext-ai")
+        if binary:
+            try:
+                keys_json = json.dumps(keys)
+                res = subprocess.run(
+                    [str(binary), "llm-soonest-cooldown", keys_json, provider],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                data = json.loads(res.stdout.strip())
+                return float(data.get("soonest_cooldown_secs", 0.0))
+            except Exception as e:
+                logger.debug(f"Rust soonest-cooldown failed, falling back: {e}")
+        return 0.0
+
+    @classmethod
+    def parse_expression_tags(cls, text: str) -> list[dict[str, Any]]:
+        binary = _find_binary("claynext-ai")
+        if binary:
+            try:
+                res = subprocess.run(
+                    [str(binary), "parse-expression-tags", text],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                return json.loads(res.stdout.strip())
+            except Exception as e:
+                logger.debug(f"Rust parse-expression-tags failed: {e}")
+        return []
+
+    @classmethod
+    def chunk_subtitles(cls, text: str, max_chars: int = 1500) -> list[dict[str, Any]]:
+        binary = _find_binary("claynext-ai")
+        if binary:
+            try:
+                res = subprocess.run(
+                    [str(binary), "chunk-subtitles", text, str(max_chars)],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                return json.loads(res.stdout.strip())
+            except Exception as e:
+                logger.debug(f"Rust chunk-subtitles failed: {e}")
+        return []
+
+    @classmethod
+    def filter_ocr(cls, boxes: list[dict[str, Any]], min_confidence: float = 0.5) -> list[dict[str, Any]]:
+        binary = _find_binary("claynext-ai")
+        if binary:
+            try:
+                res = subprocess.run(
+                    [str(binary), "filter-ocr", json.dumps(boxes), str(min_confidence)],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                return json.loads(res.stdout.strip())
+            except Exception as e:
+                logger.debug(f"Rust filter-ocr failed: {e}")
+        return [b for b in boxes if float(b.get("confidence", 0.0)) >= min_confidence]
+
 
 
 class RustWgpuAdapter:

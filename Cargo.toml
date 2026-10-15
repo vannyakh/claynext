@@ -13,6 +13,10 @@ members = [
     "crates/editor-transitions",
     "crates/editor-subtitles",
     "crates/editor-render",
+    "crates/editor-models",
+    "crates/editor-speech",
+    "crates/editor-dubbing",
+    "crates/editor-ai",
     "crates/editor-python",
 
     # Native Backends

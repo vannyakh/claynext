@@ -6,7 +6,7 @@ import os
 
 from PySide6.QtWidgets import QFileDialog, QInputDialog
 
-from claynext.services.dub_project import load_json, save_preset, save_project, write_project
+from claynext.models.dub_project import load_json, save_preset, save_project, write_project
 from claynext.gui.dialogs.project_settings_dialog import ProjectSettingsDialog
 from claynext.gui.views.studio.tasks import STAGES
 
@@ -352,3 +352,4 @@ class ProjectTools:
             self._project = dlg.result_settings()
             self._refresh_project_info()
             self.log.info("Project settings updated")
+

@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 
 from claynext.constants.timeline_constants import AUDIO_EXTS, IMAGE_EXTS
-from claynext.services.thumbnails import VIDEO_EXTS
+from claynext.models.thumbnails import VIDEO_EXTS
 from claynext.gui.components.text_styles_panel import TEXT_STYLE_MIME
 
 
@@ -52,3 +52,4 @@ def kind_for_path(path: str) -> str:
     if ext in AUDIO_EXTS:
         return "audio"
     return ""
+

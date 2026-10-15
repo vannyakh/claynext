@@ -486,3 +486,4 @@ class TrackHeader(QWidget):
         self._compact = compact
         self.name.setVisible(not compact)
         self._update_tier()
+

@@ -9,9 +9,9 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QRadioButton, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from claynext.services.asr_service import ASREngine
-from claynext.services.tts_service import TTSEngine
-from claynext.services.translate_service import TranslateEngine
+from claynext.models.asr_service import ASREngine
+from claynext.models.tts_service import TTSEngine
+from claynext.models.translate_service import TranslateEngine
 from claynext.gui.components.scrub_spin import ScrubSpinBox
 from claynext.gui.components.segment_tabs import SegmentTabs
 from claynext.gui.views.studio.constants import SOURCE_LANGS
@@ -374,3 +374,4 @@ class StartDubDialog(QDialog):
         index = combo.findData(value)
         if index >= 0:
             combo.setCurrentIndex(index)
+

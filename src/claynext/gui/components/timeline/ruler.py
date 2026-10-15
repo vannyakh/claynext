@@ -89,3 +89,4 @@ class TimelineRuler(QWidget):
 
     def mouseReleaseEvent(self, event):
         self._scrub = False
+

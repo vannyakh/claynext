@@ -51,3 +51,4 @@ def new_track(kind: str, index: int = 1) -> TimelineTrack:
         color=color,
         icon=icn,
     )
+

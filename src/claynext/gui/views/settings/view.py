@@ -97,3 +97,4 @@ class SettingsView(QWidget):
 
     def save_config(self):
         QMessageBox.information(self, "Settings Saved", "Configuration updated successfully!")
+

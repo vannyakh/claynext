@@ -11,8 +11,8 @@ from PySide6.QtGui import QColor
 from claynext.utils.config import DEFAULT_CONFIG, MODELS_DIR, OUTPUTS_DIR
 from claynext.gui.icons import icon
 from claynext.gui.worker import Worker
-from claynext.services.hf_hub import get_model_registry, pull_model, is_model_downloaded
-from claynext.services.features import (
+from claynext.models.hf_hub import get_model_registry, pull_model, is_model_downloaded
+from claynext.models.features import (
     DEMUCS_MODELS,
     FEATURE_SETTING_KEYS,
     get_feature_setting,
@@ -329,7 +329,7 @@ class SettingsDialog(QDialog):
     def _refresh_stem_status_label(self, *_args):
         mode = self.combo_stem_mode.currentData() or "auto"
         model = self.combo_demucs_model.currentData() or "htdemucs"
-        from claynext.services.features import stem_backend
+        from claynext.models.features import stem_backend
         backend = stem_backend()
         if mode == "ffmpeg":
             text = "Active bed · FFmpeg mid-side (forced)"
@@ -706,3 +706,4 @@ class SettingsDialog(QDialog):
                 set_feature_setting(key, str(DEFAULT_CONFIG.get(key, "")))
 
         self.accept()
+

@@ -18,10 +18,10 @@ from claynext.constants.theme_constants import (
 )
 from claynext.constants.timeline_constants import FX_KINDS, OVERLAY_KINDS
 from claynext.gui.icons import icon
-from claynext.services.video_adjust import (
+from claynext.models.adjust import (
     ADJUST_FIELDS, FILTER_PRESETS, clean_adjust, filter_sample_rgb, grade_filter_preview,
 )
-from claynext.services.video_canvas import (
+from claynext.models.canvas import (
     BLUR_LEVELS, CANVAS_BACKGROUNDS, CANVAS_COLORS, CANVAS_RATIOS, DEFAULT_CANVAS, POSITION_RANGE,
     SCALE_RANGE, clean_canvas,
 )
@@ -992,3 +992,4 @@ class TrackPropsPage(QWidget):
     def _emit(self, *_):
         if not self._block:
             self.changed.emit()
+

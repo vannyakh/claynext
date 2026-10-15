@@ -5,8 +5,8 @@ import os
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 
-from claynext.services.ffmpeg_service import probe_media
-from claynext.services.thumbnails import IMAGE_EXTS
+from claynext.adapters.ffmpeg_service import probe_media
+from claynext.models.thumbnails import IMAGE_EXTS
 from claynext.gui.components.media_library import MediaLibraryWidget
 
 
@@ -106,3 +106,4 @@ class MediaTools:
             return
         if hasattr(self, "_restore_project_session"):
             self._restore_project_session()
+

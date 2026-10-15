@@ -17,12 +17,12 @@ from claynext.constants.timeline_constants import (
     BG_TL, CLIP_TEAL, FX_KINDS, OVERLAY_KINDS, PLAYHEAD, PRESET, TRACK_DIVIDER, TRACK_MAX_H, TRACK_MIN_H,
 )
 from claynext.constants.theme_constants import COLOR_ACCENT_ROSE, COLOR_TEXT_MAIN
-from claynext.services.dubbing_service import timestamp_to_sec
-from claynext.services.ffmpeg_service import WAVE_RATE, probe_duration
+from claynext.models.dubbing_service import timestamp_to_sec
+from claynext.adapters.ffmpeg_service import WAVE_RATE, probe_duration
 from claynext.gui.icons import icon
 from claynext.models.text_style import anim_spans, clean_text_style
-from claynext.services.video_fx import clean_fx, fx_label
-from claynext.services.video_transitions import TRANSITION_LABELS
+from claynext.models.fx import clean_fx, fx_label
+from claynext.models.transitions import TRANSITION_LABELS
 from claynext.gui.components.shape_render import SHAPE_LABELS, shape_size
 from claynext.gui.components.text_styles_panel import parse_text_style
 from claynext.gui.components.timeline.helpers import fmt_tc, has_drop, paths_from_mime
@@ -2233,3 +2233,4 @@ class TimelineCanvas(QWidget):
         event.acceptProposedAction()
         track = self.track_at_y(int(event.position().y()))
         self.files_dropped.emit(paths, track.id if track else "")
+

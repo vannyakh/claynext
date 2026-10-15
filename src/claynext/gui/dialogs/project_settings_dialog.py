@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal
 
-from claynext.services.dub_project import PROJECT_DIR
+from claynext.models.dub_project import PROJECT_DIR
 
 ASPECT_CHOICES = ["Original", "16:9", "9:16", "1:1", "4:3", "4:5"]
 RESOLUTION_CHOICES = ["Adapted", "2160p", "1080p", "720p"]
@@ -352,3 +352,4 @@ class ProjectSettingsDialog(QDialog):
             "hw_decode": self.chk_hw.isChecked(),
         })
         return out
+

@@ -582,3 +582,4 @@ def _karaoke_ass(text: str, progress: float, style: dict) -> str:
     base = _ass_colour(style.get("color") or "#ffffff")
     cut = spans[active - 1][1] if active else 0
     return rf"{{\1c{hi}}}{_ass_escape(text[:cut])}{{\1c{base}}}{_ass_escape(text[cut:])}"
+

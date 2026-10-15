@@ -419,3 +419,4 @@ QComboBox#script_character_filter::down-arrow {{
 }}
 
 """
+

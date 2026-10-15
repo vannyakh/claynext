@@ -172,3 +172,4 @@ class CollapsibleSection(QWidget):
         else:
             self._body.setVisible(False)
             self._body.setMaximumHeight(0)
+

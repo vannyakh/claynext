@@ -119,3 +119,4 @@ class HeaderWidget(QWidget):
                 letter-spacing: 0.3px;
             }}
         """)
+

@@ -33,3 +33,4 @@ class CodecProfile:
     preset: str = "medium"
     quality_crf: int | None = None
     bitrate_kbps: int | None = None
+

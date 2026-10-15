@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from claynext.services.dub_project import (
+from claynext.models.dub_project import (
     delete_project,
     forget_project,
     list_recent_projects,
@@ -290,3 +290,4 @@ class HomeRecentPanel(QWidget):
             return
         self.refresh()
         self.changed.emit()
+

@@ -10,12 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from claynext.adapters.dubbing import get_dubbing_adapter
-from claynext.adapters.media import get_media_adapter
+from claynext.adapters.media import get_media_adapter, inspect_media
 from claynext.adapters.rust_engine import get_rust_engine
 from claynext.adapters.timeline import get_timeline_adapter
 from claynext.models.media import MediaMetadata
-from claynext.services.media_service import MediaService
-from claynext.services.project_service import ProjectService
+import json
 
 logger = logging.getLogger("claynext.controllers.studio")
 
@@ -33,23 +32,25 @@ class StudioController:
 
     def load_project(self, project_path: str | Path) -> dict[str, Any]:
         """Load a project file into the studio controller and synchronize Rust engine."""
-        path_str = str(project_path)
-        data = ProjectService.load_project_file(path_str)
-        self.active_project_path = path_str
+        path = Path(project_path)
+        if not path.is_file():
+            raise FileNotFoundError(f"Project not found: {path}")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        self.active_project_path = str(path)
 
         # Synchronize Rust engine
         if self._engine.is_available():
-            self._engine.open_project(path_str)
+            self._engine.open_project(str(path))
 
         media_path = str(data.get("media") or "")
         if media_path and Path(media_path).is_file():
-            self.active_media_meta = MediaService.inspect(media_path)
+            self.active_media_meta = inspect_media(media_path)
 
         return data
 
     def inspect_media(self, media_path: str | Path) -> MediaMetadata:
         """Inspect media file properties using native Rust backend."""
-        meta = MediaService.inspect(media_path)
+        meta = inspect_media(media_path)
         self.active_media_meta = meta
         return meta
 

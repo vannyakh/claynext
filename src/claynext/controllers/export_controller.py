@@ -13,7 +13,6 @@ from typing import Any, Callable
 from claynext.adapters.hardware_codecs_adapter import get_hardware_codecs
 from claynext.adapters.rendering import get_rendering_adapter
 from claynext.models.hardware import CodecProfile
-from claynext.services.export_service import ExportService
 
 logger = logging.getLogger("claynext.controllers.export")
 
@@ -28,7 +27,9 @@ class ExportController:
 
     def get_recommended_encoder(self, prefer_hevc: bool = True) -> CodecProfile:
         """Query native Rust hardware codecs backend for optimal encoder profile."""
-        profile = ExportService.get_optimal_video_profile(prefer_hevc=prefer_hevc)
+        from claynext.adapters.hardware_codecs_adapter import get_recommended_encoder
+
+        profile = get_recommended_encoder(prefer_hevc=prefer_hevc)
         self._current_profile = profile
         return profile
 
@@ -60,11 +61,9 @@ class ExportController:
     ) -> list[str]:
         """Construct full FFmpeg arguments using recommended hardware encoder."""
         active_prof = profile or self._current_profile or self.get_recommended_encoder()
-        return ExportService.build_export_command(
-            input_file=input_file,
-            output_file=output_file,
-            profile=active_prof,
-            width=width,
-            height=height,
-            crf=crf,
-        )
+        cmd = ["ffmpeg", "-y", "-hide_banner", "-i", str(input_file)]
+        cmd.extend(active_prof.encoder_args)
+        if width and height:
+            cmd.extend(["-vf", f"scale={width}:{height}"])
+        cmd.extend(["-c:a", "aac", "-b:a", "192k", str(output_file)])
+        return cmd

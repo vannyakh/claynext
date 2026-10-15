@@ -346,3 +346,4 @@ class TextStylesPanel(QWidget):
         style = item.data(Qt.ItemDataRole.UserRole)
         if style:
             self.add_requested.emit(dict(style))
+

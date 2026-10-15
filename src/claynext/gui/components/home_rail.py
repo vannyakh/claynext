@@ -75,3 +75,4 @@ class HomeRail(QFrame):
         tip.setObjectName("home_hint")
         tip.setWordWrap(True)
         lay.addWidget(tip)
+

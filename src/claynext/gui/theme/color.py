@@ -20,3 +20,4 @@ COLORS = {
     "text_muted": "#64748b",
     "text_sub": "#94a3b8",
 }
+

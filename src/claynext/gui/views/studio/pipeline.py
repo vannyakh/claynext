@@ -6,7 +6,7 @@ import os
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 
-from claynext.services.dubbing_service import DubbingEngine
+from claynext.models.dubbing_service import DubbingEngine
 from claynext.utils.job_control import JobControl
 from claynext.gui.worker import Worker
 from claynext.gui.views.studio.captions import is_managed_caption
@@ -68,7 +68,7 @@ class PipelineTools:
         from PySide6.QtWidgets import QDialog
         import time
 
-        from claynext.services.ffmpeg_service import concat_videos
+        from claynext.adapters.ffmpeg_service import concat_videos
         from claynext.gui.views.studio.merge import MergeOrderDialog
 
         order = MergeOrderDialog(
@@ -495,9 +495,9 @@ class PipelineTools:
 
     def _build_speech_bed(self, index: int, source: str):
         def _job(media: str, progress_callback=None):
-            from claynext.services.features import prefer_demucs_bed, stem_backend
-            from claynext.services.stem_separation import ensure_demucs_speech_bed
-            from claynext.services.ffmpeg_service import ensure_speech_bed
+            from claynext.models.features import prefer_demucs_bed, stem_backend
+            from claynext.models.stem_separation import ensure_demucs_speech_bed
+            from claynext.adapters.ffmpeg_service import ensure_speech_bed
 
             backend = stem_backend()
             if prefer_demucs_bed() and backend:
@@ -625,3 +625,4 @@ class PipelineTools:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(OUTPUTS_DIR)))
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+

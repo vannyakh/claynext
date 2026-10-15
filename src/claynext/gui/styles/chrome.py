@@ -124,3 +124,4 @@ QMenu::item:selected QMenu::shortcut {{
 }}
 
 """
+

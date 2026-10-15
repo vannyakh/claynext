@@ -76,3 +76,4 @@ class HomeModeToggle(QFrame):
         self.btn_grid.setIcon(
             icon("grid", color=accent if self._mode == MODE_GRID else COLOR_TEXT_SUB, size=14)
         )
+

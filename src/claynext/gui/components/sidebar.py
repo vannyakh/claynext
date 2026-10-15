@@ -79,3 +79,4 @@ class SidebarWidget(QWidget):
                     btn.setIcon(icon(icon_name, color=COLOR_PRIMARY, size=16))
                 else:
                     btn.setIcon(icon(icon_name, color="#9fb0c3", size=16))
+

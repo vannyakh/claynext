@@ -22,7 +22,7 @@ from claynext.constants.theme_constants import (
 )
 from claynext.gui.icons import icon
 from claynext.models.text_style import SCALE_RANGE, anim_frame, clean_text_style, is_animated
-from claynext.services.video_canvas import clean_canvas, video_box
+from claynext.models.canvas import clean_canvas, video_box
 from claynext.gui.components.scrub_spin import ScrubSpinBox
 from claynext.gui.components.shape_render import paint_shape, shape_px, shape_size
 from claynext.gui.components.text_render import caption_width, fit_caption, item_box, paint_text, wrap_text
@@ -1395,4 +1395,5 @@ class OverlayInspector(QWidget):
     def _emit(self, *_):
         if not self._block:
             self.changed.emit()
+
 

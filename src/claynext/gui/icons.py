@@ -79,3 +79,4 @@ def image_pixmap(name: str, height: int = 32) -> QPixmap:
 def image_icon(name: str, height: int = 32) -> QIcon:
     """Load a PNG image as a QIcon."""
     return QIcon(image_pixmap(name, height))
+

@@ -313,3 +313,4 @@ def open_track_menu(
     menu.setToolTipsVisible(True)
     populate_track_menu(menu, track, handlers, clip=clip)
     menu.exec(global_pos)
+

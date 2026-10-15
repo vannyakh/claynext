@@ -1,0 +1,17 @@
+[package]
+name = "editor-speech"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+editor-types = { path = "../editor-types" }
+editor-models = { path = "../editor-models" }
+claynext-ai-runtime = { path = "../../backends/ai-runtime" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+uuid.workspace = true

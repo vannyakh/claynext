@@ -8,8 +8,8 @@ from PySide6.QtWidgets import (
 )
 
 from claynext.constants.timeline_constants import FX_KINDS, OVERLAY_KINDS
-from claynext.services.thumbnails import pixmap_for
-from claynext.services.video_adjust import clean_adjust
+from claynext.models.thumbnails import pixmap_for
+from claynext.models.adjust import clean_adjust
 from claynext.gui.components.overlay_canvas import TEXT_KINDS
 from claynext.gui.components.fx_shelf import FxShelfPanel
 from claynext.gui.components.properties_panel import TrackPropsPage
@@ -504,3 +504,4 @@ class InspectorTools:
         if track:
             self.track_props.bind(track, self.track_props.clip, source_path=self.timeline.canvas.media_path)
             self._sync_props_header()
+

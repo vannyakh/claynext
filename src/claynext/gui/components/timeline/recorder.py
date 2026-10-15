@@ -100,3 +100,4 @@ class VoiceRecorder(QObject):
         self._session.setAudioInput(None)
         if was_active:
             self.failed.emit(message or "Recording failed")
+

@@ -165,3 +165,4 @@ class SplashScreen(QWidget):
         painter.drawRoundedRect(rect, 16, 16)
 
         painter.end()
+

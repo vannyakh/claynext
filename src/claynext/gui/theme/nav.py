@@ -9,3 +9,4 @@ NAV_ITEMS = [
         "desc": "AI Movie Dubbing & Timeline Editor",
     },
 ]
+

@@ -23,7 +23,7 @@ from claynext.constants import (
     NAV_ITEMS,
 )
 from claynext.constants.theme_constants import COLOR_ACCENT_PURPLE, build_palette
-from claynext.services.dub_project import (
+from claynext.models.dub_project import (
     PROJECT_DIR,
     create_blank_project,
     forget_project,
@@ -287,3 +287,4 @@ class ProjectHomeWindow(QMainWindow):
                 self._frame_cursor = None
                 self.unsetCursor()
         super().mouseMoveEvent(event)
+

@@ -100,3 +100,4 @@ class IconTabShelf(QWidget):
         if btn:
             btn.setChecked(True)
             self._on_tab(index)
+

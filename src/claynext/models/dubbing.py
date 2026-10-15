@@ -25,3 +25,4 @@ class SpeakerVoiceModel:
     voice_id: str = ""
     pitch_adjust: float = 0.0
     rate_adjust: float = 1.0
+

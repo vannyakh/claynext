@@ -125,3 +125,4 @@ def _fit_header_action(widget: QWidget):
         hint = max(56, widget.sizeHint().width())
         widget.setMinimumWidth(hint)
     widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+

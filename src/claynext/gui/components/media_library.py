@@ -25,7 +25,7 @@ from claynext.constants.theme_constants import (
     COLOR_BORDER, COLOR_BG_CARD, COLOR_BG_DARK, COLOR_PRIMARY,
 )
 from claynext.gui.icons import icon
-from claynext.services.thumbnails import icon_for, VIDEO_EXTS, IMAGE_EXTS
+from claynext.models.thumbnails import icon_for, VIDEO_EXTS, IMAGE_EXTS
 
 
 class _MediaList(QListWidget):
@@ -294,7 +294,7 @@ class _DurJob(QRunnable):
 
     def run(self):
         try:
-            from claynext.services.ffmpeg_service import probe_media
+            from claynext.adapters.ffmpeg_service import probe_media
             info = probe_media(self.path)
             dur = float(info.get("duration") or 0.0)
             self.signals.ready.emit(self.path, dur, info)
@@ -1438,3 +1438,4 @@ class MediaLibraryWidget(QWidget):
                 expanded.append(p)
         self.add_files(expanded)
         event.acceptProposedAction()
+

@@ -295,3 +295,4 @@ class ScrubSpinBox(QFrame):
             event.accept()
             return
         super().wheelEvent(event)
+

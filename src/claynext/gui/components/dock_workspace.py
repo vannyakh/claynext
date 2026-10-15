@@ -280,3 +280,4 @@ class DockWorkspace(QWidget):
                 self._apply_chrome(dock, floating=dock.isFloating())
             self.layout_changed.emit()
         return bool(ok)
+

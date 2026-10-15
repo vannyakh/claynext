@@ -369,3 +369,4 @@ class SegmentTabs(QFrame):
 
     def button(self, index: int) -> QPushButton | None:
         return self._group.button(int(index))
+

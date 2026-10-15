@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 from claynext.gui.components.spinner import Spinner
 
 from claynext.gui.icons import icon
-from claynext.services.tts_service import TTSEngine
+from claynext.models.tts_service import TTSEngine
 from claynext.gui.worker import Worker
 from claynext.gui.views.studio.constants import VOICE_SAMPLE_FALLBACK, VOICE_SAMPLES
 from claynext.utils.config import CACHE_DIR
@@ -408,3 +408,4 @@ class VoiceTools:
             self._voice_player.stop()
         if hasattr(self, "_voice_play_btns"):
             self._apply_voice_controls()
+

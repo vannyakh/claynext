@@ -152,3 +152,4 @@ def import_segments(path: str, fmt: str | None = None) -> list[dict]:
     if kind in {"srt", "vtt"}:
         return _parse_cue_file(file_path.read_text(encoding="utf-8"), srt=(kind == "srt"))
     raise ValueError(f"Unsupported import format: {kind}")
+

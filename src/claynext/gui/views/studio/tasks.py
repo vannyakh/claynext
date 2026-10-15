@@ -20,7 +20,7 @@ from claynext.constants.theme_constants import (
     COLOR_TEXT_MAIN, COLOR_PRIMARY, COLOR_BORDER, COLOR_BG_CARD, COLOR_BG_SIDEBAR,
 )
 from claynext.gui.icons import icon
-from claynext.services.thumbnails import VIDEO_EXTS, IMAGE_EXTS, icon_for, pixmap_for, thumb_path_for
+from claynext.models.thumbnails import VIDEO_EXTS, IMAGE_EXTS, icon_for, pixmap_for, thumb_path_for
 from claynext.gui.worker import Worker
 
 from claynext.gui.components.shelf_header import make_shelf_button, make_shelf_header
@@ -1469,3 +1469,4 @@ class TaskTools:
             )
             act.setToolTip(tip)
             act.blockSignals(False)
+

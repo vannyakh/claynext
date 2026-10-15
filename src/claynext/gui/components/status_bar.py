@@ -160,3 +160,4 @@ class CustomStatusBar(QWidget):
 
     def set_active_tool_name(self, name: str):
         self.lbl_active_tool.setText(name)
+

@@ -108,3 +108,4 @@ class DropZoneWidget(QWidget):
         if file_path:
             self.set_loaded(file_path)
             self.file_dropped.emit(file_path)
+

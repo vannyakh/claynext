@@ -325,3 +325,4 @@ QToolButton#new_project_template:checked {{
     color: {COLOR_TEXT_MAIN};
 }}
 """
+

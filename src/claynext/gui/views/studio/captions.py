@@ -827,3 +827,4 @@ class CaptionTools:
                 self.timeline.rail.rebuild(canvas.tracks)
                 self._sync_preview_overlays(force=True)
             self.log.warn("Captions · dub some lines first, then sync segments")
+

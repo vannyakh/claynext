@@ -1411,3 +1411,4 @@ QSlider#dub_setting_slider::handle:horizontal {{
     background: transparent;
 }}
 """
+

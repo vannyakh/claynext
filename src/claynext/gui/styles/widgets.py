@@ -180,3 +180,4 @@ QTabBar::tab:selected {{
 }}
 
 """
+

@@ -17,15 +17,15 @@ from claynext.constants.theme_constants import COLOR_ACCENT_ROSE
 from claynext.constants.timeline_constants import (
     FX_KINDS, LANE_COLLAPSED_W, LANE_MAX_W, LANE_MIN_W, LANE_RATIO, LANE_W, OVERLAY_KINDS, PRESET,
 )
-from claynext.services.ffmpeg_service import (
+from claynext.adapters.ffmpeg_service import (
     extract_audio, extract_wave_envelope, normalize_envelope, probe_duration, probe_media,
 )
 from claynext.gui.icons import icon
 from claynext.models.text_style import apply_case, clean_text_style
-from claynext.services.thumbnails import extract_filmstrip
-from claynext.services.video_adjust import adjust_filter, clean_adjust
-from claynext.services.video_canvas import canvas_filter, clean_canvas, is_neutral
-from claynext.services.video_fx import clean_fx, fx_filters, fx_label
+from claynext.models.thumbnails import extract_filmstrip
+from claynext.models.adjust import adjust_filter, clean_adjust
+from claynext.models.canvas import canvas_filter, clean_canvas, is_neutral
+from claynext.models.fx import clean_fx, fx_filters, fx_label
 from claynext.gui.worker import Worker
 from claynext.utils.paths import OUTPUTS_DIR, STUDIO_CACHE
 from claynext.gui.components.shape_render import shape_drawing
@@ -1580,7 +1580,10 @@ class TimelinePanel(QWidget):
 
     def auto_mix(self, source: str = "") -> bool:
         """Detect original speech in the footage, then key those spans plus the voice clips."""
-        from claynext.services.voice_detect import detect_voice_spans
+        from claynext.adapters.rust_core_adapter import RustAiAdapter
+        def detect_voice_spans(src, **kw):
+            chunks = RustAiAdapter.vad_chunk(src)
+            return [(float(c.get("start_sec", 0.0)), float(c.get("end_sec", 0.0))) for c in chunks]
 
         source = source or self.speech_source or self.canvas.media_path
         if not source or not os.path.isfile(source) or not self.canvas.footage_clips():
@@ -1798,3 +1801,4 @@ class TimelinePanel(QWidget):
         if path != self.canvas.media_path and path not in known:
             return
         self.canvas.set_wave(peaks, path)
+

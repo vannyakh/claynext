@@ -4,8 +4,8 @@ from __future__ import annotations
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import QButtonGroup, QGridLayout, QHBoxLayout, QLabel, QToolButton, QVBoxLayout, QWidget
 
-from claynext.services.video_fx import EFFECTS, FILTER_LOOKS, clean_fx
-from claynext.services.video_transitions import TRANSITIONS
+from claynext.models.fx import EFFECTS, FILTER_LOOKS, clean_fx
+from claynext.models.transitions import TRANSITIONS
 from claynext.gui.components.fx_shelf import fx_tile
 from claynext.gui.components.scrub_spin import ScrubSpinBox
 
@@ -105,3 +105,4 @@ class FxInspector(QWidget):
         self._fx["intensity"] = int(value)
         if not self._block:
             self.changed.emit(dict(self._fx))
+

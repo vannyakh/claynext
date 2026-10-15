@@ -366,3 +366,4 @@ class MainWindow(QMainWindow):
 
 ToolWindow = MainWindow
 ToolsWindow = MainWindow
+

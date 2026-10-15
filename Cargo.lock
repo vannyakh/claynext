@@ -223,6 +223,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "editor-ai"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "claynext-ai-runtime",
+ "editor-dubbing",
+ "editor-models",
+ "editor-speech",
+ "editor-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "editor-api"
 version = "0.1.0"
 dependencies = [
@@ -264,6 +281,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "editor-dubbing"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "claynext-ai-runtime",
+ "editor-models",
+ "editor-speech",
+ "editor-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "editor-effects"
 version = "0.1.0"
 dependencies = [
@@ -281,6 +314,19 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "editor-models"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "editor-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -306,6 +352,21 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "editor-speech"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "claynext-ai-runtime",
+ "editor-models",
+ "editor-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

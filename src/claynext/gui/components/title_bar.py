@@ -206,3 +206,4 @@ class CustomTitleBar(QWidget):
     def mouseReleaseEvent(self, event):
         self._drag_pos = QPoint()
         super().mouseReleaseEvent(event)
+

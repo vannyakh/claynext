@@ -223,3 +223,4 @@ class LaneRail(QWidget):
             self.files_dropped.emit(paths)
         else:
             event.ignore()
+

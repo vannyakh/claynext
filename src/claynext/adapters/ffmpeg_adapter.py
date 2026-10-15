@@ -17,6 +17,9 @@ from claynext.models.media import MediaMetadata, MediaType
 logger = logging.getLogger("claynext.adapters.ffmpeg")
 
 
+WAVE_RATE = 20
+
+
 def probe_media(file_path: str | Path) -> MediaMetadata:
     """Probe media metadata using Rust core probe when available, with fallback to ffprobe subprocess."""
     p = Path(file_path)
@@ -45,12 +48,35 @@ def probe_media(file_path: str | Path) -> MediaMetadata:
         return MediaMetadata(path=str(p), media_type=MediaType.UNKNOWN)
 
 
+def probe_duration(file_path: str | Path) -> float:
+    """Return exact duration in seconds from native Rust probe."""
+    meta = probe_media(file_path)
+    return meta.duration if meta else 0.0
+
+
+def run_ffmpeg(args: list[str]) -> bool:
+    """Execute FFmpeg command through Rust engine or imageio-ffmpeg binary."""
+    try:
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        cmd = [exe] + args
+        subprocess.run(cmd, check=True, capture_output=True)
+        return True
+    except Exception as e:
+        logger.warning(f"run_ffmpeg error: {e}")
+        return False
+
+
 class FFmpegAdapter:
     """Orchestrates media probing and stream processing."""
 
     @staticmethod
     def probe(file_path: str | Path) -> MediaMetadata:
         return probe_media(file_path)
+
+    @staticmethod
+    def duration(file_path: str | Path) -> float:
+        return probe_duration(file_path)
 
 
 _ffmpeg_adapter: FFmpegAdapter | None = None
@@ -61,4 +87,24 @@ def get_ffmpeg_adapter() -> FFmpegAdapter:
     if _ffmpeg_adapter is None:
         _ffmpeg_adapter = FFmpegAdapter()
     return _ffmpeg_adapter
+
+
+# Re-export audio and video transcoding utilities from ffmpeg_service
+from claynext.adapters.ffmpeg_service import (
+    demux_wav,
+    dynamic_duck_audio,
+    ensure_speech_bed,
+    fit_duration,
+    master_voiceover_track,
+    mix_wavs,
+    compose_overlays,
+    mux_video,
+    overlay_clips,
+    volume_wav,
+    make_silence,
+    concat_videos,
+    mix_timeline_audio,
+    render_timeline,
+)
+
 

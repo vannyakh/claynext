@@ -280,3 +280,4 @@ QTableWidget#settings_models_table QScrollBar::sub-line:vertical {{
     height: 0px;
 }}
 """
+

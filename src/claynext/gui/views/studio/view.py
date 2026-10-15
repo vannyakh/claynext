@@ -168,3 +168,4 @@ class StudioView(
         self.shelf.tab_changed.connect(lambda *_: self._save_layout())
         self._build_panels_menu()
         self._bind_space_play()
+

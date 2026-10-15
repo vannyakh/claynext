@@ -90,3 +90,4 @@ class SelectField(QComboBox):
 
     def _emit_value(self, _index: int = 0):
         self.value_changed.emit(self.currentData())
+

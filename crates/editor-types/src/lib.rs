@@ -95,6 +95,42 @@ impl fmt::Display for Rational {
     }
 }
 
+impl std::ops::Add for Rational {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        if self.den == rhs.den {
+            Self::new(self.num + rhs.num, self.den)
+        } else {
+            Self::new(self.num * rhs.den + rhs.num * self.den, self.den * rhs.den)
+        }
+    }
+}
+
+impl std::ops::Sub for Rational {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self::Output {
+        if self.den == rhs.den {
+            Self::new(self.num - rhs.num, self.den)
+        } else {
+            Self::new(self.num * rhs.den - rhs.num * self.den, self.den * rhs.den)
+        }
+    }
+}
+
+impl PartialOrd for Rational {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Rational {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let left = self.num * other.den;
+        let right = other.num * self.den;
+        left.cmp(&right)
+    }
+}
+
 /// Timecode representation based on frames and framerate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Timecode {

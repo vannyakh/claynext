@@ -22,8 +22,8 @@ from PySide6.QtWidgets import (
 )
 
 from claynext.constants.theme_constants import COLOR_BORDER, COLOR_PRIMARY, COLOR_TEXT_MAIN
-from claynext.services.video_fx import DEFAULT_INTENSITY, EFFECTS, FILTER_LOOKS, apply_fx
-from claynext.services.video_transitions import DEFAULT_DURATION_MS, DEFAULT_INTENSITY as TR_INTENSITY, TRANSITIONS
+from claynext.models.fx import DEFAULT_INTENSITY, EFFECTS, FILTER_LOOKS, apply_fx
+from claynext.models.transitions import DEFAULT_DURATION_MS, DEFAULT_INTENSITY as TR_INTENSITY, TRANSITIONS
 from claynext.gui.components.shape_render import (
     BLUR_SHAPES, ELEMENTS, SHAPES, element_tile_icon, sample_cinematic_image, shape_size,
 )
@@ -355,4 +355,5 @@ class FxShelfPanel(QWidget):
         data = item.data(Qt.ItemDataRole.UserRole) if item else None
         if data:
             self.add_requested.emit(dict(data))
+
 

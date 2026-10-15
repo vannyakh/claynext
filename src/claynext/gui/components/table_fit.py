@@ -51,3 +51,4 @@ def fit_or_scroll(table: QTableWidget, columns: tuple[int, ...], min_width: int 
     table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
     table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
     table._flex_columns = _FlexColumns(table, columns, min_width)
+

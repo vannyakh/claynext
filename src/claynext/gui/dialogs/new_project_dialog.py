@@ -39,8 +39,8 @@ from claynext.constants.theme_constants import (
     COLOR_TEXT_SUB,
     primary_color,
 )
-from claynext.services.dub_project import PROJECT_DIR, _slug
-from claynext.services.ffmpeg_service import probe_media
+from claynext.models.dub_project import PROJECT_DIR, _slug
+from claynext.adapters.ffmpeg_service import probe_media
 from claynext.gui.icons import icon
 from claynext.gui.worker import Worker
 from claynext.gui.dialogs.project_settings_dialog import (
@@ -674,3 +674,4 @@ class NewProjectDialog(QDialog):
 
     def open_after_create(self) -> bool:
         return True
+
