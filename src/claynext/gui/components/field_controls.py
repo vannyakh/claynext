@@ -31,7 +31,7 @@ class SearchField(QLineEdit):
         parent=None,
     ):
         super().__init__(parent)
-        self.setObjectName("minj_search")
+        self.setObjectName("claynext_search")
         self.setPlaceholderText(placeholder)
         self.setClearButtonEnabled(True)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -58,7 +58,7 @@ class SelectField(QComboBox):
         parent=None,
     ):
         super().__init__(parent)
-        self.setObjectName("minj_select")
+        self.setObjectName("claynext_select")
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon

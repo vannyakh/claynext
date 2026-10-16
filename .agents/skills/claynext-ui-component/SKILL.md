@@ -1,15 +1,15 @@
 ---
-name: minj-ui-component
-description: Guide for creating, styling, and refactoring PySide6 widgets, views, and custom panels (timeline, wave visualizer, drop zone, media preview) using MinJ's Cyber Dark design system.
+name: claynext-ui-component
+description: Guide for creating, styling, and refactoring PySide6 widgets, views, and custom panels (timeline, wave visualizer, drop zone, media preview) using Claynext's Cyber Dark design system.
 ---
 
-# MinJ PySide6 UI Component & View Guide
+# Claynext PySide6 UI Component & View Guide
 
-This skill provides step-by-step instructions for creating, extending, and styling PySide6 UI components in MinJ AI Media Studio.
+This skill provides step-by-step instructions for creating, extending, and styling PySide6 UI components in Claynext Studio.
 
 ---
 
-## 1. Creating a Standard MinJ Tool View
+## 1. Creating a Standard Claynext Tool View
 
 All main tool views reside in `src/claynext/gui/views/` (e.g. `asr_view.py`, `dubbing_view.py`).
 
@@ -29,7 +29,7 @@ from claynext.core.worker import Worker
 
 
 class CustomToolView(QWidget):
-    """MinJ Tool View implementing Cyber Dark styling and async worker execution."""
+    """Claynext Tool View implementing Cyber Dark styling and async worker execution."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -86,19 +86,19 @@ class CustomToolView(QWidget):
 
 ## 2. Using Built-In Reusable Components
 
-### DropZone ([drop_zone.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/components/drop_zone.py))
+### DropZone ([drop_zone.py](file:///H:/Claynext/src/claynext/gui/components/drop_zone.py))
 - Interactive drag-and-drop zone with animated hover border, file browser dialog, and icon preview.
 - Emits `file_selected(str)` signal when a file is accepted.
 
-### MediaPreviewWidget ([media_preview.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/components/media_preview.py))
+### MediaPreviewWidget ([media_preview.py](file:///H:/Claynext/src/claynext/gui/components/media_preview.py))
 - Combines `QMediaPlayer`, `QVideoWidget` / `QAudioOutput`, transport bar (Play, Pause, Scrub, Volume, Timecode), and resolution tags.
 - Load media with `widget.load_media(media_path)`.
 
-### TimelinePanel ([timeline_panel.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/components/timeline_panel.py))
+### TimelinePanel ([timeline_panel.py](file:///H:/Claynext/src/claynext/gui/components/timeline_panel.py))
 - Multi-track timeline (Video, Dialogue, Music, Sound Effects).
 - Supports draggable clip blocks, playhead scrub, snapping, and zoom.
 
-### WaveVisualizer ([wave_visualizer.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/components/wave_visualizer.py))
+### WaveVisualizer ([wave_visualizer.py](file:///H:/Claynext/src/claynext/gui/components/wave_visualizer.py))
 - Renders audio waveform amplitudes using `QPainter` with gradient fills matching tool accent colors.
 
 ---

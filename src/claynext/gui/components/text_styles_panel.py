@@ -22,7 +22,7 @@ from claynext.models.text_style import anim_frame, clean_text_style, is_animated
 from claynext.gui.components.shelf_header import make_shelf_header
 from claynext.gui.components.text_render import template_pixmap
 
-TEXT_STYLE_MIME = "application/x-minj-text-style"
+TEXT_STYLE_MIME = "application/x-claynext-text-style"
 TILE = QSize(106, 62)
 
 CATEGORIES: list[tuple[str, str]] = [

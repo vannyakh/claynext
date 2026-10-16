@@ -246,7 +246,7 @@ def synthesize_with_tags(
     if progress_callback:
         progress_callback(35, "Synthesizing with expression tags…")
 
-    work = Path(tempfile.mkdtemp(prefix="minj_expr_"))
+    work = Path(tempfile.mkdtemp(prefix="claynext_expr_"))
     clip_paths: list[str] = []
     try:
         for i, part in enumerate(parts):

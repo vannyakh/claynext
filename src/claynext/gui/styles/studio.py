@@ -895,7 +895,7 @@ QToolButton#shelf_header_btn[role="add"]:hover {{
 }}
 
 /* Shared segmented tabs (Properties / Dub / Text / Preview) */
-#minj_seg_chrome, #dub_props_tabs {{
+#claynext_seg_chrome, #dub_props_tabs {{
     background-color: {COLOR_BG_SIDEBAR};
     border: none;
     border-bottom: 1px solid {COLOR_BORDER}44;
@@ -905,7 +905,7 @@ QToolButton#shelf_header_btn[role="add"]:hover {{
     border: none;
     border-bottom: 1px solid {COLOR_BORDER}44;
 }}
-#minj_seg_host, #minj_seg_sm {{
+#claynext_seg_host, #claynext_seg_sm {{
     background: transparent;
     border: none;
 }}
@@ -942,16 +942,16 @@ QPushButton#chrome_tab_btn:checked {{
     background-color: transparent;
     border: none;
 }}
-#minj_seg, #dub_props_seg {{
+#claynext_seg, #dub_props_seg {{
     background-color: {COLOR_BG_SEGMENT};
     border: 1px solid {COLOR_BORDER};
     border-radius: 8px;
 }}
-#minj_seg_sm #minj_seg {{
+#claynext_seg_sm #claynext_seg {{
     border-radius: 11px;
     max-height: 22px;
 }}
-QPushButton#minj_seg_btn, QPushButton#dub_props_tab {{
+QPushButton#claynext_seg_btn, QPushButton#dub_props_tab {{
     background-color: transparent;
     color: {COLOR_TEXT_MUTED};
     font-size: 11px;
@@ -962,18 +962,18 @@ QPushButton#minj_seg_btn, QPushButton#dub_props_tab {{
     min-height: 24px;
     max-height: 26px;
 }}
-#minj_seg_sm QPushButton#minj_seg_btn {{
+#claynext_seg_sm QPushButton#claynext_seg_btn {{
     font-size: 10px;
     padding: 0 10px;
     min-height: 18px;
     max-height: 20px;
     border-radius: 10px;
 }}
-QPushButton#minj_seg_btn:hover, QPushButton#dub_props_tab:hover {{
+QPushButton#claynext_seg_btn:hover, QPushButton#dub_props_tab:hover {{
     background-color: transparent;
     color: {COLOR_TEXT_MAIN};
 }}
-QPushButton#minj_seg_btn:checked, QPushButton#dub_props_tab:checked {{
+QPushButton#claynext_seg_btn:checked, QPushButton#dub_props_tab:checked {{
     /* Sliding pill is painted by SegmentTrack — keep label normal weight. */
     background-color: transparent;
     color: {COLOR_TEXT_MAIN};
@@ -1019,14 +1019,14 @@ QToolButton#dub_props_ratio:checked {{
     background-color: rgba(139, 92, 246, 0.18);
     border: 1px solid {COLOR_ACCENT_PURPLE};
 }}
-#dub_props_tabs_host #minj_seg_sm {{
+#dub_props_tabs_host #claynext_seg_sm {{
     min-width: 0;
 }}
-#dub_props_tabs_host #minj_seg_sm #minj_seg {{
+#dub_props_tabs_host #claynext_seg_sm #claynext_seg {{
     min-width: 0;
     max-height: 22px;
 }}
-#dub_props_tabs_host QPushButton#minj_seg_btn {{
+#dub_props_tabs_host QPushButton#claynext_seg_btn {{
     min-width: 0;
     padding: 0 6px;
 }}
@@ -1306,15 +1306,15 @@ QPushButton#dub_props_ghost_btn:pressed {{
     border: none;
     border-bottom: 1px solid {COLOR_BORDER}44;
 }}
-#start_dub_chrome #minj_seg_sm {{
+#start_dub_chrome #claynext_seg_sm {{
     background: transparent;
     min-width: 0;
 }}
-#start_dub_chrome #minj_seg_sm #minj_seg {{
+#start_dub_chrome #claynext_seg_sm #claynext_seg {{
     min-width: 0;
     max-height: 22px;
 }}
-#start_dub_chrome QPushButton#minj_seg_btn {{
+#start_dub_chrome QPushButton#claynext_seg_btn {{
     min-width: 0;
     padding: 0 8px;
 }}

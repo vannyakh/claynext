@@ -48,8 +48,8 @@ All 5 crates share common, audited dependencies:
 
 ## 3. Scripts and CLI Entry Points Cleaned
 
-1. **`claynext-dub-plan` & `jela-dub-plan`**:
-   - Updated from obsolete `claynext.core.dubbing_plan:main` to `claynext.services.dubbing_plan:main`.
+1. **`claynext-dub-plan`**:
+   - Entry point: `claynext.services.dubbing_plan:main`.
 2. **`extract_dubbing_batches.py`**:
    - Updated from legacy `claynext.core.dubbing_plan` to `claynext.services.dubbing_plan`.
    - Removed obsolete copy inside `src/claynext/tools/`.

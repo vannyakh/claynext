@@ -1,6 +1,6 @@
 # Claynext Studio — Workspace Rules
 
-Architecture, design standards, and operational guidelines for AI agents working in the **Claynext Studio** repository (reduced from MinJ; studio/dubbing editor only).
+Architecture, design standards, and operational guidelines for AI agents working in the **Claynext Studio** repository (studio/dubbing editor).
 
 ---
 

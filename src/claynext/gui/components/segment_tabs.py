@@ -137,7 +137,7 @@ class SegmentTrack(QFrame):
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setObjectName("minj_seg")
+        self.setObjectName("claynext_seg")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._anim: QVariantAnimation | None = None
         self._pill_x = 0.0
@@ -284,7 +284,7 @@ class SegmentTabs(QFrame):
             btn_stretch = False
             self._track = None
         elif chrome:
-            self.setObjectName("minj_seg_chrome")
+            self.setObjectName("claynext_seg_chrome")
             outer.setContentsMargins(8, 4, 8, 4)
             track = SegmentTrack()
             track_l = QHBoxLayout(track)
@@ -294,7 +294,7 @@ class SegmentTabs(QFrame):
             btn_stretch = True
             self._track = track
         elif compact:
-            self.setObjectName("minj_seg_sm")
+            self.setObjectName("claynext_seg_sm")
             outer.setContentsMargins(0, 0, 0, 0)
             outer.setAlignment(
                 Qt.AlignmentFlag.AlignVCenter
@@ -316,7 +316,7 @@ class SegmentTabs(QFrame):
             btn_stretch = compact_fill
             self._track = track
         else:
-            self.setObjectName("minj_seg_host")
+            self.setObjectName("claynext_seg_host")
             outer.setContentsMargins(0, 0, 0, 0)
             track = SegmentTrack()
             track_l = QHBoxLayout(track)
@@ -333,7 +333,7 @@ class SegmentTabs(QFrame):
                 btn = btn_factory(label)
             else:
                 btn = QPushButton(label)
-                btn.setObjectName("minj_seg_btn")
+                btn.setObjectName("claynext_seg_btn")
                 btn.setCheckable(True)
                 btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 font = QFont(btn.font())

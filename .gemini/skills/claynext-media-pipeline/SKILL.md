@@ -1,19 +1,19 @@
 ---
-name: minj-media-pipeline
-description: Procedures for debugging and extending audio/video pipelines in MinJ (FFmpeg extraction, Faster-Whisper ASR, Edge-TTS synthesis, subtitle translation, and automated dubbing).
+name: claynext-media-pipeline
+description: Procedures for debugging and extending audio/video pipelines in Claynext (FFmpeg extraction, Faster-Whisper ASR, Edge-TTS synthesis, subtitle translation, and automated dubbing).
 ---
 
-# MinJ Media Pipeline & AI Engine Workflows
+# Claynext Media Pipeline & AI Engine Workflows
 
-This skill guides you through interacting with, testing, and debugging the core media and AI pipelines in MinJ.
+This skill guides you through interacting with, testing, and debugging the core media and AI pipelines in claynext.
 
 ---
 
 ## 1. Speech-to-Text (ASR) Pipeline
 
-MinJ uses `faster-whisper` for fast CTranslate2-accelerated transcription.
+Claynext uses `faster-whisper` for fast CTranslate2-accelerated transcription.
 
-### Key Class: `ASREngine` ([asr_engine.py](file:///Users/vannya/Desktop/MinJ/src/claynext/core/asr_engine.py))
+### Key Class: `ASREngine` ([asr_engine.py](file:///H:/Claynext/src/claynext/core/asr_engine.py))
 - **Model Sizes**: `tiny`, `base`, `small`, `medium`, `large-v3`.
 - **Supported Formats**: `.mp4`, `.mkv`, `.avi`, `.mov`, `.mp3`, `.wav`, `.flac`, `.m4a`.
 - **Device Support**: Auto-detects CUDA (`float16`) or CPU (`int8`).
@@ -38,9 +38,9 @@ for s in segments:
 
 ## 2. Text-to-Speech (TTS) Pipeline
 
-MinJ integrates Microsoft Edge TTS neural voices with pitch and speed modulation.
+Claynext integrates Microsoft Edge TTS neural voices with pitch and speed modulation.
 
-### Key Class: `TTSEngine` ([tts_engine.py](file:///Users/vannya/Desktop/MinJ/src/claynext/core/tts_engine.py))
+### Key Class: `TTSEngine` ([tts_engine.py](file:///H:/Claynext/src/claynext/core/tts_engine.py))
 - **Voices**: 100+ multi-lingual neural voices (e.g. `en-US-AriaNeural`, `en-US-GuyNeural`, `es-ES-AlvaroNeural`, `fr-FR-HenriNeural`).
 - **Modifiers**: Rate adjustment (`+0%`, `+20%`, `-10%`), pitch adjustment (`+0Hz`, `+5Hz`).
 
@@ -51,7 +51,7 @@ from claynext.core.tts_engine import TTSEngine
 
 engine = TTSEngine()
 output_path = "data/outputs/test_tts.mp3"
-asyncio.run(engine.synthesize("Hello from MinJ Studio", voice="en-US-AriaNeural", output_file=output_path))
+asyncio.run(engine.synthesize("Hello from Claynext Studio", voice="en-US-AriaNeural", output_file=output_path))
 print(f"Generated TTS audio at: {output_path}")
 ```
 
@@ -69,7 +69,7 @@ The AI Movie Dubbing workflow performs an end-to-end multi-step conversion:
 
 ### Key CLI Dubbing Plan:
 ```bash
-uv run minj-dub-plan --help
+uv run claynext-dub-plan --help
 # Or run tool view directly:
 uv run main.py --tool dubbing --no-splash
 ```
@@ -79,7 +79,7 @@ uv run main.py --tool dubbing --no-splash
 ## 4. Media Compatibility & Proxy Processor
 
 Qt's `QMediaPlayer` can fail on variable framerates or heavy 4K/8K codecs.
-Always route media through [media_compat.py](file:///Users/vannya/Desktop/MinJ/src/claynext/core/media_compat.py):
+Always route media through [media_compat.py](file:///H:/Claynext/src/claynext/core/media_compat.py):
 
 ```python
 from claynext.core.media_compat import ready_playback_path, prepare_playback_media

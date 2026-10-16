@@ -2,8 +2,6 @@
 
 Desktop AI movie dubbing & timeline editor (Python 3.12+, PySide6, `uv`).
 
-Reduced from MinJ — keeps the studio/dubbing editor only.
-
 ## Quick Start
 
 ```bash
@@ -34,7 +32,7 @@ Claynext/
 
 ## Notes
 
-- Package import root is `claynext` (not `minj`).
+- Package import root is `claynext`.
 - Tool id is `studio` (legacy `--tool dubbing` still accepted).
 - Core pipeline modules may still use `dubbing_*` names internally.
 

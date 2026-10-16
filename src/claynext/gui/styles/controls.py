@@ -242,7 +242,7 @@ QHeaderView::section {{
     border: none;
 }}
 /* Shared search / select — size property: sm=24 · md=30 · lg=34 */
-QLineEdit#minj_search, QLineEdit#transcript_search {{
+QLineEdit#claynext_search, QLineEdit#transcript_search {{
     background: {COLOR_BG_INPUT};
     border: 1px solid {COLOR_BORDER};
     border-radius: 8px;
@@ -251,20 +251,20 @@ QLineEdit#minj_search, QLineEdit#transcript_search {{
     font-size: 12px;
     max-width: none;
 }}
-QLineEdit#minj_search[size="sm"], QLineEdit#transcript_search[size="sm"] {{
+QLineEdit#claynext_search[size="sm"], QLineEdit#transcript_search[size="sm"] {{
     border-radius: 6px;
     padding: 0 8px;
     font-size: 11px;
 }}
-QLineEdit#minj_search[size="lg"], QLineEdit#transcript_search[size="lg"] {{
+QLineEdit#claynext_search[size="lg"], QLineEdit#transcript_search[size="lg"] {{
     border-radius: 9px;
     padding: 0 12px;
     font-size: 13px;
 }}
-QLineEdit#minj_search:focus, QLineEdit#transcript_search:focus {{
+QLineEdit#claynext_search:focus, QLineEdit#transcript_search:focus {{
     border-color: {accent}88;
 }}
-QComboBox#minj_select, QComboBox#transcript_speaker_filter {{
+QComboBox#claynext_select, QComboBox#transcript_speaker_filter {{
     background: {COLOR_BG_INPUT};
     border: 1px solid {COLOR_BORDER};
     border-radius: 6px;
@@ -272,22 +272,22 @@ QComboBox#minj_select, QComboBox#transcript_speaker_filter {{
     color: {COLOR_TEXT_MAIN};
     font-size: 11px;
 }}
-QComboBox#minj_select[size="md"], QComboBox#transcript_speaker_filter[size="md"] {{
+QComboBox#claynext_select[size="md"], QComboBox#transcript_speaker_filter[size="md"] {{
     border-radius: 8px;
     font-size: 12px;
 }}
-QComboBox#minj_select[size="lg"], QComboBox#transcript_speaker_filter[size="lg"] {{
+QComboBox#claynext_select[size="lg"], QComboBox#transcript_speaker_filter[size="lg"] {{
     border-radius: 9px;
     font-size: 13px;
 }}
-QComboBox#minj_select:hover, QComboBox#transcript_speaker_filter:hover {{
+QComboBox#claynext_select:hover, QComboBox#transcript_speaker_filter:hover {{
     border-color: {COLOR_BORDER_FOCUS};
 }}
-QComboBox#minj_select::drop-down, QComboBox#transcript_speaker_filter::drop-down {{
+QComboBox#claynext_select::drop-down, QComboBox#transcript_speaker_filter::drop-down {{
     width: 20px;
     border: none;
 }}
-QComboBox#minj_select::down-arrow, QComboBox#transcript_speaker_filter::down-arrow {{
+QComboBox#claynext_select::down-arrow, QComboBox#transcript_speaker_filter::down-arrow {{
     width: 10px;
     height: 10px;
 }}

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Headless Smoke Test & Verification Suite for MinJ AI Media Studio.
+Headless Smoke Test & Verification Suite for Claynext Studio.
 Verifies Python version, package imports, FFmpeg binary, Qt headless GUI initialization,
 and theme stylesheet compilation.
 """
@@ -20,7 +20,7 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 def run_smoke_test() -> int:
     print("=" * 60)
-    print("🧪 MinJ AI Media Studio — Headless Smoke Test")
+    print("🧪 Claynext Studio — Headless Smoke Test")
     print("=" * 60)
     failures = []
 

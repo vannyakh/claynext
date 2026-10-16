@@ -111,10 +111,10 @@ QDockWidget::title {{
     min-height: 36px;
     max-height: 36px;
 }}
-#dock_header #minj_seg, #dock_header #dub_props_seg {{
+#dock_header #claynext_seg, #dock_header #dub_props_seg {{
     border-radius: 6px;
 }}
-#dock_header QPushButton#minj_seg_btn, #dock_header QPushButton#dub_props_tab {{
+#dock_header QPushButton#claynext_seg_btn, #dock_header QPushButton#dub_props_tab {{
     min-height: 18px;
     max-height: 20px;
     padding: 1px 10px;
@@ -126,16 +126,16 @@ QDockWidget::title {{
     border: none;
     max-height: 24px;
 }}
-#dock_header #dub_player_modes #minj_seg_sm,
-#dock_header #dub_player_modes #minj_seg_host {{
+#dock_header #dub_player_modes #claynext_seg_sm,
+#dock_header #dub_player_modes #claynext_seg_host {{
     background: transparent;
 }}
-#dock_header #dub_player_modes #minj_seg {{
+#dock_header #dub_player_modes #claynext_seg {{
     min-width: 148px;
     max-height: 22px;
     border-radius: 11px;
 }}
-#dock_header #dub_player_modes QPushButton#minj_seg_btn {{
+#dock_header #dub_player_modes QPushButton#claynext_seg_btn {{
     min-width: 64px;
     max-width: 88px;
     min-height: 18px;

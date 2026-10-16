@@ -5,7 +5,7 @@ import logging
 import sys
 
 
-def configure_logging(name: str = "minj") -> logging.Logger:
+def configure_logging(name: str = "claynext") -> logging.Logger:
     """Attach one stdout handler. Safe to call more than once."""
     root = logging.getLogger()
     if not root.handlers:

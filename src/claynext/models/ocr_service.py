@@ -30,7 +30,7 @@ class OCREngine:
         mock_ocr_boxes = [
             {
                 "id": 1,
-                "text": "MINJ AI MEDIA STUDIO v1.0",
+                "text": "CLAYNEXT STUDIO v1.0",
                 "box": [40, 30, 340, 45], # [x, y, w, h]
                 "confidence": 0.98,
                 "lang": "en"

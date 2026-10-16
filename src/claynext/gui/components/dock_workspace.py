@@ -76,7 +76,7 @@ class DockHeader(QFrame):
                 child.setFixedHeight(min(h, child.height() or h))
             elif isinstance(child, QPushButton):
                 # Segment tabs size themselves; don't force them to fill the header.
-                if child.objectName() == "minj_seg_btn":
+                if child.objectName() == "claynext_seg_btn":
                     continue
                 child.setMaximumHeight(h)
 

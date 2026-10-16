@@ -1,35 +1,35 @@
 ---
-name: minj-studio
-description: Comprehensive workspace skill for MinJ AI Media Studio. Use to launch, debug, and develop ASR transcription, TTS synthesis, subtitle translation, OCR, video tools, and AI dubbing pipelines.
+name: claynext-studio
+description: Comprehensive workspace skill for Claynext Studio. Use to launch, debug, and develop ASR transcription, TTS synthesis, subtitle translation, OCR, video tools, and AI dubbing pipelines.
 ---
 
-# MinJ AI Media Studio Master Skill
+# Claynext Studio Master Skill
 
-This skill guides you through developing, testing, and debugging the **MinJ AI Media Studio** desktop application.
+This skill guides you through developing, testing, and debugging the **Claynext Studio** desktop application.
 
 ---
 
 ## 1. Quick Navigation & Dev Commands
 
-MinJ provides command-line flags to bypass the splash screen and launch directly into specific tool views:
+Claynext provides command-line flags to bypass the splash screen and launch directly into specific tool views:
 
 Command | Purpose | View Loaded
 :--- | :--- | :---
 `uv run main.py` | Full flow: Splash Screen → Launcher Hub | Launcher Window
 `uv run main.py --no-splash` | Skip splash, open launcher directly | Launcher Window
-`uv run main.py --tool asr --no-splash` | Launch Transcript & ASR Studio | [asr_view.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/views/asr_view.py)
-`uv run main.py --tool dubbing --no-splash` | Launch AI Movie Dubbing Studio | [dubbing_view.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/views/dubbing_view.py)
-`uv run main.py --tool tts --no-splash` | Launch Neural TTS Studio | [tts_view.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/views/tts_view.py)
-`uv run main.py --tool translate --no-splash` | Launch Caption Translator | [translate_view.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/views/translate_view.py)
-`uv run main.py --tool ocr --no-splash` | Launch Video/Image Text OCR | [ocr_view.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/views/ocr_view.py)
-`uv run main.py --tool video --no-splash` | Launch FFmpeg Video Tools | [video_view.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/views/video_view.py)
+`uv run main.py --tool asr --no-splash` | Launch Transcript & ASR Studio | [asr_view.py](file:///H:/Claynext/src/claynext/gui/views/asr_view.py)
+`uv run main.py --tool dubbing --no-splash` | Launch AI Movie Dubbing Studio | [dubbing_view.py](file:///H:/Claynext/src/claynext/gui/views/dubbing_view.py)
+`uv run main.py --tool tts --no-splash` | Launch Neural TTS Studio | [tts_view.py](file:///H:/Claynext/src/claynext/gui/views/tts_view.py)
+`uv run main.py --tool translate --no-splash` | Launch Caption Translator | [translate_view.py](file:///H:/Claynext/src/claynext/gui/views/translate_view.py)
+`uv run main.py --tool ocr --no-splash` | Launch Video/Image Text OCR | [ocr_view.py](file:///H:/Claynext/src/claynext/gui/views/ocr_view.py)
+`uv run main.py --tool video --no-splash` | Launch FFmpeg Video Tools | [video_view.py](file:///H:/Claynext/src/claynext/gui/views/video_view.py)
 
 ---
 
 ## 2. Core Architecture Reference
 
 ```text
-MinJ/
+Claynext/
 ├── main.py                     # Entrypoint (CLI flags: --tool, --no-splash)
 ├── pyproject.toml              # UV / Hatchling packaging config
 ├── assets/                     # Icons (aspect.svg, tools) & banners

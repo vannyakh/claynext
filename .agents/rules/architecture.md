@@ -4,7 +4,7 @@
 Any task taking more than 50 milliseconds (audio/video extraction, Whisper transcription, TTS synthesis, translation, OCR, network I/O, heavy file reads) **MUST** run on a background thread.
 
 ### The `Worker` Standard
-Use `Worker` from [worker.py](file:///Users/vannya/Desktop/MinJ/src/claynext/core/worker.py):
+Use `Worker` from [worker.py](file:///H:/Claynext/src/claynext/core/worker.py):
 
 ```python
 from PySide6.QtCore import QThreadPool

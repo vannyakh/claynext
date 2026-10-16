@@ -1,8 +1,8 @@
-# Jela / Claynext Studio — Rust Backend Architecture
+# Claynext Studio — Rust Backend Architecture
 
 ## 1. System Overview
 
-Jela / Claynext Studio employs a hybrid desktop architecture:
+Claynext Studio employs a hybrid desktop architecture:
 - **Presentation & Timeline UI**: Python 3.12+ with PySide6 (Qt 6.11+) and cyber dark design tokens.
 - **Computation & Processing Core**: Native Rust workspace in `backends/` with zero-copy interfaces and dedicated background workers.
 

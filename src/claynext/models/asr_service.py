@@ -136,7 +136,7 @@ def _transcribe_gemini(
     if progress_callback:
         progress_callback(12, "Extracting audio for Gemini AI Transcript…")
 
-    with tempfile.TemporaryDirectory(prefix="minj-gemini-asr-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="claynext-gemini-asr-") as tmp:
         audio_path = os.path.join(tmp, "audio.mp3")
         cmd = [
             _ffmpeg(),
@@ -312,7 +312,7 @@ class ASREngine:
             else:
                 raise RuntimeError(f"Could not load Whisper model '{size}'.") from None
 
-        with tempfile.TemporaryDirectory(prefix="minj-asr-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="claynext-asr-") as tmp:
             wav_path = os.path.join(tmp, "audio.wav")
             _extract_wav(media_path, wav_path, progress_callback)
             if progress_callback:

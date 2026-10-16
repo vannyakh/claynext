@@ -47,7 +47,6 @@ gender = [
 
 [project.scripts]
 claynext-dub-plan = "claynext.services.dubbing_plan:main"
-jela-dub-plan = "claynext.services.dubbing_plan:main"
 
 [build-system]
 requires = ["hatchling"]

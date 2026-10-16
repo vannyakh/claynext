@@ -279,7 +279,7 @@ class MainWindow(QMainWindow):
     def open_documentation(self):
         from PySide6.QtGui import QDesktopServices
         from PySide6.QtCore import QUrl
-        QDesktopServices.openUrl(QUrl("https://github.com/vannyakh/MinJ"))
+        QDesktopServices.openUrl(QUrl("https://github.com/vannyakh/claynext"))
 
     def open_about_dialog(self):
         from PySide6.QtWidgets import QMessageBox

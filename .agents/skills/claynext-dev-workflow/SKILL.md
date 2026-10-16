@@ -1,21 +1,21 @@
 ---
-name: minj-dev-workflow
-description: Development, testing, and diagnostic workflows for MinJ. Use when running smoke tests, verifying headless Qt environments, debugging imports, and testing PySide6 components.
+name: claynext-dev-workflow
+description: Development, testing, and diagnostic workflows for claynext. Use when running smoke tests, verifying headless Qt environments, debugging imports, and testing PySide6 components.
 ---
 
-# MinJ Development & Diagnostic Workflow
+# Claynext Development & Diagnostic Workflow
 
-This skill provides step-by-step procedures for testing, diagnosing, and maintaining the **MinJ AI Media Studio** codebase.
+This skill provides step-by-step procedures for testing, diagnosing, and maintaining the **Claynext Studio** codebase.
 
 ---
 
 ## 1. Running the Automated Smoke Test
 
-MinJ includes a dedicated headless smoke test script that verifies the Python version, FFmpeg binaries, all core AI engines, headless Qt initialization, and theme compilation.
+Claynext includes a dedicated headless smoke test script that verifies the Python version, FFmpeg binaries, all core AI engines, headless Qt initialization, and theme compilation.
 
 To execute the smoke test:
 ```bash
-uv run python .agents/skills/minj-dev-workflow/scripts/smoke_test.py
+uv run python .agents/skills/claynext-dev-workflow/scripts/smoke_test.py
 ```
 
 ### What It Verifies:
@@ -47,12 +47,12 @@ print('ASRView instantiated successfully!')
 
 Replace `ASRView` with the target view or widget:
 - `StudioView` (`claynext.gui.views.studio_view`)
-- `TTSView` (`minj.gui.views.tts_view`)
-- `TranslateView` (`minj.gui.views.translate_view`)
-- `OCRView` (`minj.gui.views.ocr_view`)
-- `VideoView` (`minj.gui.views.video_view`)
-- `TimelinePanel` (`minj.gui.components.timeline_panel`)
-- `MediaPreviewWidget` (`minj.gui.components.media_preview`)
+- `TTSView` (`claynext.gui.views.tts_view`)
+- `TranslateView` (`claynext.gui.views.translate_view`)
+- `OCRView` (`claynext.gui.views.ocr_view`)
+- `VideoView` (`claynext.gui.views.video_view`)
+- `TimelinePanel` (`claynext.gui.components.timeline_panel`)
+- `MediaPreviewWidget` (`claynext.gui.components.media_preview`)
 
 ---
 

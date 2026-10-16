@@ -27,5 +27,5 @@
 
 ## 2. Project File Backward Compatibility
 
-- Legacy project files referencing `.jela.json` or `.claynext.json` are transparently loaded by `claynext.services.project_service.ProjectService`.
+- Project files use the `.claynext.json` extension and are loaded by `claynext.services.project_service.ProjectService`.
 - Model definitions in `claynext.models.project.Project` and `claynext.models.timeline.TimelineClip` maintain 100% schema parity with existing project saves.

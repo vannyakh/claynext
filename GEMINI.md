@@ -1,12 +1,12 @@
-# MinJ AI Media Studio — Workspace Rules for Antigravity
+# Claynext Studio — Workspace Rules for Antigravity
 
-These rules define the architecture, design standards, and operational guidelines for AI agents working in the **MinJ AI Media Studio** repository.
+These rules define the architecture, design standards, and operational guidelines for AI agents working in the **Claynext Studio** repository.
 
 ---
 
 ## 1. Project Overview & Tech Stack
 
-MinJ is a high-performance desktop AI media application built with:
+Claynext is a high-performance desktop AI media application built with:
 - **Language**: Python 3.12+ (strictly with modern typing annotations: `from __future__ import annotations`, `X | None`, `Path`)
 - **GUI Framework**: `PySide6` (Qt 6.11+) with custom Cyber Dark QSS styling
 - **Environment & Dependency Manager**: `uv` (Hatchling build backend in `pyproject.toml`)
@@ -24,7 +24,7 @@ MinJ is a high-performance desktop AI media application built with:
 ### Rule 1: Non-Blocking GUI & Thread Safety
 > **CRITICAL**: Heavy computation, AI model inference, network requests, and media transcoding MUST NEVER run on Qt's main GUI thread.
 
-- **Background Worker**: Always use `Worker` from [worker.py](file:///Users/vannya/Desktop/MinJ/src/claynext/core/worker.py):
+- **Background Worker**: Always use `Worker` from [worker.py](file:///H:/Claynext/src/claynext/core/worker.py):
   ```python
   from PySide6.QtCore import QThreadPool
   from claynext.core.worker import Worker
@@ -42,7 +42,7 @@ MinJ is a high-performance desktop AI media application built with:
 ### Rule 2: Cyber Dark Design System Adherence
 > **Do not use hardcoded random colors or ad-hoc QSS stylesheets.**
 
-- Always use tokens from [theme_constants.py](file:///Users/vannya/Desktop/MinJ/src/claynext/constants/theme_constants.py):
+- Always use tokens from [theme_constants.py](file:///H:/Claynext/src/claynext/constants/theme_constants.py):
   - Backgrounds: `COLOR_BG_DARK` (`#080c12`), `COLOR_BG_CARD` (`#121a26`), `COLOR_BG_CARD_HOVER` (`#182333`), `COLOR_BG_INPUT` (`#0a0e16`), `COLOR_BG_SIDEBAR` (`#0b1017`)
   - Borders: `COLOR_BORDER` (`#233348`), `COLOR_BORDER_FOCUS`
   - Accents: `COLOR_PRIMARY` (`#6366f1` Indigo), `COLOR_ACCENT_PURPLE` (`#8b5cf6`), `COLOR_ACCENT_EMERALD` (`#10b981`), `COLOR_ACCENT_CYAN` (`#06b6d4`)
@@ -50,19 +50,19 @@ MinJ is a high-performance desktop AI media application built with:
 - High-DPI Scaling is enabled by default in `src/claynext/app.py`. Ensure layouts use scalable layouts (`QVBoxLayout`, `QHBoxLayout`, `QGridLayout`) with proper margins and spacing instead of fixed pixel geometries.
 
 ### Rule 3: Cross-Platform Window Chrome Conventions
-- Windows uses custom frameless chrome (`Qt.FramelessWindowHint` with [title_bar.py](file:///Users/vannya/Desktop/MinJ/src/claynext/gui/components/title_bar.py)).
+- Windows uses custom frameless chrome (`Qt.FramelessWindowHint` with [title_bar.py](file:///H:/Claynext/src/claynext/gui/components/title_bar.py)).
 - macOS / Linux keep native window chrome and system menu bars unless explicitly forced with `CLAYNEXT_CUSTOM_CHROME=1`.
-- Always respect `CUSTOM_WINDOW_CHROME` from [ui_constants.py](file:///Users/vannya/Desktop/MinJ/src/claynext/constants/ui_constants.py).
+- Always respect `CUSTOM_WINDOW_CHROME` from [ui_constants.py](file:///H:/Claynext/src/claynext/constants/ui_constants.py).
 
 ### Rule 4: FFmpeg and Media Compatibility
-- Never assume a bare `ffmpeg` is available on the system PATH. Always resolve FFmpeg using `imageio_ffmpeg.get_ffmpeg_exe()` as implemented in [ffmpeg_tools.py](file:///Users/vannya/Desktop/MinJ/src/claynext/core/ffmpeg_tools.py) and [media_compat.py](file:///Users/vannya/Desktop/MinJ/src/claynext/core/media_compat.py).
-- For media playback in Qt, verify and convert files to safe AAC-LC 44.1kHz stereo or generate 720p lightweight H.264 proxies using [media_compat.py](file:///Users/vannya/Desktop/MinJ/src/claynext/core/media_compat.py).
+- Never assume a bare `ffmpeg` is available on the system PATH. Always resolve FFmpeg using `imageio_ffmpeg.get_ffmpeg_exe()` as implemented in [ffmpeg_tools.py](file:///H:/Claynext/src/claynext/core/ffmpeg_tools.py) and [media_compat.py](file:///H:/Claynext/src/claynext/core/media_compat.py).
+- For media playback in Qt, verify and convert files to safe AAC-LC 44.1kHz stereo or generate 720p lightweight H.264 proxies using [media_compat.py](file:///H:/Claynext/src/claynext/core/media_compat.py).
 
 ### Rule 5: Filesystem & Cache Standards
 - Never output temporary or generated files into the project root directory.
 - Model weights: `data/models/`
 - User exports: `data/outputs/`
-- Transcoding / Proxies / Cache: Use `CACHE_DIR` / `PLAYBACK_DIR` from [config.py](file:///Users/vannya/Desktop/MinJ/src/claynext/utils/config.py) and [media_compat.py](file:///Users/vannya/Desktop/MinJ/src/claynext/core/media_compat.py).
+- Transcoding / Proxies / Cache: Use `CACHE_DIR` / `PLAYBACK_DIR` from [config.py](file:///H:/Claynext/src/claynext/utils/config.py) and [media_compat.py](file:///H:/Claynext/src/claynext/core/media_compat.py).
 
 ---
 
