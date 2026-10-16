@@ -120,28 +120,28 @@ QDockWidget::title {{
     padding: 1px 10px;
     font-size: 10px;
 }}
-/* Preview Source / Timeline — Chrome-style folder tabs */
+/* Preview Source / Timeline — compact segmented pill */
 #dock_header #dub_player_modes {{
-    background-color: {COLOR_BG_SIDEBAR};
-    border: none;
-}}
-#dock_header #chrome_tabs_host,
-#dock_header #chrome_tabs_row {{
     background-color: transparent;
     border: none;
+    max-height: 24px;
 }}
-#dock_header QPushButton#chrome_tab_btn {{
-    background-color: transparent;
-    border: none;
-    padding: 0 12px;
-    min-height: 26px;
-    max-height: 28px;
-    min-width: 88px;
+#dock_header #dub_player_modes #minj_seg_sm,
+#dock_header #dub_player_modes #minj_seg_host {{
+    background: transparent;
 }}
-#dock_header QPushButton#chrome_tab_btn:hover,
-#dock_header QPushButton#chrome_tab_btn:checked {{
-    background-color: transparent;
-    border: none;
+#dock_header #dub_player_modes #minj_seg {{
+    min-width: 148px;
+    max-height: 22px;
+    border-radius: 11px;
+}}
+#dock_header #dub_player_modes QPushButton#minj_seg_btn {{
+    min-width: 64px;
+    max-width: 88px;
+    min-height: 18px;
+    max-height: 20px;
+    padding: 0 10px;
+    font-size: 10px;
 }}
 QToolButton#dock_header_btn {{
     background-color: transparent;

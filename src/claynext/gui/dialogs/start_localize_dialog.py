@@ -1,4 +1,4 @@
-"""Confirm and configure options before starting a dubbing job."""
+"""Confirm and configure options before starting a localization job."""
 from __future__ import annotations
 
 import os
@@ -17,13 +17,13 @@ from claynext.gui.components.segment_tabs import SegmentTabs
 from claynext.gui.views.studio.constants import SOURCE_LANGS
 
 
-class StartDubDialog(QDialog):
-    """Review the selected movies and tweak dub settings before the job runs."""
+class StartLocalizeDialog(QDialog):
+    """Review the selected movies and tweak localization settings before the job runs."""
 
     def __init__(self, parent=None, *, sources: list[str], defaults: dict | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Start Dubbing")
-        self.setObjectName("startDubDialog")
+        self.setWindowTitle("Start Localization")
+        self.setObjectName("startLocalizeDialog")
         self.setMinimumWidth(520)
         self.setMinimumHeight(420)
         self.setModal(True)
@@ -39,11 +39,13 @@ class StartDubDialog(QDialog):
         chrome.setObjectName("start_dub_chrome")
         chrome.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         chrome_l = QVBoxLayout(chrome)
-        chrome_l.setContentsMargins(12, 8, 12, 0)
+        chrome_l.setContentsMargins(12, 8, 12, 8)
         chrome_l.setSpacing(0)
         self.tabs = SegmentTabs(
             ["Cast", "Mix", "Engine"],
-            variant="chrome",
+            variant="segment",
+            size="sm",
+            fill=True,
             tips=["Languages & voices", "Timing & mix", "Speech & translation"],
         )
         self.tabs.changed.connect(self._show_tab)
@@ -72,7 +74,9 @@ class StartDubDialog(QDialog):
         cancel = QPushButton("Cancel")
         cancel.setObjectName("api_keys_btn")
         cancel.clicked.connect(self.reject)
-        self.btn_start = QPushButton("Start Dubbing" if n <= 1 else f"Start Dubbing · {n}")
+        self.btn_start = QPushButton(
+            "Start Localization" if n <= 1 else f"Start Localization · {n}"
+        )
         self.btn_start.setObjectName("api_keys_btn_primary")
         self.btn_start.setDefault(True)
         self.btn_start.setEnabled(n > 0)
@@ -104,7 +108,7 @@ class StartDubDialog(QDialog):
         self.radio_separate = QRadioButton("Separate episodes")
         self.radio_separate.setObjectName("dub_switch")
         self.radio_separate.setToolTip(
-            "Dub each episode as its own task and script. Best when episodes stay separate."
+            "Localize each episode as its own task and script. Best when episodes stay separate."
         )
         self.radio_merge = QRadioButton("Merge to one movie")
         self.radio_merge.setObjectName("dub_switch")
@@ -181,7 +185,7 @@ class StartDubDialog(QDialog):
             bool(defaults.get("auto_chain", True)),
         )
         self.chk_auto_captions = self._option(
-            opts, "Auto captions", "Add caption clips when the dub finishes",
+            opts, "Auto captions", "Add caption clips when localization finishes",
             bool(defaults.get("auto_captions", True)),
         )
         lay.addLayout(opts)

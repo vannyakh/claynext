@@ -142,8 +142,10 @@ class SegmentTrack(QFrame):
         self._anim: QVariantAnimation | None = None
         self._pill_x = 0.0
         self._pill_w = 0.0
-        self._pill_y = 2.0
-        self._pill_h = 22.0
+        self._pill_y = 1.0
+        self._pill_h = 18.0
+        self._pill_inset = 1.0
+        self._pill_radius = 5.0
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -162,7 +164,8 @@ class SegmentTrack(QFrame):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         pill = QRectF(self._pill_x, self._pill_y, self._pill_w, self._pill_h)
         path = QPainterPath()
-        path.addRoundedRect(pill, 6.0, 6.0)
+        r = min(self._pill_radius, pill.height() * 0.5)
+        path.addRoundedRect(pill, r, r)
         grad = QLinearGradient(pill.topLeft(), pill.bottomLeft())
         grad.setColorAt(0.0, QColor("#1a2536"))
         grad.setColorAt(1.0, QColor("#121c28"))
@@ -181,9 +184,14 @@ class SegmentTrack(QFrame):
         if btn is None:
             return
         geo = btn.geometry()
-        target = QRectF(geo.x(), geo.y(), geo.width(), geo.height()).adjusted(0, 0, 0, 0)
+        inset = self._pill_inset
         # Inset so the pill sits inside the track padding.
-        target = QRectF(target.x(), 2.0, target.width(), max(18.0, self.height() - 4.0))
+        target = QRectF(
+            geo.x(),
+            inset,
+            geo.width(),
+            max(14.0, self.height() - inset * 2.0),
+        )
         if not animate or self._pill_w < 2:
             self._pill_x = target.x()
             self._pill_w = target.width()
@@ -240,6 +248,7 @@ class SegmentTabs(QFrame):
         chrome: bool = False,
         variant: str = "segment",
         size: str = "md",
+        fill: bool = False,
         tips: list[str] | None = None,
         current: int = 0,
     ):
@@ -248,11 +257,13 @@ class SegmentTabs(QFrame):
         tips = list(tips or [])
         variant = "chrome" if variant == "chrome" else "segment"
         compact = size == "sm" and variant == "segment"
+        # Compact + fill: short height, equal segments across the host width.
+        compact_fill = compact and fill
         self._variant = variant
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setAutoFillBackground(True)
         self.setSizePolicy(
-            QSizePolicy.Policy.Fixed if compact else QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed if (compact and not fill) else QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed,
         )
 
@@ -285,14 +296,24 @@ class SegmentTabs(QFrame):
         elif compact:
             self.setObjectName("minj_seg_sm")
             outer.setContentsMargins(0, 0, 0, 0)
-            outer.setAlignment(Qt.AlignmentFlag.AlignLeft)
+            outer.setAlignment(
+                Qt.AlignmentFlag.AlignVCenter
+                if compact_fill
+                else (Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            )
             track = SegmentTrack()
-            track.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            track.setSizePolicy(
+                QSizePolicy.Policy.Expanding if compact_fill else QSizePolicy.Policy.Fixed,
+                QSizePolicy.Policy.Fixed,
+            )
+            track.setFixedHeight(22)
+            track._pill_inset = 1.0
+            track._pill_radius = 4.0
             track_l = QHBoxLayout(track)
-            track_l.setContentsMargins(2, 2, 2, 2)
-            track_l.setSpacing(1)
+            track_l.setContentsMargins(1, 1, 1, 1)
+            track_l.setSpacing(0)
             btn_factory = None
-            btn_stretch = False
+            btn_stretch = compact_fill
             self._track = track
         else:
             self.setObjectName("minj_seg_host")
@@ -319,6 +340,10 @@ class SegmentTabs(QFrame):
                 font.setWeight(QFont.Weight.Normal)
                 font.setPixelSize(10 if compact else 11)
                 btn.setFont(font)
+                if compact:
+                    btn.setFixedHeight(20)
+                    if not compact_fill:
+                        btn.setMinimumWidth(64)
             btn.setChecked(i == current)
             btn.setSizePolicy(
                 QSizePolicy.Policy.Expanding if btn_stretch else QSizePolicy.Policy.Fixed,
@@ -333,7 +358,7 @@ class SegmentTabs(QFrame):
         if variant == "chrome":
             self._raise_checked()
         self._group.idClicked.connect(self._on_id_clicked)
-        outer.addWidget(track, 0 if (variant == "chrome" or compact) else 1)
+        outer.addWidget(track, 0 if (variant == "chrome" or (compact and not compact_fill)) else 1)
 
     def _on_id_clicked(self, index: int):
         if self._variant == "chrome":

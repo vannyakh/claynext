@@ -42,8 +42,9 @@ def ready_playback_path(media_path: str) -> str | None:
     return None
 
 
-def ensure_playback_file(media_path: str) -> str:
+def ensure_playback_file(media_path: str, progress_callback=None) -> str:
     """Ensure media file is in a safe format for fluid playback via Rust transcode."""
+    _ = progress_callback  # Accepted for Worker injection; unused here.
     ready = ready_playback_path(media_path)
     if ready:
         return ready
@@ -63,8 +64,9 @@ def ensure_playback_file(media_path: str) -> str:
     return abs_path
 
 
-def ensure_proxy_render(media_path: str) -> str:
+def ensure_proxy_render(media_path: str, progress_callback=None) -> str:
     """Generate 720p lightweight H.264 proxy via Rust transcode."""
+    _ = progress_callback  # Accepted for Worker injection; unused here.
     abs_path = os.path.abspath(media_path)
     key = hashlib.sha1(f"{abs_path}|proxy_720p".encode()).hexdigest()
     PROXY_DIR.mkdir(parents=True, exist_ok=True)

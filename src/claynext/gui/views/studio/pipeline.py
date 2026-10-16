@@ -23,14 +23,17 @@ class PipelineTools:
     def start_dubbing(self):
         sources = self._dub_sources()
         if not sources:
-            self._show_error("No media", "Select one or more movies in the Media library, then start dubbing.")
-            self.log.warn("Dubbing blocked — no media selected")
+            self._show_error(
+                "No media",
+                "Select one or more movies in the Media library, then start localization.",
+            )
+            self.log.warn("Localization blocked — no media selected")
             return
 
         from PySide6.QtWidgets import QDialog
-        from claynext.gui.dialogs.start_dub_dialog import StartDubDialog
+        from claynext.gui.dialogs.start_localize_dialog import StartLocalizeDialog
 
-        dlg = StartDubDialog(self, sources=sources, defaults=self._start_dub_defaults())
+        dlg = StartLocalizeDialog(self, sources=sources, defaults=self._start_dub_defaults())
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         opts = dlg.options()
@@ -602,11 +605,11 @@ class PipelineTools:
             self.act_dub.setText("Working…" if busy else "Start &Dubbing")
         self._dub_busy = busy
         if hasattr(self, "media_lib") and getattr(self.media_lib, "footer", None):
-            btn = getattr(self.media_lib.footer, "btn_dub", None)
+            btn = getattr(self.media_lib.footer, "btn_localize", None)
             if btn is not None:
                 if busy:
                     btn.setEnabled(False)
-                    btn.setText("Dubbing…")
+                    btn.setText("Localizing…")
                 else:
                     self.media_lib._update_detail_footer()
         self.combo_source_lang.setEnabled(not busy)

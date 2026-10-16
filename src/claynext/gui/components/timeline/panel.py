@@ -59,6 +59,7 @@ class TimelinePanel(QWidget):
     transition_split_clicked = Signal(str, int)  # left_clip_id, cut_ms
     transition_selected = Signal(str)  # left_clip_id
     transcript_action = Signal(str)  # show|retry|translate|tts|all|import|export
+    studio_action = Signal(str)  # vocal|translate|scan|generate|import_srt|export_srt|bgm|export_video
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -178,6 +179,23 @@ class TimelinePanel(QWidget):
         self.btn_rec.setMenu(self.rec_menu)
         self.btn_rec.clicked.connect(self.toggle_recording)
         left_box.addWidget(self.btn_rec)
+        left_box.addWidget(self._tool_sep())
+
+        # Dubbing pipeline tools (icon-only; replaces former bottom footer)
+        for name, tip, action in (
+            ("volume", "Vocal isolation · extract BGM bed", "vocal"),
+            ("globe", "AI translate subtitles", "translate"),
+            ("chat", "Scan characters & assign voices", "scan"),
+            ("sparkles", "Generate all dialogue audio", "generate"),
+            ("folder", "Import SRT / VTT / JSON", "import_srt"),
+            ("download", "Export SRT subtitles", "export_srt"),
+            ("activity", "Load background music", "bgm"),
+            ("video", "Export video", "export_video"),
+        ):
+            btn = self._tool_btn(name, tip)
+            btn.clicked.connect(lambda _=False, a=action: self.studio_action.emit(a))
+            left_box.addWidget(btn)
+            setattr(self, f"btn_studio_{action}", btn)
 
         row.addLayout(left_box)
         row.addStretch(1)

@@ -159,8 +159,8 @@ QTabBar::tab:selected {{
     border-bottom: 2px solid {accent};
 }}
 
-/* ─── Back to Launcher Buttons ───────────────────────────────────── */
-#header_back_btn, #btn_back_launcher {{
+/* ─── Back to Projects / Home Button ─────────────────────────────── */
+#header_back_btn {{
     background-color: #17202d;
     color: #cbd5e1;
     border: 1px solid #2b3a4d;
@@ -170,12 +170,12 @@ QTabBar::tab:selected {{
     font-weight: 700;
     min-height: 32px;
 }}
-#header_back_btn:hover, #btn_back_launcher:hover {{
+#header_back_btn:hover {{
     background-color: #243044;
     color: #ffffff;
     border-color: {accent};
 }}
-#header_back_btn:focus, #btn_back_launcher:focus {{
+#header_back_btn:focus {{
     border-color: {accent};
 }}
 

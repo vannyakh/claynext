@@ -913,6 +913,17 @@ QToolButton#shelf_header_btn[role="add"]:hover {{
     background-color: {COLOR_BG_SIDEBAR};
     border: none;
 }}
+#preview_load_overlay {{
+    background: rgba(8, 12, 18, 0.72);
+    border: none;
+}}
+#preview_load_label {{
+    color: {COLOR_TEXT_MUTED};
+    font-size: 11px;
+    font-weight: 600;
+    background: transparent;
+    border: none;
+}}
 /* Fill / shape painted by ChromeTabButton — keep QSS transparent. */
 QPushButton#chrome_tab_btn {{
     background-color: transparent;
@@ -933,7 +944,8 @@ QPushButton#chrome_tab_btn:checked {{
     border-radius: 8px;
 }}
 #minj_seg_sm #minj_seg {{
-    border-radius: 6px;
+    border-radius: 11px;
+    max-height: 22px;
 }}
 QPushButton#minj_seg_btn, QPushButton#dub_props_tab {{
     background-color: transparent;
@@ -948,10 +960,10 @@ QPushButton#minj_seg_btn, QPushButton#dub_props_tab {{
 }}
 #minj_seg_sm QPushButton#minj_seg_btn {{
     font-size: 10px;
-    padding: 1px 10px;
+    padding: 0 10px;
     min-height: 18px;
     max-height: 20px;
-    border-radius: 5px;
+    border-radius: 10px;
 }}
 QPushButton#minj_seg_btn:hover, QPushButton#dub_props_tab:hover {{
     background-color: transparent;
@@ -987,23 +999,32 @@ QPushButton#dub_props_chip:checked {{
 QToolButton#dub_props_ratio {{
     background-color: {COLOR_BG_INPUT};
     color: {COLOR_TEXT_SUB};
-    font-size: 10px;
-    font-weight: 500;
     border: 1px solid {COLOR_BORDER};
-    border-radius: 6px;
-    padding: 5px 2px 4px 2px;
-    min-height: 42px;
+    border-radius: 5px;
+    padding: 2px;
+    min-width: 32px;
+    max-width: 32px;
+    min-height: 26px;
+    max-height: 26px;
 }}
 QToolButton#dub_props_ratio:hover {{
     background-color: {COLOR_BG_CARD_HOVER};
-    color: {COLOR_TEXT_MAIN};
     border-color: {COLOR_BORDER_FOCUS};
 }}
 QToolButton#dub_props_ratio:checked {{
-    background-color: rgba(139, 92, 246, 0.16);
-    color: {COLOR_ACCENT_PURPLE};
+    background-color: rgba(139, 92, 246, 0.18);
     border: 1px solid {COLOR_ACCENT_PURPLE};
-    font-weight: 700;
+}}
+#dub_props_tabs_host #minj_seg_sm {{
+    min-width: 0;
+}}
+#dub_props_tabs_host #minj_seg_sm #minj_seg {{
+    min-width: 0;
+    max-height: 22px;
+}}
+#dub_props_tabs_host QPushButton#minj_seg_btn {{
+    min-width: 0;
+    padding: 0 6px;
 }}
 QToolButton#dub_props_filter {{
     background-color: {COLOR_BG_INPUT};
@@ -1273,7 +1294,7 @@ QPushButton#dub_props_ghost_btn:pressed {{
     padding-left: 22px;
     background: transparent;
 }}
-#startDubDialog {{
+#startLocalizeDialog {{
     background-color: {COLOR_BG_CARD};
 }}
 #start_dub_chrome {{
@@ -1281,21 +1302,26 @@ QPushButton#dub_props_ghost_btn:pressed {{
     border: none;
     border-bottom: 1px solid {COLOR_BORDER}44;
 }}
-#start_dub_chrome #chrome_tabs_host,
-#start_dub_chrome #chrome_tabs_row {{
-    background-color: {COLOR_BG_SIDEBAR};
+#start_dub_chrome #minj_seg_sm {{
+    background: transparent;
+    min-width: 0;
 }}
-#start_dub_chrome QPushButton#chrome_tab_btn:checked {{
-    background-color: transparent;
+#start_dub_chrome #minj_seg_sm #minj_seg {{
+    min-width: 0;
+    max-height: 22px;
+}}
+#start_dub_chrome QPushButton#minj_seg_btn {{
+    min-width: 0;
+    padding: 0 8px;
 }}
 #start_dub_body {{
     background-color: {COLOR_BG_CARD};
 }}
-#startDubDialog #dub_switch {{
+#startLocalizeDialog #dub_switch {{
     spacing: 10px;
     padding: 2px 0;
 }}
-#startDubDialog #dub_switch_hint {{
+#startLocalizeDialog #dub_switch_hint {{
     padding-left: 24px;
     padding-bottom: 2px;
 }}

@@ -683,6 +683,7 @@ class MediaPreviewWidget(QWidget):
     """
     media_changed = Signal(str)
     media_cleared = Signal()
+    loading_changed = Signal(bool)
     position_changed = Signal(int)
     duration_changed = Signal(int)
     playing_changed = Signal(bool)
@@ -1355,6 +1356,20 @@ class MediaPreviewWidget(QWidget):
         self.video.frame_image.connect(self._on_video_frame)
         self.stage.setCurrentIndex(0)
 
+    @staticmethod
+    def _probe_video_size(path: str) -> tuple[int, int]:
+        """Return (width, height) from probe_media; never raises."""
+        try:
+            info = probe_media(path)
+        except Exception:
+            return 0, 0
+        if isinstance(info, dict):
+            return int(info.get("width") or 0), int(info.get("height") or 0)
+        stream = getattr(info, "video_stream", None)
+        if stream is None:
+            return 0, 0
+        return int(getattr(stream, "width", 0) or 0), int(getattr(stream, "height", 0) or 0)
+
     def load(self, path: str) -> bool:
         if not path or not os.path.isfile(path):
             self.clear()
@@ -1379,9 +1394,7 @@ class MediaPreviewWidget(QWidget):
         self._update_stage_bounds()
 
         if self._is_video:
-            info = probe_media(path)
-            w = info.get("width", 0)
-            h = info.get("height", 0)
+            w, h = self._probe_video_size(path)
             if w > 0 and h > 0:
                 self._video_natural_ratio = float(w) / float(h)
                 self._update_stage_bounds()
@@ -1395,9 +1408,11 @@ class MediaPreviewWidget(QWidget):
         abs_path = os.path.abspath(path)
         cached = ready_playback_path(abs_path)
         if cached:
+            self.loading_changed.emit(False)
             self._apply_play_source(gen, cached)
             return True
 
+        self.loading_changed.emit(True)
         worker = Worker(ensure_playback_file, abs_path)
         worker.signals.result.connect(lambda play_path, g=gen: self._apply_play_source(g, play_path))
         worker.signals.error.connect(lambda err, _tb, g=gen: self._on_compat_fail(g, err))
@@ -1409,6 +1424,7 @@ class MediaPreviewWidget(QWidget):
         if gen != self._load_gen:
             return
         self._source_ready = False
+        self.loading_changed.emit(False)
         self.placeholder.setText(f"Playback convert failed · {err}")
         self.stage.setCurrentWidget(self.placeholder)
 
@@ -1421,6 +1437,7 @@ class MediaPreviewWidget(QWidget):
         self._play_path = play_path
         self.player.setSource(QUrl.fromLocalFile(os.path.abspath(play_path)))
         self._source_ready = True
+        self.loading_changed.emit(False)
         self._apply_buses()
         if self._pending_seek >= 0:
             self.seek_ms(self._pending_seek)
@@ -1437,6 +1454,7 @@ class MediaPreviewWidget(QWidget):
         self._play_path = ""
         self._title = ""
         self._is_video = False
+        self.loading_changed.emit(False)
         self._source_ready = False
         self._pending_play = False
         self._video_natural_ratio = None

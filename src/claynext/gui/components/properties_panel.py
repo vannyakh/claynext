@@ -97,6 +97,8 @@ class TrackPropsPage(QWidget):
         self.tab_bar = SegmentTabs(
             [key.title() for key in VIDEO_TABS],
             chrome=False,
+            size="sm",
+            fill=True,
             current=VIDEO_TABS.index(self._tab) if self._tab in VIDEO_TABS else 0,
         )
         self.tab_group = self.tab_bar.group
@@ -295,18 +297,14 @@ class TrackPropsPage(QWidget):
 
     def _build_canvas_section(self):
         self._canvas_color = DEFAULT_CANVAS["color"]
+        # Aspect ratio is project-level (project settings); keep value for canvas emit only.
+        self._canvas_ratio = DEFAULT_CANVAS["ratio"]
+        self._ratio_keys = [key for key, _label, _value in CANVAS_RATIOS]
         self.sec_canvas, cv = self._section("Canvas", bare=True)
         cv.setSpacing(6)
 
-        cv.addWidget(self._field_label("ASPECT RATIO"))
-        self.ratio_group = QButtonGroup(self)
-        self.ratio_group.setExclusive(True)
-        self._ratio_keys = [key for key, _label, _value in CANVAS_RATIOS]
-        cv.addWidget(self._ratio_grid())
-        self.ratio_group.idClicked.connect(self._emit_canvas)
-
         tr_head = QHBoxLayout()
-        tr_head.setContentsMargins(0, 4, 0, 0)
+        tr_head.setContentsMargins(0, 0, 0, 0)
         lbl_tr = self._field_label("TRANSFORM")
         self.btn_reset_canvas = QPushButton("Reset")
         self.btn_reset_canvas.setObjectName("dub_props_ghost_btn")
@@ -319,33 +317,30 @@ class TrackPropsPage(QWidget):
         tr_head.addWidget(self.btn_reset_canvas)
         cv.addLayout(tr_head)
 
-        scale_head = QHBoxLayout()
-        scale_head.setContentsMargins(0, 0, 0, 0)
+        scale_row = QHBoxLayout()
+        scale_row.setContentsMargins(0, 0, 0, 0)
+        scale_row.setSpacing(6)
         self.lbl_scale = QLabel("Scale")
         self.lbl_scale.setObjectName("asr_field_label")
-        self.spin_scale = ScrubSpinBox()
-        self.spin_scale.setRange(*SCALE_RANGE)
-        self.spin_scale.setSuffix("%")
-        self.spin_scale.setFixedWidth(68)
-        self.spin_scale.valueChanged.connect(self._on_canvas_spin)
-        scale_head.addWidget(self.lbl_scale, 1)
-        scale_head.addWidget(self.spin_scale)
-        cv.addLayout(scale_head)
-
-        scale_slide_row = QHBoxLayout()
-        scale_slide_row.setContentsMargins(0, 0, 0, 0)
-        scale_slide_row.setSpacing(6)
         self.slider_scale = QSlider(Qt.Orientation.Horizontal)
         self.slider_scale.setRange(SCALE_RANGE[0], SCALE_RANGE[1])
         self.slider_scale.setValue(100)
         self.slider_scale.valueChanged.connect(self._on_scale_slider)
+        self.spin_scale = ScrubSpinBox()
+        self.spin_scale.setRange(*SCALE_RANGE)
+        self.spin_scale.setSuffix("%")
+        self.spin_scale.setFixedWidth(64)
+        self.spin_scale.valueChanged.connect(self._on_canvas_spin)
         self.btn_scale_100 = QPushButton("100%")
         self.btn_scale_100.setObjectName("dub_props_ghost_btn")
-        self.btn_scale_100.setFixedWidth(44)
+        self.btn_scale_100.setFixedWidth(40)
+        self.btn_scale_100.setToolTip("Reset scale to 100%")
         self.btn_scale_100.clicked.connect(lambda: self.spin_scale.setValue(100))
-        scale_slide_row.addWidget(self.slider_scale, 1)
-        scale_slide_row.addWidget(self.btn_scale_100)
-        cv.addLayout(scale_slide_row)
+        scale_row.addWidget(self.lbl_scale)
+        scale_row.addWidget(self.slider_scale, 1)
+        scale_row.addWidget(self.spin_scale)
+        scale_row.addWidget(self.btn_scale_100)
+        cv.addLayout(scale_row)
 
         pos_row = QHBoxLayout()
         pos_row.setContentsMargins(0, 4, 0, 0)
@@ -410,67 +405,6 @@ class TrackPropsPage(QWidget):
         label = QLabel(text)
         label.setObjectName("asr_field_label")
         return label
-
-    def _ratio_grid(self) -> QWidget:
-        """Aspect picks with a small frame icon sample + short label."""
-        wrap = QWidget()
-        wrap.setObjectName("dub_props_ratio_grid")
-        grid = QGridLayout(wrap)
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(4)
-        grid.setVerticalSpacing(4)
-        cols = 4
-        for i, (key, label, value) in enumerate(CANVAS_RATIOS):
-            btn = QToolButton()
-            btn.setObjectName("dub_props_ratio")
-            btn.setCheckable(True)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
-            btn.setIcon(self._ratio_icon(key, value))
-            btn.setIconSize(QSize(28, 20))
-            btn.setText(label)
-            btn.setToolTip(label if key != "original" else "Match source aspect")
-            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            self.ratio_group.addButton(btn, i)
-            grid.addWidget(btn, i // cols, i % cols)
-        for c in range(cols):
-            grid.setColumnStretch(c, 1)
-        return wrap
-
-    @staticmethod
-    def _ratio_icon(key: str, value: float | None) -> QIcon:
-        """Tiny frame glyph that mirrors the target aspect ratio."""
-        side_w, side_h = 28, 20
-        pix = QPixmap(side_w, side_h)
-        pix.fill(Qt.GlobalColor.transparent)
-        p = QPainter(pix)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        ratio = 16 / 9 if value is None else max(0.35, min(2.8, float(value)))
-        max_w, max_h = side_w - 4, side_h - 4
-        if ratio >= 1.0:
-            w = max_w
-            h = max(6.0, w / ratio)
-        else:
-            h = max_h
-            w = max(6.0, h * ratio)
-        x, y = (side_w - w) / 2, (side_h - h) / 2
-        fill = QColor(COLOR_BG_INPUT)
-        stroke = QColor(COLOR_TEXT_MUTED) if key != "original" else QColor(COLOR_BORDER)
-        p.setPen(stroke)
-        p.setBrush(fill)
-        p.drawRoundedRect(int(x), int(y), int(w), int(h), 2, 2)
-        if key == "original":
-            # Corner ticks mark “follow source”.
-            p.setPen(QColor(COLOR_TEXT_MUTED))
-            for ax, ay, dx, dy in (
-                (x + 1, y + 1, 4, 0), (x + 1, y + 1, 0, 3),
-                (x + w - 1, y + 1, -4, 0), (x + w - 1, y + 1, 0, 3),
-                (x + 1, y + h - 1, 4, 0), (x + 1, y + h - 1, 0, -3),
-                (x + w - 1, y + h - 1, -4, 0), (x + w - 1, y + h - 1, 0, -3),
-            ):
-                p.drawLine(int(ax), int(ay), int(ax + dx), int(ay + dy))
-        p.end()
-        return QIcon(pix)
 
     @staticmethod
     def _swatch_btn(tip: str, size: QSize) -> QToolButton:
@@ -574,10 +508,10 @@ class TrackPropsPage(QWidget):
                                              Qt.TransformationMode.SmoothTransformation))
 
     def canvas_state(self) -> dict:
-        ratio_id = max(0, self.ratio_group.checkedId())
+        ratio = self._canvas_ratio if self._canvas_ratio in self._ratio_keys else DEFAULT_CANVAS["ratio"]
         bg = self.bg_select.current_value() or self._bg_keys[0]
         return clean_canvas({
-            "ratio": self._ratio_keys[ratio_id],
+            "ratio": ratio,
             "scale": self.spin_scale.value(),
             "x": self.spin_pos_x.value(),
             "y": self.spin_pos_y.value(),
@@ -590,7 +524,7 @@ class TrackPropsPage(QWidget):
         c = clean_canvas(canvas)
         was = self._block
         self._block = True
-        self.ratio_group.button(self._ratio_keys.index(c["ratio"])).setChecked(True)
+        self._canvas_ratio = c["ratio"]
         self.bg_select.blockSignals(True)
         self.bg_select.set_value(c["bg"])
         self.bg_select.blockSignals(False)
@@ -617,7 +551,7 @@ class TrackPropsPage(QWidget):
     def show_canvas_hint(self, covered: bool):
         bg = self.bg_select.current_value() or "none"
         self.lbl_canvas_hint.setVisible(covered and bg != "none")
-        self.lbl_canvas_hint.setText("The video fills the canvas · scale it down or change the ratio to see the background.")
+        self.lbl_canvas_hint.setText("The video fills the canvas · scale it down to see the background.")
 
     def _relabel_canvas(self):
         self.lbl_scale.setText("Scale")

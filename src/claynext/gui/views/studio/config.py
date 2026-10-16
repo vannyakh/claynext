@@ -1,4 +1,4 @@
-"""Hidden dub settings (config UI lives in StartDubDialog)."""
+"""Hidden dub settings (config UI lives in StartLocalizeDialog)."""
 from __future__ import annotations
 
 import os

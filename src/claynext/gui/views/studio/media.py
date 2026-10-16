@@ -24,7 +24,7 @@ class MediaTools:
         self.media_lib.selection_cleared.connect(self._on_library_deselected)
         self.media_lib.status_message.connect(self._on_media_status)
         self.media_lib.files_changed.connect(self._on_library_count)
-        self.media_lib.dub_requested.connect(self.start_dubbing)
+        self.media_lib.localize_requested.connect(self.start_dubbing)
         layout.addWidget(self.media_lib, 1)
         return panel
 

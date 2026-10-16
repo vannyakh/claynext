@@ -6,12 +6,13 @@ import os
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QLabel, QFrame
 
 from claynext.models.dubbing_service import timestamp_to_sec
 from claynext.models.canvas import ratio_value
 from claynext.gui.components.media_preview import MediaPlaybackWidget, MediaPreviewWidget
 from claynext.gui.components.overlay_canvas import OverlayCanvas, PreviewStageHost
+from claynext.gui.components.spinner import Spinner
 
 
 class PreviewTools:
@@ -55,6 +56,9 @@ class PreviewTools:
 
         self.stage_host.setMinimumHeight(120)
         self.stage_host.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._preview_load_overlay = self._build_preview_load_overlay(self.stage_host)
+        self.stage_host._load_overlay = self._preview_load_overlay
+        self.preview.loading_changed.connect(self._set_preview_loading)
         root.addWidget(self.stage_host, 1)
         self.preview.set_fullscreen_target(self.stage_host, panel, root.indexOf(self.stage_host))
         self.preview.fullscreen_changed.connect(self._on_preview_fullscreen)
@@ -64,33 +68,64 @@ class PreviewTools:
         root.addWidget(self.playback, 0)
         return panel
 
+    def _build_preview_load_overlay(self, host: QWidget) -> QFrame:
+        overlay = QFrame(host)
+        overlay.setObjectName("preview_load_overlay")
+        overlay.hide()
+        lay = QVBoxLayout(overlay)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(8)
+        lay.addStretch(1)
+        self.preview_spinner = Spinner(overlay, size=32, color="#a855f7")
+        lay.addWidget(self.preview_spinner, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.lbl_preview_loading = QLabel("Preparing playback…")
+        self.lbl_preview_loading.setObjectName("preview_load_label")
+        self.lbl_preview_loading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(self.lbl_preview_loading, 0, Qt.AlignmentFlag.AlignHCenter)
+        lay.addStretch(1)
+        return overlay
+
+    def _set_preview_loading(self, loading: bool):
+        overlay = getattr(self, "_preview_load_overlay", None)
+        spinner = getattr(self, "preview_spinner", None)
+        host = getattr(self, "stage_host", None)
+        if overlay is None or spinner is None or host is None:
+            return
+        if loading:
+            overlay.setGeometry(host.rect())
+            overlay.raise_()
+            spinner.start()
+            overlay.show()
+        else:
+            spinner.stop()
+            overlay.hide()
+
     def _build_player_header(self) -> QWidget:
         from claynext.gui.components.segment_tabs import SegmentTabs
 
         bar = QWidget()
         bar.setObjectName("dub_player_modes")
         bar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        bar.setFixedHeight(28)
+        bar.setFixedHeight(24)
         lay = QHBoxLayout(bar)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         self.player_tabs = SegmentTabs(
             ["Source", "Timeline"],
-            variant="chrome",
+            variant="segment",
+            size="sm",
             tips=[
                 "Preview a library file as it is · no dub voice or overlays",
                 "Play the dub timeline · voice track, music bed, key points, and overlays",
             ],
         )
-        self.player_tabs.setFixedHeight(28)
         self.player_tabs.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.player_modes = self.player_tabs.group
         self.btn_player_source = self.player_tabs.button(0)
         self.btn_player_timeline = self.player_tabs.button(1)
         self.player_tabs.changed.connect(self._on_player_mode_clicked)
-        # Center Chrome-style tabs in the preview header.
         lay.addStretch(1)
-        lay.addWidget(self.player_tabs, 0, Qt.AlignmentFlag.AlignBottom)
+        lay.addWidget(self.player_tabs, 0, Qt.AlignmentFlag.AlignVCenter)
         lay.addStretch(1)
         return bar
 

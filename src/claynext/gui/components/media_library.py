@@ -312,7 +312,7 @@ class _MediaDetailFooter(QFrame):
     and action buttons: '+ Add to Timeline', 'Reveal in Folder', and 'Remove'.
     """
     preview_requested = Signal(str)
-    dub_requested = Signal()
+    localize_requested = Signal()
     reveal_requested = Signal()
     remove_requested = Signal()
     browse_requested = Signal()
@@ -322,19 +322,19 @@ class _MediaDetailFooter(QFrame):
         super().__init__(parent)
         self.setObjectName("media_lib_detail_card")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setFixedHeight(76)
+        self.setFixedHeight(52)
 
         self._active_path = ""
         self._selected_paths: list[str] = []
 
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(12, 10, 14, 10)
-        lay.setSpacing(14)
+        lay.setContentsMargins(8, 6, 8, 6)
+        lay.setSpacing(8)
 
         # Left: Interactive Thumbnail / Poster
         self.thumb_box = QLabel()
         self.thumb_box.setObjectName("media_lib_footer_thumb")
-        self.thumb_box.setFixedSize(68, 48)
+        self.thumb_box.setFixedSize(48, 36)
         self.thumb_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.thumb_box.setCursor(Qt.CursorShape.PointingHandCursor)
         self.thumb_box.setToolTip("Click to preview in player")
@@ -343,11 +343,11 @@ class _MediaDetailFooter(QFrame):
 
         # Center: Info & Meta
         mid = QVBoxLayout()
-        mid.setSpacing(4)
+        mid.setSpacing(2)
         mid.setContentsMargins(0, 0, 0, 0)
 
         title_row = QHBoxLayout()
-        title_row.setSpacing(8)
+        title_row.setSpacing(6)
         self.lbl_title = QLabel("")
         self.lbl_title.setObjectName("media_lib_footer_title")
         title_row.addWidget(self.lbl_title)
@@ -355,7 +355,7 @@ class _MediaDetailFooter(QFrame):
         mid.addLayout(title_row)
 
         self.meta_row = QHBoxLayout()
-        self.meta_row.setSpacing(10)
+        self.meta_row.setSpacing(8)
         self.chip_dur, self.ico_dur, self.lbl_dur = self._meta_chip()
         self.chip_size, self.ico_size, self.lbl_size = self._meta_chip()
         self.chip_res, self.ico_res, self.lbl_res = self._meta_chip()
@@ -368,18 +368,22 @@ class _MediaDetailFooter(QFrame):
         lay.addLayout(mid, 1)
 
         # Right: Dub + utility actions
-        self.btn_dub = QPushButton("Dub")
-        self.btn_dub.setObjectName("media_lib_btn_dub")
-        self.btn_dub.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_dub.setIcon(icon("activity", color="#ffffff", size=13))
-        self.btn_dub.setToolTip("Start dubbing selected movies")
-        self.btn_dub.clicked.connect(self.dub_requested.emit)
-        lay.addWidget(self.btn_dub)
+        self.btn_localize = QPushButton("Localize")
+        self.btn_localize.setObjectName("media_lib_btn_localize")
+        self.btn_localize.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_localize.setFixedHeight(22)
+        self.btn_localize.setIcon(icon("activity", color="#c4b5fd", size=11))
+        self.btn_localize.setIconSize(QSize(11, 11))
+        self.btn_localize.setToolTip("Start localization for selected movies")
+        self.btn_localize.clicked.connect(self.localize_requested.emit)
+        lay.addWidget(self.btn_localize)
 
         self.btn_reveal = QToolButton()
         self.btn_reveal.setObjectName("media_lib_footer_btn")
         self.btn_reveal.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_reveal.setIcon(icon("folder", color="#94a3b8", size=14))
+        self.btn_reveal.setFixedSize(22, 22)
+        self.btn_reveal.setIcon(icon("folder", color="#94a3b8", size=12))
+        self.btn_reveal.setIconSize(QSize(12, 12))
         self.btn_reveal.setToolTip("Show file in Finder / Explorer")
         self.btn_reveal.clicked.connect(self.reveal_requested.emit)
         lay.addWidget(self.btn_reveal)
@@ -387,7 +391,9 @@ class _MediaDetailFooter(QFrame):
         self.btn_remove = QToolButton()
         self.btn_remove.setObjectName("media_lib_footer_btn")
         self.btn_remove.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_remove.setIcon(icon("trash", color="#94a3b8", size=14))
+        self.btn_remove.setFixedSize(22, 22)
+        self.btn_remove.setIcon(icon("trash", color="#94a3b8", size=12))
+        self.btn_remove.setIconSize(QSize(12, 12))
         self.btn_remove.setToolTip("Remove selected from library")
         self.btn_remove.clicked.connect(self.remove_requested.emit)
         lay.addWidget(self.btn_remove)
@@ -400,7 +406,7 @@ class _MediaDetailFooter(QFrame):
         row.setSpacing(4)
         ico = QLabel()
         ico.setObjectName("media_lib_footer_meta_ico")
-        ico.setFixedSize(12, 12)
+        ico.setFixedSize(10, 10)
         ico.setAlignment(Qt.AlignmentFlag.AlignCenter)
         txt = QLabel("")
         txt.setObjectName("media_lib_footer_meta")
@@ -422,7 +428,7 @@ class _MediaDetailFooter(QFrame):
             chip.hide()
             return
         if icon_name:
-            ico_lbl.setPixmap(icon(icon_name, color="#6b7785", size=12).pixmap(12, 12))
+            ico_lbl.setPixmap(icon(icon_name, color="#6b7785", size=10).pixmap(10, 10))
             ico_lbl.show()
         else:
             ico_lbl.clear()
@@ -464,9 +470,9 @@ class _MediaDetailFooter(QFrame):
             ico = thumb_cache.get(path) or fallback_icon_fn(path)
             self.thumb_box.clear()
             if isinstance(ico, QIcon) and not ico.isNull():
-                self.thumb_box.setPixmap(ico.pixmap(68, 48))
+                self.thumb_box.setPixmap(ico.pixmap(48, 36))
             else:
-                self.thumb_box.setPixmap(icon("play", color="#94a3b8", size=20).pixmap(20, 20))
+                self.thumb_box.setPixmap(icon("play", color="#94a3b8", size=14).pixmap(14, 14))
             self.thumb_box.setCursor(Qt.CursorShape.PointingHandCursor)
             self.thumb_box.setToolTip("Click to preview in player")
 
@@ -494,10 +500,10 @@ class _MediaDetailFooter(QFrame):
                 self.chip_res.hide()
 
             is_video = os.path.splitext(path)[1].lower() in VIDEO_EXTS
-            self.btn_dub.setText("Dub")
-            self.btn_dub.setEnabled(is_video)
-            self.btn_dub.setToolTip(
-                "Start dubbing this movie" if is_video else "Select a video to dub"
+            self.btn_localize.setText("Localize")
+            self.btn_localize.setEnabled(is_video)
+            self.btn_localize.setToolTip(
+                "Start localization for this movie" if is_video else "Select a video to localize"
             )
 
             self.btn_reveal.show()
@@ -532,10 +538,14 @@ class _MediaDetailFooter(QFrame):
             )
             self.chip_res.hide()
 
-            self.btn_dub.setText(f"Dub · {video_count}" if video_count > 1 else "Dub")
-            self.btn_dub.setEnabled(video_count > 0)
-            self.btn_dub.setToolTip(
-                f"Start dubbing {video_count} movie(s)" if video_count else "Select a video to dub"
+            self.btn_localize.setText(
+                f"Localize · {video_count}" if video_count > 1 else "Localize"
+            )
+            self.btn_localize.setEnabled(video_count > 0)
+            self.btn_localize.setToolTip(
+                f"Start localization for {video_count} movie(s)"
+                if video_count
+                else "Select a video to localize"
             )
 
             self.btn_reveal.show()
@@ -550,7 +560,7 @@ class MediaLibraryWidget(QWidget):
     selection_cleared = Signal()
     files_changed = Signal(int)
     status_message = Signal(str)
-    dub_requested = Signal()
+    localize_requested = Signal()
 
     AUDIO_EXTS = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg"}
     IMAGE_EXTS = IMAGE_EXTS
@@ -584,18 +594,18 @@ class MediaLibraryWidget(QWidget):
         tools = QWidget()
         tools.setObjectName("media_lib_tools")
         tools_lay = QVBoxLayout(tools)
-        tools_lay.setContentsMargins(0, 2, 0, 4)
-        tools_lay.setSpacing(6)
+        tools_lay.setContentsMargins(0, 0, 0, 2)
+        tools_lay.setSpacing(4)
 
         # ─── Row 1: Add Media, Search, Views, Actions ────────────────────
         row1 = QHBoxLayout()
         row1.setContentsMargins(0, 0, 0, 0)
-        row1.setSpacing(8)
+        row1.setSpacing(6)
 
-        self.btn_add = QPushButton("Add Media")
+        self.btn_add = QPushButton("+ Add Media")
         self.btn_add.setObjectName("media_lib_add_btn")
         self.btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_add.setIcon(icon("plus", color="#ffffff", size=13))
+        self.btn_add.setFixedHeight(22)
         self.btn_add.setToolTip("Import video, audio, or images into the library")
         self.btn_add.clicked.connect(self.browse_add)
         row1.addWidget(self.btn_add, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -604,7 +614,8 @@ class MediaLibraryWidget(QWidget):
         self.search.setObjectName("media_lib_search")
         self.search.setPlaceholderText("Search media…")
         self.search.setClearButtonEnabled(True)
-        self.search.setMinimumWidth(140)
+        self.search.setMinimumWidth(120)
+        self.search.setFixedHeight(22)
         self.search.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.search.textChanged.connect(self._on_search)
         row1.addWidget(self.search, 1, Qt.AlignmentFlag.AlignVCenter)
@@ -622,7 +633,8 @@ class MediaLibraryWidget(QWidget):
 
         self.btn_more = QToolButton()
         self.btn_more.setObjectName("media_lib_icon_btn")
-        self.btn_more.setIcon(icon("more", color="#94a3b8", size=14))
+        self.btn_more.setIcon(icon("more", color="#94a3b8", size=12))
+        self.btn_more.setFixedSize(22, 22)
         self.btn_more.setToolTip("Library options")
         self.btn_more.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
@@ -639,7 +651,7 @@ class MediaLibraryWidget(QWidget):
         # ─── Row 2: Filter Pills + Summary Count Badge ───────────────────
         row2 = QHBoxLayout()
         row2.setContentsMargins(0, 0, 0, 0)
-        row2.setSpacing(6)
+        row2.setSpacing(4)
 
         self.filter_group = QButtonGroup(self)
         self.filter_group.setExclusive(True)
@@ -649,6 +661,7 @@ class MediaLibraryWidget(QWidget):
             btn.setObjectName("media_lib_filter_chip")
             btn.setCheckable(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFixedHeight(18)
             if key == "all":
                 btn.setChecked(True)
             btn.clicked.connect(lambda checked=False, k=key: self._set_filter(k))
@@ -670,8 +683,8 @@ class MediaLibraryWidget(QWidget):
         empty = QWidget()
         empty.setObjectName("media_lib_empty_wrap")
         empty_lay = QVBoxLayout(empty)
-        empty_lay.setContentsMargins(16, 24, 16, 24)
-        empty_lay.setSpacing(10)
+        empty_lay.setContentsMargins(16, 20, 16, 20)
+        empty_lay.setSpacing(8)
         empty_lay.addStretch(1)
         self.empty = QLabel("Drop video, audio, or images")
         self.empty.setObjectName("media_lib_empty")
@@ -679,8 +692,9 @@ class MediaLibraryWidget(QWidget):
         self.empty.setWordWrap(True)
         empty_lay.addWidget(self.empty)
         self.empty_add = QPushButton("Browse files")
-        self.empty_add.setObjectName("btn_secondary")
+        self.empty_add.setObjectName("media_lib_browse_btn")
         self.empty_add.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.empty_add.setFixedHeight(24)
         self.empty_add.clicked.connect(self.browse_add)
         empty_lay.addWidget(self.empty_add, 0, Qt.AlignmentFlag.AlignHCenter)
         empty_hint = QLabel("or drag a folder of clips")
@@ -720,7 +734,7 @@ class MediaLibraryWidget(QWidget):
         # ─── Selected Media Details & Command Footer ─────────────────────
         self.footer = _MediaDetailFooter(self)
         self.footer.preview_requested.connect(self._on_footer_preview)
-        self.footer.dub_requested.connect(self.dub_requested.emit)
+        self.footer.localize_requested.connect(self.localize_requested.emit)
         self.footer.reveal_requested.connect(self.reveal_selected)
         self.footer.remove_requested.connect(self.remove_selected)
         self.footer.browse_requested.connect(self.browse_add)
@@ -748,8 +762,9 @@ class MediaLibraryWidget(QWidget):
         btn.setObjectName("media_lib_icon_btn")
         btn.setCheckable(True)
         btn.setAutoRaise(True)
-        btn.setIcon(icon(name, color="#94a3b8", size=14))
-        btn.setFixedSize(28, 28)
+        btn.setIcon(icon(name, color="#94a3b8", size=12))
+        btn.setFixedSize(22, 22)
+        btn.setIconSize(QSize(12, 12))
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setToolTip(tip)
         btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)

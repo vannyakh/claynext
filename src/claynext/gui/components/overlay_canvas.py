@@ -1008,6 +1008,10 @@ class PreviewStageHost(QWidget):
         self.preview.setGeometry(box)
         self.sync_overlay()
         self.overlay.raise_()
+        loader = getattr(self, "_load_overlay", None)
+        if loader is not None and loader.isVisible():
+            loader.setGeometry(box)
+            loader.raise_()
 
     def keyPressEvent(self, event):
         key = event.key()

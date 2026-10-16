@@ -63,12 +63,12 @@ class InspectorTools:
         self.track_props.fx_changed.connect(self._on_fx_changed)
         self.inspector = self.track_props.inspector
 
-        # Sticky Video / Audio / Adjust tabs under the dock title.
+        # Sticky Video / Audio / Adjust — full-width compact tabs for Cover / project video.
         self._props_tabs_host = QFrame()
         self._props_tabs_host.setObjectName("dub_props_tabs_host")
         self._props_tabs_host.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         tabs_lay = QHBoxLayout(self._props_tabs_host)
-        tabs_lay.setContentsMargins(14, 6, 14, 8)
+        tabs_lay.setContentsMargins(10, 4, 10, 4)
         tabs_lay.setSpacing(0)
         tabs_lay.addWidget(self.track_props.tab_bar, 1)
         outer.addWidget(self._props_tabs_host)

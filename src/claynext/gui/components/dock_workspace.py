@@ -12,6 +12,7 @@ _QWIDGETSIZE_MAX = 16777215
 # Compact dock titles — intentionally shorter than shelf panel headers (40px).
 DOCK_HEADER_H = 36
 _EXTRA_H = 28
+_PLAYER_MODES_H = 24
 
 
 class DockHeader(QFrame):
@@ -63,13 +64,21 @@ class DockHeader(QFrame):
     @staticmethod
     def _fit_extra(widget: QWidget):
         """Keep header extras from stretching the shared dock title height."""
-        widget.setFixedHeight(_EXTRA_H)
-        widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        player_modes = widget.objectName() == "dub_player_modes"
+        h = _PLAYER_MODES_H if player_modes else _EXTRA_H
+        widget.setFixedHeight(h)
+        widget.setSizePolicy(
+            QSizePolicy.Policy.Fixed if player_modes else QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         for child in widget.findChildren(QWidget):
             if isinstance(child, QToolButton):
-                child.setFixedHeight(min(_EXTRA_H, child.height() or _EXTRA_H))
+                child.setFixedHeight(min(h, child.height() or h))
             elif isinstance(child, QPushButton):
-                child.setMaximumHeight(_EXTRA_H)
+                # Segment tabs size themselves; don't force them to fill the header.
+                if child.objectName() == "minj_seg_btn":
+                    continue
+                child.setMaximumHeight(h)
 
     def _button(self, name: str, tip: str, slot) -> QToolButton:
         btn = QToolButton(self)

@@ -173,119 +173,147 @@ QSlider#media_seek::handle:horizontal:hover {{
     padding: 0 2px;
 }}
 #media_lib_add_btn {{
-    background: rgba(99, 102, 241, 0.14);
-    color: #ffffff;
-    border: 1px solid {COLOR_PRIMARY};
-    border-radius: 7px;
-    padding: 4px 12px;
-    font-size: 11px;
-    font-weight: 700;
-    min-height: 26px;
-}}
-#media_lib_add_btn:hover {{
-    background: rgba(99, 102, 241, 0.25);
-    border-color: {COLOR_PRIMARY_HOVER};
-    color: #ffffff;
-}}
-#media_lib_add_btn:pressed {{
-    background: rgba(99, 102, 241, 0.35);
-}}
-#media_lib_search {{
-    background: {COLOR_BG_INPUT};
-    border: 1px solid {COLOR_BORDER};
-    border-radius: 7px;
-    padding: 4px 8px;
-    color: {COLOR_TEXT_MAIN};
-    font-size: 12px;
-    min-height: 26px;
-    max-height: 28px;
-}}
-#media_lib_search:focus {{
-    border-color: {COLOR_PRIMARY};
-}}
-#media_lib_filter_chip {{
     background: transparent;
-    color: {COLOR_TEXT_SUB};
+    color: {COLOR_TEXT_MAIN};
     border: 1px solid {COLOR_BORDER};
-    border-radius: 11px;
-    padding: 2px 10px;
+    border-radius: 5px;
+    padding: 1px 8px;
     font-size: 11px;
     font-weight: 600;
     min-height: 22px;
+    max-height: 22px;
+}}
+#media_lib_add_btn:hover {{
+    background: rgba(255, 255, 255, 0.05);
+    border-color: {COLOR_PRIMARY};
+    color: #ffffff;
+}}
+#media_lib_add_btn:pressed {{
+    background: rgba(99, 102, 241, 0.16);
+}}
+#media_lib_search {{
+    background: transparent;
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 5px;
+    padding: 1px 8px;
+    color: {COLOR_TEXT_MAIN};
+    font-size: 11px;
+    min-height: 22px;
+    max-height: 22px;
+}}
+#media_lib_search:focus {{
+    border-color: {COLOR_PRIMARY};
+    background: rgba(255, 255, 255, 0.03);
+}}
+#media_lib_filter_chip {{
+    background: transparent;
+    color: {COLOR_TEXT_MUTED};
+    border: 1px solid transparent;
+    border-radius: 9px;
+    padding: 0px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    min-height: 18px;
+    max-height: 18px;
 }}
 #media_lib_filter_chip:hover {{
     color: {COLOR_TEXT_MAIN};
     background: rgba(255, 255, 255, 0.04);
-    border-color: {COLOR_BORDER};
 }}
 #media_lib_filter_chip:checked {{
-    background: rgba(99, 102, 241, 0.18);
-    color: #ffffff;
-    border: 1px solid {COLOR_PRIMARY};
+    background: transparent;
+    color: #c4b5fd;
+    border: 1px solid rgba(139, 92, 246, 0.55);
     font-weight: 700;
 }}
-#media_lib_detail_card {{
-    background-color: #0b1118;
+#media_lib_browse_btn {{
+    background: transparent;
+    color: {COLOR_TEXT_MAIN};
     border: 1px solid {COLOR_BORDER};
-    border-radius: 8px;
+    border-radius: 5px;
+    padding: 2px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    min-height: 24px;
+    max-height: 24px;
 }}
-#media_lib_footer_thumb {{
-    background: {COLOR_BG_DARK};
+#media_lib_browse_btn:hover {{
+    border-color: {COLOR_PRIMARY};
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.04);
+}}
+#media_lib_detail_card {{
+    background: transparent;
     border: 1px solid {COLOR_BORDER};
     border-radius: 6px;
+}}
+#media_lib_footer_thumb {{
+    background: transparent;
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 4px;
 }}
 #media_lib_footer_title {{
     color: {COLOR_TEXT_MAIN};
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 11px;
+    font-weight: 600;
 }}
 #media_lib_footer_meta {{
     color: {COLOR_TEXT_MUTED};
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 500;
 }}
-#media_lib_btn_dub {{
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #7e22ce, stop:0.5 #9333ea, stop:1 #a855f7);
-    color: #ffffff;
-    border: 1px solid #c084fc;
-    border-radius: 6px;
-    padding: 5px 12px;
+#media_lib_btn_localize {{
+    background: transparent;
+    color: #c4b5fd;
+    border: 1px solid rgba(139, 92, 246, 0.55);
+    border-radius: 5px;
+    padding: 1px 10px;
     font-size: 11px;
-    font-weight: 700;
-    min-height: 26px;
+    font-weight: 600;
+    min-height: 22px;
+    max-height: 22px;
 }}
-#media_lib_btn_dub:hover {{
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #9333ea, stop:0.5 #a855f7, stop:1 #c084fc);
-    border-color: #e9d5ff;
+#media_lib_btn_localize:hover {{
+    background: rgba(139, 92, 246, 0.14);
+    border-color: {COLOR_PRIMARY};
+    color: #ffffff;
 }}
-#media_lib_btn_dub:disabled {{
-    background: {COLOR_BG_CARD_HOVER};
+#media_lib_btn_localize:disabled {{
+    background: transparent;
     color: {COLOR_TEXT_MUTED};
     border: 1px solid {COLOR_BORDER};
 }}
 #media_lib_footer_btn {{
-    background: {COLOR_BG_CARD};
+    background: transparent;
     border: 1px solid {COLOR_BORDER};
-    border-radius: 6px;
-    padding: 5px;
+    border-radius: 4px;
+    padding: 2px;
+    min-width: 22px;
+    max-width: 22px;
+    min-height: 22px;
+    max-height: 22px;
 }}
 #media_lib_footer_btn:hover {{
-    background: {COLOR_BG_CARD_HOVER};
+    background: rgba(255, 255, 255, 0.05);
     border-color: {COLOR_PRIMARY};
 }}
 #media_lib_icon_btn, #media_lib_menu_btn {{
     background: transparent;
     border: 1px solid transparent;
-    border-radius: 6px;
-    padding: 4px;
+    border-radius: 4px;
+    padding: 2px;
+    min-width: 22px;
+    max-width: 22px;
+    min-height: 22px;
+    max-height: 22px;
 }}
 #media_lib_icon_btn:hover, #media_lib_menu_btn:hover {{
-    background: {COLOR_BG_CARD_HOVER};
+    background: rgba(255, 255, 255, 0.05);
     border: 1px solid {COLOR_BORDER};
 }}
 #media_lib_icon_btn:checked {{
-    background: rgba(99, 102, 241, 0.16);
-    border: 1px solid {COLOR_PRIMARY};
+    background: transparent;
+    border: 1px solid rgba(139, 92, 246, 0.55);
 }}
 #media_lib_menu_btn::menu-indicator,
 #media_lib_icon_btn::menu-indicator {{
@@ -320,14 +348,14 @@ QSlider#media_seek::handle:horizontal:hover {{
 }}
 #media_lib_empty {{
     color: {COLOR_TEXT_MUTED};
-    font-size: 13px;
-    font-weight: 700;
+    font-size: 12px;
+    font-weight: 600;
     padding: 0;
     background-color: transparent;
 }}
 #media_lib_empty_hint {{
     color: {COLOR_TEXT_MUTED};
-    font-size: 11px;
+    font-size: 10px;
     background: transparent;
 }}
 #media_lib_list, #media_lib_grid {{

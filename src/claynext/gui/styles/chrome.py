@@ -38,14 +38,35 @@ QWidget {{ outline: none; }}
     letter-spacing: -0.1px;
     padding-right: 2px;
 }}
-#title_settings_btn {{
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 6px;
+#title_logo_icon {{
+    margin: 0;
+    padding: 0;
 }}
-#title_settings_btn:hover {{
-    background: #1a2230;
-    border: 1px solid #2b3a4d;
+#title_brand_box {{
+    margin: 0;
+    padding: 0;
+}}
+#title_brand_name {{
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.2px;
+    padding: 0;
+    margin: 0;
+}}
+#title_pro_badge {{
+    background-color: #6d28d9;
+    color: #ffffff;
+    font-size: 9px;
+    font-weight: 800;
+    padding: 1px 4px;
+    border-radius: 3px;
+    margin: 0;
+}}
+#title_brand_sub {{
+    color: #818cf8;
+    font-size: 9.5px;
+    font-weight: 500;
 }}
 
 QWidget#winControls QToolButton {{
@@ -64,13 +85,15 @@ QMenuBar, #titleMenuBar {{
     border: none;
     font-size: 12px;
     font-weight: 500;
-    spacing: 2px;
+    spacing: 0px;
+    padding: 0;
+    margin: 0;
 }}
 QMenuBar::item, #titleMenuBar::item {{
     background: transparent;
-    padding: 5px 11px;
-    border-radius: 6px;
-    margin: 4px 1px;
+    padding: 4px 8px;
+    border-radius: 5px;
+    margin: 2px 0px;
 }}
 QMenuBar::item:selected, QMenuBar::item:pressed,
 #titleMenuBar::item:selected, #titleMenuBar::item:pressed {{
