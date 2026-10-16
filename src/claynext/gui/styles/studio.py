@@ -1376,14 +1376,6 @@ QPushButton#dub_props_ghost_btn:pressed {{
     border: none;
     max-height: 1px;
 }}
-#startLocalizeDialog #start_localize_caption_box {{
-    background-color: {COLOR_BG_DARK};
-    border: 1px solid {COLOR_BORDER}66;
-    border-radius: 10px;
-}}
-#startLocalizeDialog #start_localize_caption_box:disabled {{
-    opacity: 0.55;
-}}
 #startLocalizeDialog #dub_switch {{
     spacing: 10px;
     padding: 2px 0;

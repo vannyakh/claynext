@@ -19,12 +19,12 @@ from claynext.gui.components.segment_tabs import SegmentTabs
 from claynext.gui.views.studio.captions import CAPTION_STYLES, CaptionLookGrid, CaptionMotionGrid
 from claynext.gui.views.studio.constants import SOURCE_LANGS
 
-_TAB_LABELS = ["Cast", "Mix", "Template", "Video", "Engine"]
+_TAB_LABELS = ["Cast", "Mix", "Captions", "Template", "Engine"]
 _TAB_TIPS = [
     "Languages & voices",
     "Timing & mix",
-    "Caption look & motion templates",
-    "Captions on video · layout & export",
+    "Use captions · layout & export",
+    "Package look & motion · auto-apply",
     "Speech & translation engines",
 ]
 
@@ -73,10 +73,11 @@ class StartLocalizeDialog(QDialog):
         self.stack = QStackedWidget()
         self.stack.addWidget(self._build_cast_page(defaults))
         self.stack.addWidget(self._build_mix_page(defaults))
+        self.stack.addWidget(self._build_captions_page(defaults))
         self.stack.addWidget(self._build_template_page(defaults))
-        self.stack.addWidget(self._build_video_page(defaults))
         self.stack.addWidget(self._build_engine_page(defaults))
         body_l.addWidget(self.stack, 1)
+        self._sync_caption_controls()
 
         self._batch_group: QButtonGroup | None = None
         if n >= 2:
@@ -231,89 +232,23 @@ class StartLocalizeDialog(QDialog):
         lay.addStretch(1)
         return page
 
-    def _build_template_page(self, defaults: dict) -> QWidget:
-        """Caption look + motion template previews (shelf-style cards)."""
+    def _build_captions_page(self, defaults: dict) -> QWidget:
+        """Enable captions, layout, and export — applied when the job finishes."""
         page, lay = self._page()
 
-        self.template_config = QFrame()
-        self.template_config.setObjectName("start_localize_caption_box")
-        self.template_config.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        box = QVBoxLayout(self.template_config)
-        box.setContentsMargins(10, 10, 10, 10)
-        box.setSpacing(8)
-
-        head = QHBoxLayout()
-        head.setContentsMargins(0, 0, 0, 0)
-        head.setSpacing(8)
-        tpl = QLabel("LOOK")
-        tpl.setObjectName("start_localize_divider_label")
-        head.addWidget(tpl, 1)
-        self.chk_caption_lock = QCheckBox("Lock template")
-        self.chk_caption_lock.setObjectName("dub_switch")
-        self.chk_caption_lock.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.chk_caption_lock.setChecked(bool(defaults.get("caption_lock", False)))
-        self.chk_caption_lock.setToolTip(
-            "Keep this look selected — preview stays visible, tiles cannot be changed"
-        )
-        head.addWidget(self.chk_caption_lock, 0)
-        box.addLayout(head)
-
-        look = str(defaults.get("caption_look") or "")
-        pick = next(
-            (i for i, s in enumerate(CAPTION_STYLES) if str(s.get("name") or "") == look),
-            0,
-        )
-        self.caption_look_grid = CaptionLookGrid(CAPTION_STYLES)
-        self.caption_look_grid.setObjectName("start_localize_look_grid")
-        self.caption_look_grid.set_current(pick)
-        box.addWidget(self.caption_look_grid)
-
-        box.addWidget(self._section_divider("Motion"))
-        saved_anim = str(defaults.get("caption_anim") or "none")
-        anim_pick = next(
-            (i for i, (key, _) in enumerate(CAPTION_ANIMS) if key == saved_anim),
-            0,
-        )
-        self.caption_motion_grid = CaptionMotionGrid(list(CAPTION_ANIMS))
-        self.caption_motion_grid.setObjectName("start_localize_motion_grid")
-        self.caption_motion_grid.set_current(anim_pick)
-        box.addWidget(self.caption_motion_grid)
-        box.addStretch(1)
-
-        lay.addWidget(self.template_config, 1)
-        self.chk_caption_lock.toggled.connect(self._sync_caption_lock)
-        # Master toggle lives on Video tab; sync after both pages exist.
-        return page
-
-    def _build_video_page(self, defaults: dict) -> QWidget:
-        """Captions-on-video options: enable, layout, export."""
-        page, lay = self._page()
-
-        top = QVBoxLayout()
-        top.setContentsMargins(0, 0, 0, 0)
-        top.setSpacing(6)
+        opts = QVBoxLayout()
+        opts.setContentsMargins(0, 0, 0, 0)
+        opts.setSpacing(8)
         self.chk_auto_captions = self._option(
-            top,
+            opts,
             "Use captions",
-            "Add caption clips when localization finishes. Uncheck to skip captions entirely.",
+            "Auto-apply the Template package when localization finishes. Uncheck to skip captions.",
             bool(defaults.get("auto_captions", True)),
         )
-        lay.addLayout(top)
+        lay.addLayout(opts)
 
-        self.video_config = QFrame()
-        self.video_config.setObjectName("start_localize_caption_box")
-        self.video_config.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        box = QVBoxLayout(self.video_config)
-        box.setContentsMargins(10, 10, 10, 10)
-        box.setSpacing(8)
-
-        box.addWidget(self._section_divider("Layout"))
-        grid = QGridLayout()
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(12)
-        grid.setVerticalSpacing(8)
-        grid.setColumnStretch(1, 1)
-
+        lay.addWidget(self._section_divider("Layout"))
+        grid = self._grid(lay)
         self.spin_caption_y = ScrubSpinBox()
         self.spin_caption_y.setRange(60, 95)
         self.spin_caption_y.setSuffix("%")
@@ -324,13 +259,12 @@ class StartLocalizeDialog(QDialog):
         y_row = QHBoxLayout()
         y_row.setContentsMargins(0, 0, 0, 0)
         y_row.setSpacing(10)
-        y_lbl = self._label("Vertical position")
-        y_row.addWidget(y_lbl, 1)
+        self.lbl_caption_y = self._label("Vertical position")
+        y_row.addWidget(self.lbl_caption_y, 1)
         y_row.addWidget(self.spin_caption_y, 0, Qt.AlignmentFlag.AlignRight)
         grid.addLayout(y_row, 0, 0, 1, 2)
-        box.addLayout(grid)
 
-        box.addWidget(self._section_divider("Options"))
+        lay.addWidget(self._section_divider("Options"))
         more = QVBoxLayout()
         more.setContentsMargins(0, 0, 0, 0)
         more.setSpacing(8)
@@ -346,12 +280,53 @@ class StartLocalizeDialog(QDialog):
             "Write a sidecar .srt next to the project output when the job completes",
             bool(defaults.get("export_srt", False)),
         )
-        box.addLayout(more)
-        box.addStretch(1)
-        lay.addWidget(self.video_config, 1)
+        lay.addLayout(more)
+        lay.addStretch(1)
 
         self.chk_auto_captions.toggled.connect(self._sync_caption_controls)
-        self._sync_caption_controls()
+        return page
+
+    def _build_template_page(self, defaults: dict) -> QWidget:
+        """Package look + motion presets — auto-applied when Use captions is on."""
+        page, lay = self._page()
+
+        head = QHBoxLayout()
+        head.setContentsMargins(0, 0, 0, 0)
+        head.setSpacing(8)
+        head.addWidget(self._section_divider("Look"), 1)
+        self.chk_caption_lock = QCheckBox("Lock package")
+        self.chk_caption_lock.setObjectName("dub_switch")
+        self.chk_caption_lock.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.chk_caption_lock.setChecked(bool(defaults.get("caption_lock", False)))
+        self.chk_caption_lock.setToolTip(
+            "Keep this package selected — previews stay visible, look tiles cannot be changed"
+        )
+        head.addWidget(self.chk_caption_lock, 0, Qt.AlignmentFlag.AlignRight)
+        lay.addLayout(head)
+
+        look = str(defaults.get("caption_look") or "")
+        pick = next(
+            (i for i, s in enumerate(CAPTION_STYLES) if str(s.get("name") or "") == look),
+            0,
+        )
+        self.caption_look_grid = CaptionLookGrid(CAPTION_STYLES)
+        self.caption_look_grid.setObjectName("start_localize_look_grid")
+        self.caption_look_grid.set_current(pick)
+        lay.addWidget(self.caption_look_grid)
+
+        lay.addWidget(self._section_divider("Motion"))
+        saved_anim = str(defaults.get("caption_anim") or "none")
+        anim_pick = next(
+            (i for i, (key, _) in enumerate(CAPTION_ANIMS) if key == saved_anim),
+            0,
+        )
+        self.caption_motion_grid = CaptionMotionGrid(list(CAPTION_ANIMS))
+        self.caption_motion_grid.setObjectName("start_localize_motion_grid")
+        self.caption_motion_grid.set_current(anim_pick)
+        lay.addWidget(self.caption_motion_grid)
+        lay.addStretch(1)
+
+        self.chk_caption_lock.toggled.connect(self._sync_caption_lock)
         return page
 
     def _caption_look_name(self) -> str:
@@ -374,10 +349,16 @@ class StartLocalizeDialog(QDialog):
 
     def _sync_caption_controls(self, *_args):
         on = bool(getattr(self, "chk_auto_captions", None) and self.chk_auto_captions.isChecked())
-        if hasattr(self, "template_config"):
-            self.template_config.setEnabled(on)
-        if hasattr(self, "video_config"):
-            self.video_config.setEnabled(on)
+        for w in (
+            getattr(self, "lbl_caption_y", None),
+            getattr(self, "spin_caption_y", None),
+            getattr(self, "chk_caption_fit", None),
+            getattr(self, "chk_export_srt", None),
+            getattr(self, "chk_caption_lock", None),
+            getattr(self, "caption_motion_grid", None),
+        ):
+            if w is not None:
+                w.setEnabled(on)
         timer = getattr(getattr(self, "caption_motion_grid", None), "_timer", None)
         if timer is not None and not on:
             timer.stop()
