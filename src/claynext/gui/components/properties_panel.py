@@ -137,23 +137,6 @@ class TrackPropsPage(QWidget):
         vol_head.addWidget(self.spin_db)
         aud.addLayout(vol_head)
 
-        vol_slide_row = QHBoxLayout()
-        vol_slide_row.setContentsMargins(0, 0, 0, 0)
-        vol_slide_row.setSpacing(6)
-        self.slider_vol = QSlider(Qt.Orientation.Horizontal)
-        self.slider_vol.setRange(_DB_MIN, _DB_MAX)
-        self.slider_vol.setValue(0)
-        self.slider_vol.setToolTip("Volume level slider (-40 dB to +6 dB)")
-        self.slider_vol.valueChanged.connect(self._on_vol_slider)
-        self.btn_vol_zero = QPushButton("0 dB")
-        self.btn_vol_zero.setObjectName("dub_props_ghost_btn")
-        self.btn_vol_zero.setFixedWidth(40)
-        self.btn_vol_zero.setToolTip("Reset volume to 0.0 dB")
-        self.btn_vol_zero.clicked.connect(lambda: self.spin_db.setValue(0))
-        vol_slide_row.addWidget(self.slider_vol, 1)
-        vol_slide_row.addWidget(self.btn_vol_zero)
-        aud.addLayout(vol_slide_row)
-
         fades_row = QHBoxLayout()
         fades_row.setContentsMargins(0, 4, 0, 0)
         fades_row.setSpacing(6)
@@ -173,13 +156,11 @@ class TrackPropsPage(QWidget):
         self.chk_autokey = QCheckBox("Duck original speech under the dub")
         self.chk_autokey.setObjectName("dub_switch")
         self.chk_autokey.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.chk_autokey.toggled.connect(self._on_autokey)
-        ak.addWidget(self.chk_autokey)
-        self.lbl_autokey_hint = self._hint(
+        self.chk_autokey.setToolTip(
             "Pins source volume down wherever a dub line plays. Music & SFX stay."
         )
-        self.lbl_autokey_hint.setStyleSheet("padding-left: 22px;")
-        ak.addWidget(self.lbl_autokey_hint)
+        self.chk_autokey.toggled.connect(self._on_autokey)
+        ak.addWidget(self.chk_autokey)
 
         duck_head = QHBoxLayout()
         duck_head.setContentsMargins(0, 2, 0, 0)
@@ -194,19 +175,14 @@ class TrackPropsPage(QWidget):
         duck_head.addWidget(self.spin_duck)
         ak.addLayout(duck_head)
 
-        self.slider_duck = QSlider(Qt.Orientation.Horizontal)
-        self.slider_duck.setRange(0, 60)
-        self.slider_duck.setValue(15)
-        self.slider_duck.valueChanged.connect(self._on_duck_slider)
-        ak.addWidget(self.slider_duck)
-
         self.chk_detect = QCheckBox("Also find original voices with no dub line")
         self.chk_detect.setObjectName("dub_switch")
         self.chk_detect.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.chk_detect.setToolTip(
+            "When no music bed is ready, the whole source dips to the duck level."
+        )
         self.chk_detect.toggled.connect(self._on_autokey)
         ak.addWidget(self.chk_detect)
-        self.lbl_bed = self._hint("")
-        ak.addWidget(self.lbl_bed)
 
         keys_row = QHBoxLayout()
         keys_row.setContentsMargins(0, 0, 0, 0)
@@ -582,12 +558,6 @@ class TrackPropsPage(QWidget):
     def _on_scale_slider(self, value: int):
         self.spin_scale.setValue(value)
 
-    def _on_vol_slider(self, value: int):
-        self.spin_db.setValue(value)
-
-    def _on_duck_slider(self, value: int):
-        self.spin_duck.setValue(value)
-
     def _on_canvas_swatch(self, index: int):
         self._canvas_color = CANVAS_COLORS[index]
         self._check_color_swatch()
@@ -696,10 +666,6 @@ class TrackPropsPage(QWidget):
         self.spin_db.blockSignals(True)
         self.spin_db.setValue(value)
         self.spin_db.blockSignals(False)
-        if hasattr(self, "slider_vol"):
-            self.slider_vol.blockSignals(True)
-            self.slider_vol.setValue(value)
-            self.slider_vol.blockSignals(False)
         self.lbl_db.setText(db_text(value))
         self.btn_key.setText("◆" if on_key else "◇")
         self.btn_key_prev.setEnabled(has_prev)
@@ -712,10 +678,6 @@ class TrackPropsPage(QWidget):
     def show_bed_state(self, has_bed: bool):
         self._has_bed = has_bed
         self._sync_autokey_enabled()
-        self.lbl_bed.setText(
-            "Music and effects bed ready · only the speech is swapped out."
-            if has_bed else "No music bed yet · the whole source dips to the duck level."
-        )
 
     def auto_key_state(self) -> dict:
         return {
@@ -726,10 +688,6 @@ class TrackPropsPage(QWidget):
 
     def _on_db(self, value: int):
         self.lbl_db.setText(db_text(value))
-        if hasattr(self, "slider_vol"):
-            self.slider_vol.blockSignals(True)
-            self.slider_vol.setValue(value)
-            self.slider_vol.blockSignals(False)
         if not self._block:
             self.level_changed.emit(db10_to_pct(value))
 
@@ -743,10 +701,6 @@ class TrackPropsPage(QWidget):
 
     def _on_duck(self, value: int):
         self.lbl_duck.setText(f"Duck to · {value}%")
-        if hasattr(self, "slider_duck"):
-            self.slider_duck.blockSignals(True)
-            self.slider_duck.setValue(value)
-            self.slider_duck.blockSignals(False)
         if not self._block and self.chk_autokey.isChecked():
             self.auto_key_changed.emit(self.auto_key_state())
 
@@ -756,8 +710,6 @@ class TrackPropsPage(QWidget):
         duck_enabled = on and not self._has_bed
         self.spin_duck.setEnabled(duck_enabled)
         self.lbl_duck.setEnabled(duck_enabled)
-        if hasattr(self, "slider_duck"):
-            self.slider_duck.setEnabled(duck_enabled)
 
     def _on_autokey(self, *_):
         self._sync_autokey_enabled()
@@ -833,20 +785,12 @@ class TrackPropsPage(QWidget):
         for widget in (self.lbl_fade_in, self.spin_fade_in, self.lbl_fade_out, self.spin_fade_out,
                        self.spin_db, self.btn_key, self.btn_key_prev, self.btn_key_next):
             widget.setEnabled(clip is not None)
-        if hasattr(self, "slider_vol"):
-            self.slider_vol.setEnabled(clip is not None)
-        if hasattr(self, "btn_vol_zero"):
-            self.btn_vol_zero.setEnabled(clip is not None)
 
         auto = dict(clip.extra.get("auto_key") or {}) if clip else {}
         self.chk_autokey.setChecked(bool(auto.get("on")))
         self.chk_detect.setChecked(bool(auto.get("detect")))
         duck_val = int(auto.get("level", 0))
         self.spin_duck.setValue(duck_val)
-        if hasattr(self, "slider_duck"):
-            self.slider_duck.blockSignals(True)
-            self.slider_duck.setValue(duck_val)
-            self.slider_duck.blockSignals(False)
         self.lbl_duck.setText(f"Duck to · {duck_val}%")
         self.show_key_count(len(clip.extra.get("keys") or []) if clip else 0)
         self._sync_autokey_enabled()

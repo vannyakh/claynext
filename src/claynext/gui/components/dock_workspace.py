@@ -12,7 +12,7 @@ _QWIDGETSIZE_MAX = 16777215
 # Compact dock titles — intentionally shorter than shelf panel headers (40px).
 DOCK_HEADER_H = 36
 _EXTRA_H = 28
-_PLAYER_MODES_H = 24
+_PLAYER_MODES_H = 26
 
 
 class DockHeader(QFrame):

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any
+import numpy as np
 
 DEFAULT_INTENSITY = {"effect": 80, "filter": 80}
 
@@ -53,13 +54,29 @@ def clean_fx(kind_or_data: Any = None, data: dict | None = None) -> dict:
     }
 
 
-def fx_label(data: dict | None) -> str:
-    c = clean_fx(data)
-    eff = EFFECT_LABELS.get(c["effect"], c["effect"].title())
-    return eff if c["effect"] != "none" else ""
-
-
-import numpy as np
+def fx_label(kind_or_data: Any = None, data: dict | None = None) -> str:
+    """Human label for an FX clip — accepts ``fx_label(style)`` or ``fx_label(kind, style)``."""
+    c = clean_fx(kind_or_data, data)
+    if data is not None and isinstance(data, dict):
+        src = data
+    elif isinstance(kind_or_data, dict):
+        src = kind_or_data
+    else:
+        src = {}
+    name = str(src.get("name") or src.get("text") or "").strip()
+    key = str(c.get("effect") or "none")
+    if key != "none":
+        return EFFECT_LABELS.get(key, key.replace("_", " ").title())
+    look = str(c.get("look") or "")
+    if look and look != "clean":
+        for lid, label in FILTER_LOOKS:
+            if lid == look:
+                return label
+        return look.replace("_", " ").title()
+    if name:
+        return name
+    kind = str(c.get("kind") or "effect")
+    return kind.replace("_", " ").title()
 
 
 def fx_filters(fx_data: dict | list | None, src_w: int = 1920, src_h: int = 1080) -> list[str]:

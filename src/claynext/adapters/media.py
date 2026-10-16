@@ -56,17 +56,17 @@ def ensure_playback_file(media_path: str, progress_callback=None) -> str:
     success = RustFfmpegAdapter.transcode_video(
         input_path=abs_path,
         output_path=cached,
-        video_codec="copy",
+        video_codec="libx264",
         crf=23,
+        progress_callback=progress_callback,
     )
-    if success and cached.is_file():
+    if success and cached.is_file() and cached.stat().st_size > 0:
         return str(cached)
-    return abs_path
+    raise RuntimeError("Playback convert failed — could not create Qt-safe H.264/AAC file")
 
 
 def ensure_proxy_render(media_path: str, progress_callback=None) -> str:
     """Generate 720p lightweight H.264 proxy via Rust transcode."""
-    _ = progress_callback  # Accepted for Worker injection; unused here.
     abs_path = os.path.abspath(media_path)
     key = hashlib.sha1(f"{abs_path}|proxy_720p".encode()).hexdigest()
     PROXY_DIR.mkdir(parents=True, exist_ok=True)
@@ -74,13 +74,17 @@ def ensure_proxy_render(media_path: str, progress_callback=None) -> str:
     if out_path.is_file() and out_path.stat().st_size > 0:
         return str(out_path)
 
-    RustFfmpegAdapter.transcode_video(
+    ok = RustFfmpegAdapter.transcode_video(
         input_path=abs_path,
         output_path=out_path,
         video_codec="libx264",
         crf=26,
+        height=720,
+        progress_callback=progress_callback,
     )
-    return str(out_path) if out_path.is_file() else abs_path
+    if ok and out_path.is_file() and out_path.stat().st_size > 0:
+        return str(out_path)
+    return abs_path
 
 
 def inspect_media(file_path: str | Path) -> MediaMetadata:

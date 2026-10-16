@@ -1,35 +1,46 @@
 """
-Claynext Studio Splash Screen.
-Shown on application startup with animated progress bar and branding.
-Auto-closes after loading and reveals the launcher window.
+Claynext Studio Splash Screen (legacy entry).
+Bordeered progress track matches the app export / QProgressBar style.
 """
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar
-from PySide6.QtCore import Qt, QTimer, Signal, QPropertyAnimation, QEasingCurve, QRect
-from PySide6.QtGui import QPainter, QLinearGradient, QColor, QPen, QFont, QFontDatabase
+from __future__ import annotations
 
-from claynext.utils.config import APP_NAME, APP_VERSION
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen
+from PySide6.QtWidgets import QApplication, QLabel, QProgressBar, QVBoxLayout, QWidget
+
+from claynext.constants.theme_constants import (
+    COLOR_ACCENT_PURPLE,
+    COLOR_BG_CARD,
+    COLOR_BG_DARK,
+    COLOR_BG_INPUT,
+    COLOR_BORDER,
+    COLOR_PRIMARY,
+    COLOR_TEXT_MAIN,
+    COLOR_TEXT_MUTED,
+    COLOR_TEXT_SUB,
+)
 from claynext.gui.icons import image_pixmap
+from claynext.utils.config import APP_NAME, APP_VERSION
 
 
 class SplashScreen(QWidget):
-    """
-    Frameless splash screen with animated gradient background,
-    progress bar, and Claynext branding. Emits finished() when done.
-    """
+    """Frameless splash with branded progress; emits finished() when done."""
+
     finished = Signal()
 
     def __init__(self):
         super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.setFixedSize(500, 320)
+        self.setFixedSize(460, 280)
+        self.setObjectName("splashScreen")
 
         self._progress = 0
         self._phase_labels = [
             "Initializing core engine…",
-            "Loading AI models…",
-            "Preparing media tools…",
-            "Starting Claynext Studio…",
+            "Loading media engines…",
+            "Preparing workspace…",
+            f"Starting {APP_NAME}…",
         ]
         self._phase_idx = 0
 
@@ -38,7 +49,6 @@ class SplashScreen(QWidget):
         self._start_animation()
 
     def _center(self):
-        from PySide6.QtWidgets import QApplication
         screen = QApplication.primaryScreen()
         if screen:
             sg = screen.availableGeometry()
@@ -49,68 +59,75 @@ class SplashScreen(QWidget):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(40, 36, 40, 32)
+        layout.setContentsMargins(36, 28, 36, 24)
         layout.setSpacing(0)
-
         layout.addStretch(1)
 
-        # Centered 3D App Logo Box
         logo_lbl = QLabel()
-        logo_lbl.setFixedSize(84, 84)
+        logo_lbl.setFixedSize(64, 64)
         logo_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        px = image_pixmap("splash_hero", 84)
+        px = image_pixmap("splash_hero", 64)
         if px.isNull():
-            px = image_pixmap("app", 84)
+            px = image_pixmap("app", 64)
         if not px.isNull():
             logo_lbl.setPixmap(px)
         layout.addWidget(logo_lbl, 0, Qt.AlignmentFlag.AlignCenter)
+        layout.addSpacing(12)
 
-        layout.addSpacing(16)
-
-        # Centered App Title
         name_lbl = QLabel(APP_NAME)
         name_lbl.setObjectName("splash_title")
         name_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         name_lbl.setStyleSheet(
-            "color: #f0f6ff; font-size: 24px; font-weight: 800; "
-            "letter-spacing: -0.5px; background: transparent;"
+            f"color: {COLOR_TEXT_MAIN}; font-size: 18px; font-weight: 800; "
+            "letter-spacing: -0.3px; background: transparent;"
         )
         layout.addWidget(name_lbl, 0, Qt.AlignmentFlag.AlignCenter)
 
         layout.addStretch(1)
 
-        # Status label
         self.status_lbl = QLabel(self._phase_labels[0])
         self.status_lbl.setObjectName("splash_status")
         self.status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_lbl.setStyleSheet(
-            "color: #64748b; font-size: 11px; font-weight: 500; background: transparent;"
+            f"color: {COLOR_TEXT_MUTED}; font-size: 11px; font-weight: 500; background: transparent;"
         )
         layout.addWidget(self.status_lbl, 0, Qt.AlignmentFlag.AlignCenter)
-        layout.addSpacing(8)
+        layout.addSpacing(10)
 
-        # Progress bar
         self.progress_bar = QProgressBar()
+        self.progress_bar.setObjectName("splash_progress")
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        self.progress_bar.setTextVisible(False)
-        self.progress_bar.setFixedHeight(4)
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                background-color: rgba(255,255,255,0.08);
-                border: none;
-                border-radius: 2px;
-            }
-            QProgressBar::chunk {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #38bdf8, stop:0.5 #818cf8, stop:1 #a855f7);
-                border-radius: 2px;
-            }
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setFormat("%p%")
+        self.progress_bar.setFixedHeight(18)
+        self.progress_bar.setStyleSheet(f"""
+            QProgressBar {{
+                border: 1px solid {COLOR_BORDER};
+                border-radius: 4px;
+                background-color: {COLOR_BG_INPUT};
+                text-align: center;
+                color: {COLOR_TEXT_MAIN};
+                font-weight: 600;
+                font-size: 10px;
+            }}
+            QProgressBar::chunk {{
+                background-color: {COLOR_PRIMARY};
+                border-radius: 3px;
+                margin: 1px;
+            }}
         """)
         layout.addWidget(self.progress_bar)
 
+        layout.addSpacing(8)
+        foot = QLabel(f"v{APP_VERSION}")
+        foot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        foot.setStyleSheet(
+            f"color: {COLOR_TEXT_SUB}; font-size: 10px; font-weight: 600; background: transparent;"
+        )
+        layout.addWidget(foot, 0, Qt.AlignmentFlag.AlignCenter)
+
     def _start_animation(self):
-        """Drive progress 0→100 over ~2.2 seconds then emit finished."""
         self._tick_timer = QTimer(self)
         self._tick_timer.setInterval(22)
         self._tick_timer.timeout.connect(self._tick)
@@ -120,9 +137,7 @@ class SplashScreen(QWidget):
         self._progress += 1
         self.progress_bar.setValue(self._progress)
 
-        # Update phase label at 25/50/75 marks
-        phase_thresholds = [25, 55, 80]
-        for i, threshold in enumerate(phase_thresholds):
+        for i, threshold in enumerate((25, 55, 80)):
             if self._progress == threshold and i + 1 < len(self._phase_labels):
                 self._phase_idx = i + 1
                 self.status_lbl.setText(self._phase_labels[self._phase_idx])
@@ -135,34 +150,34 @@ class SplashScreen(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        # Background card
         rect = self.rect().adjusted(1, 1, -1, -1)
 
-        # Dark gradient background
         grad = QLinearGradient(0, 0, 0, self.height())
-        grad.setColorAt(0.0, QColor("#0d1420"))
-        grad.setColorAt(0.5, QColor("#0f1929"))
-        grad.setColorAt(1.0, QColor("#0b1016"))
+        grad.setColorAt(0.0, QColor(COLOR_BG_CARD))
+        grad.setColorAt(1.0, QColor(COLOR_BG_DARK))
         painter.setBrush(grad)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(rect, 16, 16)
+        painter.drawRoundedRect(rect, 12, 12)
 
-        # Subtle top accent glow
-        glow_grad = QLinearGradient(0, 0, self.width(), 0)
-        glow_grad.setColorAt(0.0, QColor(56, 189, 248, 0))
-        glow_grad.setColorAt(0.3, QColor(56, 189, 248, 40))
-        glow_grad.setColorAt(0.7, QColor(168, 85, 247, 40))
-        glow_grad.setColorAt(1.0, QColor(168, 85, 247, 0))
-        painter.setBrush(glow_grad)
-        painter.drawRoundedRect(rect.adjusted(0, 0, 0, -rect.height() + 2), 16, 16)
+        glow = QLinearGradient(0, 0, self.width(), 0)
+        c0 = QColor(COLOR_PRIMARY)
+        c0.setAlpha(0)
+        c1 = QColor(COLOR_PRIMARY)
+        c1.setAlpha(36)
+        c2 = QColor(COLOR_ACCENT_PURPLE)
+        c2.setAlpha(36)
+        c3 = QColor(COLOR_ACCENT_PURPLE)
+        c3.setAlpha(0)
+        glow.setColorAt(0.0, c0)
+        glow.setColorAt(0.35, c1)
+        glow.setColorAt(0.65, c2)
+        glow.setColorAt(1.0, c3)
+        painter.setBrush(glow)
+        painter.drawRoundedRect(rect.adjusted(0, 0, 0, -rect.height() + 2), 12, 12)
 
-        # Border
-        pen = QPen(QColor(255, 255, 255, 18))
+        pen = QPen(QColor(COLOR_BORDER))
         pen.setWidth(1)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(rect, 16, 16)
-
+        painter.drawRoundedRect(rect, 12, 12)
         painter.end()
-

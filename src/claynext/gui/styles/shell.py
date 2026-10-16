@@ -112,36 +112,44 @@ QDockWidget::title {{
     max-height: 36px;
 }}
 #dock_header #claynext_seg, #dock_header #dub_props_seg {{
-    border-radius: 6px;
+    background: transparent;
+    border: none;
+    border-radius: 999px;
 }}
 #dock_header QPushButton#claynext_seg_btn, #dock_header QPushButton#dub_props_tab {{
     min-height: 18px;
     max-height: 20px;
-    padding: 1px 10px;
+    padding: 1px 12px;
     font-size: 10px;
+    border-radius: 999px;
 }}
-/* Preview Source / Timeline — compact segmented pill */
+/* Preview Source / Timeline — full capsule segmented pill */
 #dock_header #dub_player_modes {{
     background-color: transparent;
     border: none;
-    max-height: 24px;
+    max-height: 28px;
 }}
 #dock_header #dub_player_modes #claynext_seg_sm,
 #dock_header #dub_player_modes #claynext_seg_host {{
     background: transparent;
+    border: none;
 }}
 #dock_header #dub_player_modes #claynext_seg {{
-    min-width: 148px;
-    max-height: 22px;
-    border-radius: 11px;
+    min-width: 156px;
+    min-height: 24px;
+    max-height: 24px;
+    background: transparent;
+    border: none;
+    border-radius: 999px;
 }}
 #dock_header #dub_player_modes QPushButton#claynext_seg_btn {{
-    min-width: 64px;
-    max-width: 88px;
+    min-width: 68px;
+    max-width: 96px;
     min-height: 18px;
     max-height: 20px;
-    padding: 0 10px;
+    padding: 0 12px;
     font-size: 10px;
+    border-radius: 999px;
 }}
 QToolButton#dock_header_btn {{
     background-color: transparent;

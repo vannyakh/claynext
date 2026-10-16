@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
 )
 
 from claynext.constants.theme_constants import (
+    COLOR_BG_SEGMENT,
+    COLOR_BORDER,
     COLOR_TEXT_MAIN,
     COLOR_TEXT_MUTED,
     COLOR_TEXT_SUB,
@@ -133,19 +135,24 @@ class ChromeTabButton(QPushButton):
 
 
 class SegmentTrack(QFrame):
-    """Pill track with a sliding selection indicator under normal-weight labels."""
+    """Full-capsule track with a sliding selection pill under normal-weight labels."""
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("claynext_seg")
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        # Custom paint draws the capsule; keep QSS from painting a square frame.
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
+        self.setAutoFillBackground(False)
+        self.setStyleSheet(
+            "QFrame#claynext_seg { background: transparent; border: none; }"
+        )
         self._anim: QVariantAnimation | None = None
         self._pill_x = 0.0
         self._pill_w = 0.0
         self._pill_y = 1.0
         self._pill_h = 18.0
-        self._pill_inset = 1.0
-        self._pill_radius = 5.0
+        self._pill_inset = 2.0
+        self._pill_radius = 999.0
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -156,22 +163,32 @@ class SegmentTrack(QFrame):
         super().resizeEvent(event)
         self._sync_pill(animate=False)
 
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        if self._pill_w < 2:
-            return
+    def paintEvent(self, _event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        pill = QRectF(self._pill_x, self._pill_y, self._pill_w, self._pill_h)
-        path = QPainterPath()
-        r = min(self._pill_radius, pill.height() * 0.5)
-        path.addRoundedRect(pill, r, r)
-        grad = QLinearGradient(pill.topLeft(), pill.bottomLeft())
-        grad.setColorAt(0.0, QColor("#1a2536"))
-        grad.setColorAt(1.0, QColor("#121c28"))
-        painter.fillPath(path, grad)
-        painter.setPen(QPen(QColor("#283c54"), 1.0))
-        painter.drawPath(path)
+
+        # Outer group — full capsule (matches selection pill curvature).
+        track = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        track_r = track.height() * 0.5
+        track_path = QPainterPath()
+        track_path.addRoundedRect(track, track_r, track_r)
+        painter.fillPath(track_path, QColor(COLOR_BG_SEGMENT))
+        painter.setPen(QPen(QColor(COLOR_BORDER), 1.0))
+        painter.drawPath(track_path)
+
+        if self._pill_w >= 2:
+            pill = QRectF(self._pill_x, self._pill_y, self._pill_w, self._pill_h)
+            pill_r = pill.height() * 0.5
+            pill_path = QPainterPath()
+            pill_path.addRoundedRect(pill, pill_r, pill_r)
+            grad = QLinearGradient(pill.topLeft(), pill.bottomLeft())
+            grad.setColorAt(0.0, QColor("#1a2536"))
+            grad.setColorAt(1.0, QColor("#121c28"))
+            painter.fillPath(pill_path, grad)
+            painter.setPen(QPen(QColor("#283c54"), 1.0))
+            painter.drawPath(pill_path)
+
+        painter.end()
 
     def _checked_button(self) -> QPushButton | None:
         for child in self.findChildren(QPushButton):
@@ -306,11 +323,11 @@ class SegmentTabs(QFrame):
                 QSizePolicy.Policy.Expanding if compact_fill else QSizePolicy.Policy.Fixed,
                 QSizePolicy.Policy.Fixed,
             )
-            track.setFixedHeight(22)
-            track._pill_inset = 1.0
-            track._pill_radius = 4.0
+            track.setFixedHeight(24)
+            track._pill_inset = 2.0
+            track._pill_radius = 999.0
             track_l = QHBoxLayout(track)
-            track_l.setContentsMargins(1, 1, 1, 1)
+            track_l.setContentsMargins(2, 2, 2, 2)
             track_l.setSpacing(0)
             btn_factory = None
             btn_stretch = compact_fill
@@ -343,7 +360,7 @@ class SegmentTabs(QFrame):
                 if compact:
                     btn.setFixedHeight(20)
                     if not compact_fill:
-                        btn.setMinimumWidth(64)
+                        btn.setMinimumWidth(68)
             btn.setChecked(i == current)
             btn.setSizePolicy(
                 QSizePolicy.Policy.Expanding if btn_stretch else QSizePolicy.Policy.Fixed,

@@ -69,14 +69,14 @@ All commands MUST be run with `uv`:
 # Sync dependencies
 uv sync
 
-# Launch (loader → Project Home → Studio)
+# Launch (loader → Studio)
 uv run main.py
 
 # Skip loader splash (Fast Dev Mode)
 uv run main.py --no-splash
 
-# Open studio editor directly (skip project home)
-uv run main.py --studio --no-splash
+# Open a project file in Studio
+uv run main.py --project path/to/file.claynext.json --no-splash
 
 # Run headless smoke test (Qt offscreen)
 QT_QPA_PLATFORM=offscreen uv run python -c "from claynext.app import main; print('Ready')"

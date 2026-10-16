@@ -942,14 +942,16 @@ QPushButton#chrome_tab_btn:checked {{
     background-color: transparent;
     border: none;
 }}
+/* Track fill/border painted by SegmentTrack (full capsule). */
 #claynext_seg, #dub_props_seg {{
-    background-color: {COLOR_BG_SEGMENT};
-    border: 1px solid {COLOR_BORDER};
-    border-radius: 8px;
+    background: transparent;
+    border: none;
+    border-radius: 999px;
 }}
 #claynext_seg_sm #claynext_seg {{
-    border-radius: 11px;
-    max-height: 22px;
+    border-radius: 999px;
+    min-height: 24px;
+    max-height: 24px;
 }}
 QPushButton#claynext_seg_btn, QPushButton#dub_props_tab {{
     background-color: transparent;
@@ -957,17 +959,17 @@ QPushButton#claynext_seg_btn, QPushButton#dub_props_tab {{
     font-size: 11px;
     font-weight: 400;
     border: 1px solid transparent;
-    border-radius: 6px;
-    padding: 4px 8px;
+    border-radius: 999px;
+    padding: 4px 10px;
     min-height: 24px;
     max-height: 26px;
 }}
 #claynext_seg_sm QPushButton#claynext_seg_btn {{
     font-size: 10px;
-    padding: 0 10px;
+    padding: 0 12px;
     min-height: 18px;
     max-height: 20px;
-    border-radius: 10px;
+    border-radius: 999px;
 }}
 QPushButton#claynext_seg_btn:hover, QPushButton#dub_props_tab:hover {{
     background-color: transparent;
@@ -1024,11 +1026,14 @@ QToolButton#dub_props_ratio:checked {{
 }}
 #dub_props_tabs_host #claynext_seg_sm #claynext_seg {{
     min-width: 0;
-    max-height: 22px;
+    min-height: 24px;
+    max-height: 24px;
+    border-radius: 999px;
 }}
 #dub_props_tabs_host QPushButton#claynext_seg_btn {{
     min-width: 0;
-    padding: 0 6px;
+    padding: 0 8px;
+    border-radius: 999px;
 }}
 QToolButton#dub_props_filter {{
     background-color: {COLOR_BG_INPUT};
@@ -1312,11 +1317,14 @@ QPushButton#dub_props_ghost_btn:pressed {{
 }}
 #start_dub_chrome #claynext_seg_sm #claynext_seg {{
     min-width: 0;
-    max-height: 22px;
+    min-height: 24px;
+    max-height: 24px;
+    border-radius: 999px;
 }}
 #start_dub_chrome QPushButton#claynext_seg_btn {{
     min-width: 0;
-    padding: 0 8px;
+    padding: 0 10px;
+    border-radius: 999px;
 }}
 #start_dub_body {{
     background-color: {COLOR_BG_CARD};

@@ -284,7 +284,7 @@ class ProjectTools:
         self._apply_tools_payload(data)
 
     def open_startup_project(self, path: str):
-        """Load a project file chosen from the home screen."""
+        """Load a project file passed via --project or Open."""
         if not path or not os.path.isfile(path):
             self.log.warn(f"Project missing · {path}")
             return

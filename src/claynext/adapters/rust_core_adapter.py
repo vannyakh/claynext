@@ -131,6 +131,126 @@ class RustFfmpegAdapter:
             logger.warning(f"Rust mux failed: {e}")
             return False
 
+    @classmethod
+    def transcode_video(
+        cls,
+        input_path: str | Path,
+        output_path: str | Path,
+        video_codec: str = "libx264",
+        crf: int = 21,
+        *,
+        width: int | None = None,
+        height: int | None = None,
+        audio_codec: str = "aac",
+        sample_rate: int = 44100,
+        channels: int = 2,
+        progress_callback: Callable[[float], None] | None = None,
+    ) -> bool:
+        """
+        Transcode to a Qt-safe H.264 / AAC file.
+        Prefers claynext-ffmpeg export when the binary exists; otherwise imageio-ffmpeg.
+        """
+        inp = Path(input_path)
+        out = Path(output_path)
+        if not inp.is_file():
+            return False
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if progress_callback:
+            progress_callback(0.0)
+
+        codec = (video_codec or "libx264").strip()
+        # Stream-copy is not a Qt-safe playback convert — force a real encode.
+        if codec in {"", "copy", "auto"}:
+            codec = "libx264"
+
+        binary = _find_binary("claynext-ffmpeg")
+        # CLI export uses default libx264+aac; only use it for standard re-encodes.
+        if binary and codec == "libx264" and width is None and height is None:
+            try:
+                subprocess.run(
+                    [str(binary), "export", str(inp), str(out)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                if out.is_file() and out.stat().st_size > 0:
+                    if progress_callback:
+                        progress_callback(100.0)
+                    return True
+            except Exception as e:
+                logger.warning("Rust export failed, falling back to imageio-ffmpeg: %s", e)
+
+        ok = cls._transcode_via_imageio(
+            inp,
+            out,
+            video_codec=codec,
+            crf=crf,
+            width=width,
+            height=height,
+            audio_codec=audio_codec,
+            sample_rate=sample_rate,
+            channels=channels,
+        )
+        if ok and progress_callback:
+            progress_callback(100.0)
+        return ok
+
+    @staticmethod
+    def _transcode_via_imageio(
+        input_path: Path,
+        output_path: Path,
+        *,
+        video_codec: str,
+        crf: int,
+        width: int | None,
+        height: int | None,
+        audio_codec: str,
+        sample_rate: int,
+        channels: int,
+    ) -> bool:
+        try:
+            import imageio_ffmpeg
+        except Exception as e:
+            logger.warning("imageio-ffmpeg unavailable for transcode: %s", e)
+            return False
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        args: list[str] = [
+            exe, "-y", "-hide_banner", "-loglevel", "error",
+            "-i", str(input_path),
+            "-c:v", video_codec,
+            "-preset", "veryfast",
+            "-crf", str(int(crf)),
+            "-pix_fmt", "yuv420p",
+        ]
+        if width and height:
+            args += ["-vf", f"scale={int(width)}:{int(height)}:force_original_aspect_ratio=decrease"]
+        elif height:
+            args += ["-vf", f"scale=-2:{int(height)}"]
+        args += [
+            "-c:a", audio_codec or "aac",
+            "-ar", str(int(sample_rate)),
+            "-ac", str(int(channels)),
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
+        try:
+            subprocess.run(args, check=True, capture_output=True)
+            return output_path.is_file() and output_path.stat().st_size > 0
+        except Exception as e:
+            logger.warning("imageio-ffmpeg transcode failed: %s", e)
+            return False
+
+    @classmethod
+    def extract_audio_pcm(
+        cls,
+        file_path: str | Path,
+        sample_rate: int = 44100,
+        channels: int = 2,
+    ) -> DecodedAudioChunk | None:
+        """Alias used by RustCoreAdapter — delegates to decode_audio_pcm_f32."""
+        _ = sample_rate, channels
+        return cls.decode_audio_pcm_f32(file_path)
+
     @staticmethod
     def _parse_metadata(raw: dict[str, Any]) -> MediaMetadata:
         path = str(raw.get("filepath") or "")

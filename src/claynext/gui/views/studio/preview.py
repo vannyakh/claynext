@@ -106,7 +106,7 @@ class PreviewTools:
         bar = QWidget()
         bar.setObjectName("dub_player_modes")
         bar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        bar.setFixedHeight(24)
+        bar.setFixedHeight(26)
         lay = QHBoxLayout(bar)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)

@@ -30,18 +30,14 @@ class MainWindow(QMainWindow):
     def __init__(
         self,
         tool_index: int = 0,
-        launcher_window=None,
-        home_window=None,
         project_path: str | None = None,
+        **_unused,
     ):
         super().__init__()
 
         self.tool_index = tool_index
         self.tool_data = NAV_ITEMS[tool_index] if 0 <= tool_index < len(NAV_ITEMS) else NAV_ITEMS[0]
-        self.launcher_window = None
-        self.home_window = home_window
         self.project_path = project_path or ""
-        self._returning_home = False
 
         self._custom_chrome = CUSTOM_WINDOW_CHROME
         if self._custom_chrome:
@@ -75,25 +71,9 @@ class MainWindow(QMainWindow):
         self.init_ui()
         self._setup_shortcuts()
 
-    def return_to_home(self):
-        """Close studio and show the project home window."""
-        if self.home_window is None:
-            self.close()
-            return
-        self._returning_home = True
-        self._persist_tool_view()
-        self._stop_tool_media()
-        self.hide()
-        self.home_window.show_home()
-        self.close()
-
     def quit_app(self):
-        """Exit the whole application (do not bounce back to home)."""
-        self._returning_home = True
-        home = self.home_window
+        """Exit the whole application."""
         self.close()
-        if home is not None:
-            home.close()
         app = QApplication.instance()
         if app:
             app.quit()
@@ -101,12 +81,8 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         self._persist_tool_view()
         self._stop_tool_media()
-        home = self.home_window
-        returning = self._returning_home
         event.accept()
         super().closeEvent(event)
-        if home is not None and not returning:
-            home.show_home()
 
     def _persist_tool_view(self):
         """Write dock layout / session before the tool window is hidden or closed."""
@@ -187,13 +163,6 @@ class MainWindow(QMainWindow):
 
     def setup_menus(self, menu_bar: QMenuBar):
         file_menu = menu_bar.addMenu("&File")
-
-        if self.home_window is not None:
-            act_home = QAction("&Close Project", self)
-            act_home.setShortcut(QKeySequence("Ctrl+0"))
-            act_home.triggered.connect(self.return_to_home)
-            file_menu.addAction(act_home)
-            file_menu.addSeparator()
 
         act_settings = QAction("&Settings…", self)
         act_settings.setShortcut(QKeySequence("Ctrl+,"))

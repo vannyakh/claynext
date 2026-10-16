@@ -11,7 +11,7 @@
 | Feature / Subsystem | Verification Method | Status | Notes |
 | :--- | :--- | :--- | :--- |
 | **Application Startup** | `uv run python -c "from claynext.app import main; print('Ready')"` | **VERIFIED** | Clean import without errors |
-| **Project Home Dashboard** | `claynext.gui.project_home_window` import & initialization | **VERIFIED** | SQLite store & recent projects active |
+| **Project Home Dashboard** | Removed — Studio opens directly | **N/A** | Open/save projects from Studio |
 | **Studio Editor Window** | `claynext.gui.main_window.MainWindow` init | **VERIFIED** | Frameless chrome, title bar, tabs, docks |
 | **Timeline Operations** | `TimelinePanel`, `TimelineCanvas`, `TrackHeader` | **VERIFIED** | Tracks, multi-clip selection, snapping |
 | **Media Probing (Rust Core)** | `backends/target/debug/claynext-ffmpeg.exe probe` | **VERIFIED** | Tested with sample MP4, deep JSON output |

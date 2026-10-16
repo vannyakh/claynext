@@ -109,7 +109,6 @@ Claynext/
 │       ├── icons.py           # Crisp SVG icon rasterizer (High-DPI 2x)
 │       ├── worker.py          # PySide6 QRunnable/QThreadPool background worker
 │       ├── splash_screen.py   # Cyber Dark animated splash loader
-│       ├── project_home_window.py # Project Home dashboard & recent projects
 │       ├── main_window.py     # Root Studio window with custom title bar & docking
 │       ├── components/        # Reusable UI widgets
 │       │   ├── title_bar.py   # Frameless window chrome
