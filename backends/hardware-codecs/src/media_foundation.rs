@@ -9,8 +9,9 @@ pub struct MediaFoundationProfile {
 
 impl Default for MediaFoundationProfile {
     fn default() -> Self {
+        // Prefer H.264 MF — HEVC MF is often missing (no HEVC Video Extension / HW).
         Self {
-            codec: "hevc_mf".to_string(),
+            codec: "h264_mf".to_string(),
             rate_control: "quality".to_string(),
             quality: 75,
         }

@@ -15,8 +15,11 @@ def detect_system_gpus() -> list[GpuCapability]:
     return RustHardwareCodecsAdapter.detect_gpus()
 
 
-def get_recommended_encoder(prefer_hevc: bool = True) -> CodecProfile:
-    """Get the recommended hardware or software video encoder profile."""
+def get_recommended_encoder(prefer_hevc: bool = False) -> CodecProfile:
+    """Get the recommended hardware or software video encoder profile.
+
+    Defaults to H.264 — HEVC/Media Foundation HEVC is frequently unavailable on Windows.
+    """
     args = RustHardwareCodecsAdapter.get_optimal_encoder_args(prefer_hevc=prefer_hevc)
     codec = "libx264"
     for i, a in enumerate(args):
@@ -40,7 +43,7 @@ class HardwareCodecsAdapter:
         return detect_system_gpus()
 
     @staticmethod
-    def get_recommended_encoder(prefer_hevc: bool = True) -> str:
+    def get_recommended_encoder(prefer_hevc: bool = False) -> str:
         prof = get_recommended_encoder(prefer_hevc=prefer_hevc)
         return prof.codec_name
 

@@ -169,7 +169,14 @@ def analyze_movie_characters(
             prev_end = end_sec
 
     # ASR audio gender: wav2vec2 Common-Voice classifier per character.
-    if audio_path and os.path.isfile(audio_path):
+    gender_on = True
+    try:
+        from claynext.controllers.store import get_store
+
+        gender_on = get_store().get_setting("dub", "gender_detect", "1") == "1"
+    except Exception:
+        gender_on = True
+    if gender_on and audio_path and os.path.isfile(audio_path):
         if progress_callback:
             progress_callback(36, "Audio gender detection (Common-Voice)…")
         enrich_segments_with_audio_gender(

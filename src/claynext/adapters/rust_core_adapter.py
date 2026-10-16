@@ -225,7 +225,7 @@ class RustHardwareCodecsAdapter:
             return []
 
     @classmethod
-    def get_optimal_encoder_args(cls, prefer_hevc: bool = True) -> list[str]:
+    def get_optimal_encoder_args(cls, prefer_hevc: bool = False) -> list[str]:
         binary = _find_binary("claynext-codecs")
         if binary:
             try:
@@ -237,12 +237,13 @@ class RustHardwareCodecsAdapter:
                     check=True,
                 )
                 args = res.stdout.strip().split()
-                if args:
+                # Skip hevc_mf — Windows often has no HEVC Media Foundation encoder.
+                if args and "hevc_mf" not in args:
                     return args
             except Exception as e:
                 logger.warning(f"Rust optimal encoder query failed: {e}")
 
-        # Software fallback
+        # Software fallback (H.264 by default — widest Windows playback support)
         codec = "libx265" if prefer_hevc else "libx264"
         return ["-c:v", codec, "-crf", "20", "-preset", "faster"]
 

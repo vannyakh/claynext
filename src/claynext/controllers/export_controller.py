@@ -25,7 +25,7 @@ class ExportController:
         self._rendering = get_rendering_adapter()
         self._codecs = get_hardware_codecs()
 
-    def get_recommended_encoder(self, prefer_hevc: bool = True) -> CodecProfile:
+    def get_recommended_encoder(self, prefer_hevc: bool = False) -> CodecProfile:
         """Query native Rust hardware codecs backend for optimal encoder profile."""
         from claynext.adapters.hardware_codecs_adapter import get_recommended_encoder
 

@@ -1,8 +1,11 @@
 import argparse
 import sys
+
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
+
 from claynext.constants import NAV_ITEMS
+from claynext.utils.stderr_filter import install_ffmpeg_mf_stderr_filter
 
 
 def _resolve_tool_index(value: str | None) -> int:
@@ -76,6 +79,9 @@ def main():
         help="Open this .claynext.json project in the studio (implies --studio)",
     )
     args, qt_args = parser.parse_known_args()
+
+    # Qt Multimedia probes h264_mf / hevc_mf on startup; many PCs lack HEVC MF.
+    install_ffmpeg_mf_stderr_filter()
 
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough

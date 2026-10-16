@@ -631,7 +631,7 @@ QToolButton#dub_text_tile:checked {{
     border-color: {COLOR_ACCENT_PURPLE};
     color: {COLOR_TEXT_MAIN};
 }}
-#caption_look_grid {{
+#caption_look_grid, #start_localize_look_grid {{
     background: transparent;
 }}
 #dub_caption_page {{
@@ -644,7 +644,9 @@ QToolButton#caption_look_tile {{
     font-weight: 600;
     border: 1px solid #1e293b;
     border-radius: 8px;
-    padding: 4px 2px 5px 2px;
+    padding: 3px 2px 2px 2px;
+    min-height: 56px;
+    max-height: 56px;
 }}
 QToolButton#caption_look_tile:hover {{
     border-color: #475569;
@@ -656,7 +658,7 @@ QToolButton#caption_look_tile:checked {{
     color: #ffffff;
     background-color: rgba(168, 85, 247, 0.14);
 }}
-#caption_motion_grid {{
+#caption_motion_grid, #start_localize_motion_grid {{
     background: transparent;
 }}
 QToolButton#caption_motion_tile {{
@@ -666,7 +668,9 @@ QToolButton#caption_motion_tile {{
     font-weight: 600;
     border: 1px solid #1e293b;
     border-radius: 8px;
-    padding: 4px 2px 4px 2px;
+    padding: 3px 2px 2px 2px;
+    min-height: 50px;
+    max-height: 50px;
 }}
 QToolButton#caption_motion_tile:hover {{
     border-color: #475569;
@@ -1317,6 +1321,69 @@ QPushButton#dub_props_ghost_btn:pressed {{
 #start_dub_body {{
     background-color: {COLOR_BG_CARD};
 }}
+/* Compact menus — same 30px height as ScrubSpinBox */
+#startLocalizeDialog QComboBox#start_localize_combo {{
+    background-color: {COLOR_BG_DARK};
+    color: {COLOR_TEXT_MAIN};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 8px;
+    padding: 2px 8px;
+    min-height: 30px;
+    max-height: 30px;
+    font-size: 12px;
+}}
+#startLocalizeDialog QComboBox#start_localize_combo:hover {{
+    border-color: {COLOR_BORDER};
+}}
+#startLocalizeDialog QComboBox#start_localize_combo:focus {{
+    border-color: {accent};
+}}
+#startLocalizeDialog QComboBox#start_localize_combo::drop-down {{
+    border: none;
+    width: 20px;
+}}
+#startLocalizeDialog QLineEdit#start_localize_field {{
+    background-color: {COLOR_BG_DARK};
+    color: {COLOR_TEXT_MAIN};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 8px;
+    padding: 2px 8px;
+    min-height: 30px;
+    max-height: 30px;
+    font-size: 12px;
+}}
+#startLocalizeDialog QLineEdit#start_localize_field:focus {{
+    border-color: {accent};
+}}
+#startLocalizeDialog QLineEdit#start_localize_field:disabled {{
+    color: {COLOR_TEXT_MUTED};
+}}
+#startLocalizeDialog #start_localize_divider {{
+    background: transparent;
+    border: none;
+}}
+#startLocalizeDialog #start_localize_divider_label {{
+    color: {COLOR_TEXT_MUTED};
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    background: transparent;
+    border: none;
+    padding: 0;
+}}
+#startLocalizeDialog #start_localize_divider_rule {{
+    background-color: {COLOR_BORDER}66;
+    border: none;
+    max-height: 1px;
+}}
+#startLocalizeDialog #start_localize_caption_box {{
+    background-color: {COLOR_BG_DARK};
+    border: 1px solid {COLOR_BORDER}66;
+    border-radius: 10px;
+}}
+#startLocalizeDialog #start_localize_caption_box:disabled {{
+    opacity: 0.55;
+}}
 #startLocalizeDialog #dub_switch {{
     spacing: 10px;
     padding: 2px 0;
@@ -1324,6 +1391,47 @@ QPushButton#dub_props_ghost_btn:pressed {{
 #startLocalizeDialog #dub_switch_hint {{
     padding-left: 24px;
     padding-bottom: 2px;
+}}
+#startLocalizeDialog QPushButton#start_localize_btn {{
+    background-color: transparent;
+    color: {COLOR_TEXT_SUB};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 8px;
+    padding: 0 16px;
+    font-size: 12px;
+    font-weight: 600;
+    min-height: 34px;
+    max-height: 34px;
+}}
+#startLocalizeDialog QPushButton#start_localize_btn:hover {{
+    background-color: {COLOR_BG_CARD_HOVER};
+    color: {COLOR_TEXT_MAIN};
+    border-color: {COLOR_BORDER_FOCUS};
+}}
+#startLocalizeDialog QPushButton#start_localize_btn:pressed {{
+    background-color: {COLOR_BG_INPUT};
+}}
+#startLocalizeDialog QPushButton#start_localize_btn_primary {{
+    background-color: {COLOR_PRIMARY};
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 0 18px;
+    font-size: 12px;
+    font-weight: 700;
+    min-height: 34px;
+    max-height: 34px;
+}}
+#startLocalizeDialog QPushButton#start_localize_btn_primary:hover {{
+    background-color: {COLOR_PRIMARY_HOVER};
+}}
+#startLocalizeDialog QPushButton#start_localize_btn_primary:pressed {{
+    background-color: {COLOR_ACCENT_PURPLE};
+}}
+#startLocalizeDialog QPushButton#start_localize_btn_primary:disabled {{
+    background-color: {COLOR_BG_INPUT};
+    color: {COLOR_TEXT_MUTED};
+    border: 1px solid {COLOR_BORDER}66;
 }}
 #start_dub_batch {{
     background-color: {COLOR_BG_DARK};

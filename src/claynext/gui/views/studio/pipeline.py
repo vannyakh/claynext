@@ -128,6 +128,10 @@ class PipelineTools:
         self.log.error(f"Episode merge failed · {message}")
 
     def _start_dub_defaults(self) -> dict:
+        try:
+            caption_y = int(self.store.get_setting("dub", "caption_y", "86"))
+        except (TypeError, ValueError):
+            caption_y = 86
         return {
             "source_lang": self.combo_source_lang.currentText(),
             "target_lang": self.combo_lang.currentText(),
@@ -143,6 +147,13 @@ class PipelineTools:
             "fade_ms": self.slider_fade_ms.value(),
             "auto_chain": bool(getattr(self, "chk_auto_chain", None) and self.chk_auto_chain.isChecked()),
             "auto_captions": bool(getattr(self, "chk_auto_captions", None) and self.chk_auto_captions.isChecked()),
+            "caption_look": self.store.get_setting("dub", "caption_look", "") or "",
+            "caption_lock": self.store.get_setting("dub", "caption_lock", "0") == "1",
+            "caption_anim": self.store.get_setting("dub", "caption_anim", "none") or "none",
+            "caption_fit": self.store.get_setting("dub", "caption_fit", "1") == "1",
+            "caption_y": caption_y,
+            "export_srt": self.store.get_setting("dub", "export_srt", "0") == "1",
+            "gender_detect": self.store.get_setting("dub", "gender_detect", "1") == "1",
             "auto_mix": bool(getattr(self, "chk_auto_mix", None) and self.chk_auto_mix.isChecked()),
             "vocal_master": bool(getattr(self, "chk_vocal_master", None) and self.chk_vocal_master.isChecked()),
             # Default: dedicated tasks — merge is opt-in for episode → one movie.
@@ -212,13 +223,63 @@ class PipelineTools:
         self._apply_start_check(getattr(self, "chk_auto_captions", None), opts.get("auto_captions"), "auto_captions")
         self._apply_start_check(getattr(self, "chk_auto_mix", None), opts.get("auto_mix"), "auto_mix")
         self._apply_start_check(getattr(self, "chk_vocal_master", None), opts.get("vocal_master"), "vocal_master")
+        self._apply_start_check(None, opts.get("export_srt"), "export_srt")
+        self._apply_start_check(None, opts.get("gender_detect"), "gender_detect")
+        self._apply_start_check(None, opts.get("caption_lock"), "caption_lock")
+        self._apply_caption_start_options(opts)
+
+    def _apply_caption_start_options(self, opts: dict):
+        """Push Captions-tab choices into store + Captions shelf widgets."""
+        look = str(opts.get("caption_look") or "").strip()
+        if look:
+            self.store.set_setting("dub", "caption_look", look)
+        anim = str(opts.get("caption_anim") or "none")
+        self.store.set_setting("dub", "caption_anim", anim)
+        fit = bool(opts.get("caption_fit", True))
+        self.store.set_setting("dub", "caption_fit", "1" if fit else "0")
+        try:
+            caption_y = int(opts.get("caption_y", 86))
+        except (TypeError, ValueError):
+            caption_y = 86
+        self.store.set_setting("dub", "caption_y", str(caption_y))
+
+        if look and hasattr(self, "caption_look_grid"):
+            from claynext.gui.views.studio.captions import CAPTION_STYLES
+            idx = next(
+                (i for i, s in enumerate(CAPTION_STYLES) if str(s.get("name") or "") == look),
+                -1,
+            )
+            if idx >= 0:
+                self.caption_look_grid.set_current(idx)
+
+        if hasattr(self, "caption_motion_grid"):
+            from claynext.models.text_style import CAPTION_ANIMS
+            anim_idx = next((i for i, (key, _) in enumerate(CAPTION_ANIMS) if key == anim), 0)
+            self.caption_motion_grid.set_current(anim_idx)
+        elif hasattr(self, "caption_anim_group"):
+            from claynext.models.text_style import CAPTION_ANIMS
+            anim_idx = next((i for i, (key, _) in enumerate(CAPTION_ANIMS) if key == anim), 0)
+            btn = self.caption_anim_group.button(anim_idx)
+            if btn is not None:
+                btn.setChecked(True)
+
+        if hasattr(self, "chk_caption_fit"):
+            self.chk_caption_fit.blockSignals(True)
+            self.chk_caption_fit.setChecked(fit)
+            self.chk_caption_fit.blockSignals(False)
+        if hasattr(self, "spin_caption_y"):
+            self.spin_caption_y.blockSignals(True)
+            self.spin_caption_y.setValue(caption_y)
+            self.spin_caption_y.blockSignals(False)
+
     def _apply_start_check(self, box, value, setting: str):
-        if box is None or value is None:
+        if value is None:
             return
         checked = bool(value)
-        box.blockSignals(True)
-        box.setChecked(checked)
-        box.blockSignals(False)
+        if box is not None:
+            box.blockSignals(True)
+            box.setChecked(checked)
+            box.blockSignals(False)
         self.store.set_setting("dub", setting, "1" if checked else "0")
 
     def _launch_dub_job(self):
@@ -316,6 +377,8 @@ class PipelineTools:
         )
         if self.chk_auto_captions.isChecked():
             self._ensure_auto_captions(force=True)
+        if self.store.get_setting("dub", "export_srt", "0") == "1":
+            self._auto_export_srt_on_finish()
         self._stash_composition()
         self._store_project_session()
         if output:
@@ -328,6 +391,28 @@ class PipelineTools:
             self._launch_dub_job()
             return
         self._set_busy(False)
+
+    def _auto_export_srt_on_finish(self):
+        """Write a sidecar SRT without a save dialog when the Captions option is on."""
+        try:
+            from datetime import datetime
+
+            from claynext.gui.views.studio.helpers import export_segments
+            from claynext.utils.paths import OUTPUTS_DIR
+
+            lines = self._lines_for_export("current") if hasattr(self, "_lines_for_export") else []
+            if not lines:
+                return
+            stem = (
+                os.path.splitext(os.path.basename(self.selected_file))[0]
+                if self.selected_file
+                else f"dubbed_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            )
+            path = str(OUTPUTS_DIR / f"{stem}_current.srt")
+            export_segments(path, "srt", lines)
+            self.log.info(f"Exported SRT → {os.path.basename(path)}")
+        except Exception as exc:
+            self.log.warn(f"SRT export skipped · {exc}")
 
     def _ensure_auto_captions(self, force: bool = False):
         """One caption clip per dubbed voice line — trim, split, and word-anim independently."""

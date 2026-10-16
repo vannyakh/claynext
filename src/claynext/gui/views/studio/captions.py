@@ -29,19 +29,21 @@ _HIGHLIGHT_SWATCHES = (
 )
 
 _SHORT_NAMES = {
+    "Subtitle": "Subtitle",
     "Yellow subtitle": "Yellow",
     "Boxed caption": "Boxed",
     "Live caption": "Live",
     "Word karaoke": "Words",
-    "Highlight caption": "Highlight",
+    "Highlight caption": "Karaoke",
     "Lower third": "Lower 3rd",
 }
 
-_PREVIEW_W, _PREVIEW_H = 76, 32
-_TILE_MIN_W = 74
+_PREVIEW_W, _PREVIEW_H = 72, 28
+_TILE_MIN_W = 72
 _TILE_GAP = 6
-_TILE_H = 58
+_TILE_H = 56
 _LOOK_MAX_COLS = 4
+_LABEL_MAX = 10
 
 _MOTION_PREVIEW_W, _MOTION_PREVIEW_H = 44, 24
 _MOTION_TILE_MIN_W = 48
@@ -85,25 +87,36 @@ def _swatch_icon(color: str, side: int = 18) -> QIcon:
     return icon
 
 
-def _short_label(name: str) -> str:
-    return _SHORT_NAMES.get(name, name)
+def _short_label(style: dict | str) -> str:
+    """Single-line tile label — keeps every card the same height."""
+    if isinstance(style, dict):
+        name = str(style.get("name") or "")
+        label = str(style.get("display_label") or _SHORT_NAMES.get(name, name) or "Style")
+    else:
+        label = _SHORT_NAMES.get(style, style) or "Style"
+    label = " ".join(str(label).split())
+    if len(label) > _LABEL_MAX:
+        return label[: _LABEL_MAX - 1] + "…"
+    return label
 
 
 class CaptionLookGrid(QWidget):
-    """Responsive look-preset grid that reflows columns to the panel width."""
+    """Responsive look-preset grid — uniform tile height across all rows."""
 
     style_picked = Signal(int)
 
     def __init__(self, styles: list[dict], parent=None):
         super().__init__(parent)
         self.setObjectName("caption_look_grid")
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._styles = styles
         self._cols = 0
+        self._cell_w = _TILE_MIN_W
         self._grid = QGridLayout(self)
         self._grid.setContentsMargins(0, 0, 0, 0)
         self._grid.setHorizontalSpacing(_TILE_GAP)
         self._grid.setVerticalSpacing(_TILE_GAP)
+        self._grid.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
         self._btns: list[QToolButton] = []
@@ -113,15 +126,15 @@ class CaptionLookGrid(QWidget):
             btn = QToolButton(self)
             btn.setObjectName("caption_look_tile")
             btn.setCheckable(True)
+            btn.setAutoRaise(False)
             btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
             btn.setIcon(QIcon(template_pixmap(style, sample, _PREVIEW_W, _PREVIEW_H, fill=0.86, plate=False)))
             btn.setIconSize(QSize(_PREVIEW_W, _PREVIEW_H))
-            btn.setText(_short_label(name))
-            btn.setToolTip(name)
+            btn.setText(_short_label(style))
+            btn.setToolTip(str(style.get("display_label") or name))
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            btn.setMinimumSize(_TILE_MIN_W, _TILE_H)
-            btn.setFixedHeight(_TILE_H)
+            btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            btn.setFixedSize(_TILE_MIN_W, _TILE_H)
             self._group.addButton(btn, i)
             self._btns.append(btn)
         self._group.idClicked.connect(self.style_picked.emit)
@@ -135,13 +148,25 @@ class CaptionLookGrid(QWidget):
     def current(self) -> int:
         return max(0, self._group.checkedId())
 
+    def _rows(self) -> int:
+        cols = max(1, self._cols or 2)
+        return max(1, (len(self._btns) + cols - 1) // cols)
+
     def sizeHint(self) -> QSize:
         cols = max(2, self._cols or 3)
-        rows = (len(self._btns) + cols - 1) // cols
-        return QSize(cols * _TILE_MIN_W, rows * (_TILE_H + _TILE_GAP))
+        h = self._rows() * _TILE_H + max(0, self._rows() - 1) * _TILE_GAP
+        return QSize(cols * _TILE_MIN_W + max(0, cols - 1) * _TILE_GAP, h)
 
     def minimumSizeHint(self) -> QSize:
-        return QSize(_TILE_MIN_W * 2 + _TILE_GAP, _TILE_H * 2)
+        return QSize(_TILE_MIN_W * 2 + _TILE_GAP, _TILE_H * 2 + _TILE_GAP)
+
+    def heightForWidth(self, width: int) -> int:
+        cols = 4 if width >= 400 else (3 if width >= 240 else 2)
+        rows = max(1, (len(self._btns) + cols - 1) // cols)
+        return rows * _TILE_H + max(0, rows - 1) * _TILE_GAP
+
+    def hasHeightForWidth(self) -> bool:
+        return True
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -150,17 +175,27 @@ class CaptionLookGrid(QWidget):
     def _reflow(self, force: bool = False):
         width = max(160, self.width())
         cols = 4 if width >= 400 else (3 if width >= 240 else 2)
-        if not force and cols == self._cols:
+        cell_w = max(_TILE_MIN_W, (width - _TILE_GAP * max(0, cols - 1)) // cols)
+        if not force and cols == self._cols and cell_w == self._cell_w:
             return
         self._cols = cols
+        self._cell_w = cell_w
         while self._grid.count():
             item = self._grid.takeAt(0)
             if item.widget():
                 item.widget().setParent(self)
         for c in range(_LOOK_MAX_COLS + 1):
-            self._grid.setColumnStretch(c, 1 if c < cols else 0)
+            self._grid.setColumnStretch(c, 0)
+            self._grid.setColumnMinimumWidth(c, cell_w if c < cols else 0)
+        rows = self._rows()
+        for r in range(rows + 1):
+            self._grid.setRowStretch(r, 0)
+            self._grid.setRowMinimumHeight(r, _TILE_H if r < rows else 0)
         for i, btn in enumerate(self._btns):
-            self._grid.addWidget(btn, i // cols, i % cols)
+            btn.setFixedSize(cell_w, _TILE_H)
+            self._grid.addWidget(btn, i // cols, i % cols, Qt.AlignmentFlag.AlignTop)
+        total_h = rows * _TILE_H + max(0, rows - 1) * _TILE_GAP
+        self.setFixedHeight(total_h)
         self.updateGeometry()
 
 
@@ -172,15 +207,17 @@ class CaptionMotionGrid(QWidget):
     def __init__(self, anims: list[tuple[str, str]], parent=None):
         super().__init__(parent)
         self.setObjectName("caption_motion_grid")
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._anims = anims
         self._cols = 0
+        self._cell_w = _MOTION_TILE_MIN_W
         self._t = 0
         self._hl = "#facc15"
         self._grid = QGridLayout(self)
         self._grid.setContentsMargins(0, 0, 0, 0)
         self._grid.setHorizontalSpacing(_TILE_GAP)
         self._grid.setVerticalSpacing(_TILE_GAP)
+        self._grid.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
         self._btns: list[QToolButton] = []
@@ -194,9 +231,8 @@ class CaptionMotionGrid(QWidget):
             btn.setText(_MOTION_SHORT.get(key, label))
             btn.setToolTip(label)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            btn.setMinimumSize(_MOTION_TILE_MIN_W, _MOTION_TILE_H)
-            btn.setFixedHeight(_MOTION_TILE_H)
+            btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            btn.setFixedSize(_MOTION_TILE_MIN_W, _MOTION_TILE_H)
             self._group.addButton(btn, i)
             self._btns.append(btn)
             self._kinds.append(key)
@@ -259,17 +295,27 @@ class CaptionMotionGrid(QWidget):
             return
         width = max(160, self.width())
         cols = 5 if width >= 260 else 3
-        if not force and cols == self._cols:
+        cell_w = max(_MOTION_TILE_MIN_W, (width - _TILE_GAP * max(0, cols - 1)) // cols)
+        if not force and cols == self._cols and cell_w == self._cell_w:
             return
         self._cols = cols
+        self._cell_w = cell_w
         while self._grid.count():
             item = self._grid.takeAt(0)
             if item.widget():
                 item.widget().setParent(self)
         for c in range(_MOTION_MAX_COLS + 1):
-            self._grid.setColumnStretch(c, 1 if c < cols else 0)
+            self._grid.setColumnStretch(c, 0)
+            self._grid.setColumnMinimumWidth(c, cell_w if c < cols else 0)
+        rows = max(1, (len(self._btns) + cols - 1) // cols)
+        for r in range(rows + 1):
+            self._grid.setRowStretch(r, 0)
+            self._grid.setRowMinimumHeight(r, _MOTION_TILE_H if r < rows else 0)
         for i, btn in enumerate(self._btns):
-            self._grid.addWidget(btn, i // cols, i % cols)
+            btn.setFixedSize(cell_w, _MOTION_TILE_H)
+            self._grid.addWidget(btn, i // cols, i % cols, Qt.AlignmentFlag.AlignTop)
+        total_h = rows * _MOTION_TILE_H + max(0, rows - 1) * _TILE_GAP
+        self.setFixedHeight(total_h)
         self.updateGeometry()
 
 
