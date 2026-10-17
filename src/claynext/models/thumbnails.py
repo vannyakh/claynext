@@ -38,7 +38,7 @@ def thumb_path_for(media_path: str, width: int = 160) -> Path:
 def ensure_thumbnail(media_path: str, width: int = 160) -> str | None:
     """
     Extract a JPEG frame near 1s (or start) and cache it.
-    Returns the thumbnail file path, or None on failure.
+    Prefers claynext-ffmpeg still extract; falls back to bundled FFmpeg.
     """
     if not media_path or not os.path.isfile(media_path):
         return None
@@ -51,6 +51,18 @@ def ensure_thumbnail(media_path: str, width: int = 160) -> str | None:
         return str(out)
 
     abs_path = os.path.abspath(media_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        from claynext.adapters.rust_core_adapter import RustFfmpegAdapter
+
+        if RustFfmpegAdapter.extract_still(
+            abs_path, out, timestamp_secs=1.0, max_width=width
+        ):
+            return str(out)
+    except Exception:
+        pass
+
     cmd = [
         _ffmpeg_exe(),
         "-hide_banner",

@@ -15,8 +15,8 @@ class MediaType(str, Enum):
 
 @dataclass
 class VideoStreamInfo:
-    width: u32 = 0
-    height: u32 = 0
+    width: int = 0
+    height: int = 0
     codec: str = ""
     pixel_format: str = "yuv420p"
     frame_rate: float = 30.0
@@ -47,6 +47,30 @@ class MediaMetadata:
     video_stream: VideoStreamInfo | None = None
     audio_stream: AudioStreamInfo | None = None
     extra_streams: list[dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def duration_seconds(self) -> float:
+        return float(self.duration or 0.0)
+
+    @property
+    def width(self) -> int:
+        return int(self.video_stream.width) if self.video_stream else 0
+
+    @property
+    def height(self) -> int:
+        return int(self.video_stream.height) if self.video_stream else 0
+
+    @property
+    def fps(self) -> float:
+        return float(self.video_stream.frame_rate) if self.video_stream else 0.0
+
+    @property
+    def video_codec(self) -> str:
+        return str(self.video_stream.codec) if self.video_stream else ""
+
+    @property
+    def audio_codec(self) -> str:
+        return str(self.audio_stream.codec) if self.audio_stream else ""
 
 
 @dataclass

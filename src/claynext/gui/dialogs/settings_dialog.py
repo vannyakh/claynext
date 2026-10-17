@@ -38,21 +38,8 @@ class SettingsDialog(QDialog):
 
     def init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 12)
+        layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(10)
-
-        head = QHBoxLayout()
-        head.setSpacing(8)
-        title = QLabel("Settings")
-        title.setObjectName("settings_section_title")
-        title.setStyleSheet("font-size: 15px; font-weight: 700; color: #f1f5f9;")
-        sub = QLabel("Studio preferences & AI backends")
-        sub.setObjectName("settings_section_hint")
-        sub.setStyleSheet("font-size: 11px; color: #64748b; margin-top: 2px;")
-        head.addWidget(title)
-        head.addWidget(sub)
-        head.addStretch(1)
-        layout.addLayout(head)
 
         self.tabs = QTabWidget()
         self.tabs.setObjectName("settingsTabs")
@@ -90,12 +77,20 @@ class SettingsDialog(QDialog):
     # ── helpers ──────────────────────────────────────────────────────
 
     @staticmethod
-    def _divider() -> QFrame:
+    def _divider() -> QWidget:
+        """Soft section rule with vertical breathing room."""
+        wrap = QWidget()
+        wrap.setObjectName("settings_divider_wrap")
+        wrap.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        lay = QVBoxLayout(wrap)
+        lay.setContentsMargins(0, 4, 0, 4)
+        lay.setSpacing(0)
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         line.setFrameShadow(QFrame.Shadow.Plain)
         line.setObjectName("settings_divider")
-        return line
+        lay.addWidget(line)
+        return wrap
 
     @staticmethod
     def _section(title: str, hint: str = "") -> tuple[QWidget, QVBoxLayout]:
@@ -103,7 +98,7 @@ class SettingsDialog(QDialog):
         sec.setObjectName("settings_section")
         lay = QVBoxLayout(sec)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(6)
+        lay.setSpacing(8)
         hdr = QLabel(title)
         hdr.setObjectName("settings_section_title")
         lay.addWidget(hdr)
@@ -131,8 +126,8 @@ class SettingsDialog(QDialog):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         host = QWidget()
         lay = QVBoxLayout(host)
-        lay.setContentsMargins(18, 16, 18, 16)
-        lay.setSpacing(12)
+        lay.setContentsMargins(16, 14, 16, 16)
+        lay.setSpacing(14)
         scroll.setWidget(host)
         outer.addWidget(scroll)
         return page, lay
@@ -141,88 +136,232 @@ class SettingsDialog(QDialog):
 
     def _build_general_tab(self) -> QWidget:
         page, lay = self._scroll_page()
-        sec_lang, p = self._section("Interface Language", "Display language for menus and studio tools.")
+        lay.addWidget(self._field_label("Language"))
         self.combo_lang = QComboBox()
-        self.combo_lang.setFixedHeight(26)
+        self.combo_lang.setFixedHeight(28)
         self.combo_lang.addItems([
             "English (US)", "Vietnamese (Tiếng Việt)", "Japanese (日本語)", "Chinese (中文)",
         ])
-        p.addWidget(self.combo_lang)
-        lay.addWidget(sec_lang)
+        lay.addWidget(self.combo_lang)
 
         lay.addWidget(self._divider())
 
-        sec_ops, ops = self._section("Automation & Behavior", "Background execution and completion preferences.")
         self.chk_updates = QCheckBox("Check for updates on startup")
         self.chk_auto_open = QCheckBox("Open export folder when complete")
         self.chk_keep_awake = QCheckBox("Prevent sleep during processing")
         self.chk_notify = QCheckBox("Show completion notifications")
         for chk in (self.chk_updates, self.chk_auto_open, self.chk_keep_awake, self.chk_notify):
             chk.setChecked(True)
-            ops.addWidget(chk)
-        lay.addWidget(sec_ops)
+            lay.addWidget(chk)
         lay.addStretch(1)
         return page
 
     def _build_api_keys_tab(self) -> QWidget:
-        page, lay = self._scroll_page()
-        panel, p = self._section(
-            "Cloud & AI Keys",
-            "Gemini Flash, Hugging Face, and local inference keys.",
+        from claynext.models.llm_keys import PROVIDERS, get_key_pool
+
+        get_store().migrate_legacy_api_keys()
+        self._api_key_pool = get_key_pool()
+
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(16, 14, 16, 14)
+        lay.setSpacing(8)
+
+        head = QHBoxLayout()
+        head.setSpacing(10)
+        head.addWidget(self._field_label("Provider"), 0, Qt.AlignmentFlag.AlignVCenter)
+        self.combo_api_provider = QComboBox()
+        self.combo_api_provider.setFixedHeight(28)
+        for pid, name in PROVIDERS:
+            self.combo_api_provider.addItem(name, pid)
+        self.combo_api_provider.currentIndexChanged.connect(self._reload_api_keys)
+        head.addWidget(self.combo_api_provider, 1)
+        btn_add = QPushButton("Add key")
+        btn_add.setObjectName("btn_primary")
+        btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_add.setFixedHeight(28)
+        btn_add.setMinimumWidth(84)
+        btn_add.clicked.connect(self._open_add_api_key)
+        head.addWidget(btn_add, 0, Qt.AlignmentFlag.AlignVCenter)
+        lay.addLayout(head)
+
+        self.api_keys_table = QTableWidget(0, 5)
+        self.api_keys_table.setObjectName("settings_api_keys_table")
+        self.api_keys_table.setHorizontalHeaderLabels(
+            ["Label", "Key", "Status", "Fails", "Enabled"]
         )
-        btn = QPushButton("Manage Keys…")
-        btn.setObjectName("btn_primary")
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.setFixedHeight(26)
-        btn.clicked.connect(self._open_api_keys)
-        p.addWidget(btn, 0, Qt.AlignmentFlag.AlignLeft)
-        lay.addWidget(panel)
-        lay.addStretch(1)
+        hdr = self.api_keys_table.horizontalHeader()
+        hdr.setHighlightSections(False)
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        self.api_keys_table.setColumnWidth(3, 52)
+        self.api_keys_table.setColumnWidth(4, 64)
+        self.api_keys_table.verticalHeader().setVisible(False)
+        self.api_keys_table.verticalHeader().setDefaultSectionSize(32)
+        self.api_keys_table.setShowGrid(False)
+        self.api_keys_table.setAlternatingRowColors(True)
+        self.api_keys_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.api_keys_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.api_keys_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.api_keys_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.api_keys_table.customContextMenuRequested.connect(self._api_keys_context_menu)
+        lay.addWidget(self.api_keys_table, 1)
+
+        self._reload_api_keys()
         return page
 
-    def _open_api_keys(self):
+    def showEvent(self, event):
+        super().showEvent(event)
+        if hasattr(self, "api_keys_table"):
+            self._reload_api_keys()
+
+    def _api_provider_id(self) -> str:
+        if not hasattr(self, "combo_api_provider"):
+            return "gemini"
+        return str(self.combo_api_provider.currentData() or "gemini")
+
+    def _selected_api_key_id(self) -> int | None:
+        row = self.api_keys_table.currentRow()
+        if row < 0:
+            return None
+        item = self.api_keys_table.item(row, 0)
+        if not item:
+            return None
+        return int(item.data(Qt.ItemDataRole.UserRole))
+
+    def _api_keys_context_menu(self, pos):
+        from PySide6.QtWidgets import QMenu
+
+        row = self.api_keys_table.indexAt(pos).row()
+        if row >= 0:
+            self.api_keys_table.selectRow(row)
+        menu = QMenu(self.api_keys_table)
+        menu.setObjectName("media_lib_menu")
+        key_id = self._selected_api_key_id()
+        if key_id is not None:
+            rec = next(
+                (r for r in self._api_key_pool.list_keys(self._api_provider_id()) if int(r["id"]) == key_id),
+                None,
+            )
+            enabled = bool(rec and int(rec.get("enabled") or 0) == 1)
+            act_toggle = menu.addAction("Disable" if enabled else "Enable")
+            act_toggle.triggered.connect(self._toggle_api_key)
+            act_remove = menu.addAction("Remove")
+            act_remove.triggered.connect(self._remove_api_key)
+            menu.addSeparator()
+        act_clear = menu.addAction("Clear cooldown")
+        act_clear.triggered.connect(self._clear_api_cooldowns)
+        menu.exec(self.api_keys_table.viewport().mapToGlobal(pos))
+
+    def _reload_api_keys(self, *_args):
+        if not hasattr(self, "api_keys_table"):
+            return
+        from claynext.gui.dialogs.api_keys_dialog import mask_secret
+        from claynext.models.llm_keys import _now, _parse_iso
+
+        provider = self._api_provider_id()
+        rows = self._api_key_pool.list_keys(provider)
+        self.api_keys_table.setRowCount(0)
+        now = _now()
+        for rec in rows:
+            r = self.api_keys_table.rowCount()
+            self.api_keys_table.insertRow(r)
+            label = QTableWidgetItem(rec.get("label") or f"Key {rec['id']}")
+            label.setData(Qt.ItemDataRole.UserRole, int(rec["id"]))
+            self.api_keys_table.setItem(r, 0, label)
+            self.api_keys_table.setItem(r, 1, QTableWidgetItem(mask_secret(rec.get("secret") or "")))
+            until = _parse_iso(rec.get("cooldown_until"))
+            enabled = int(rec.get("enabled") or 0) == 1
+            if not enabled:
+                status = "Disabled"
+            elif until and until > now:
+                secs = int((until - now).total_seconds())
+                status = f"Cooling {secs}s"
+            else:
+                status = "Ready"
+            fails = QTableWidgetItem(str(rec.get("fail_count") or 0))
+            fails.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            enabled_item = QTableWidgetItem("Yes" if enabled else "No")
+            enabled_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.api_keys_table.setItem(r, 2, QTableWidgetItem(status))
+            self.api_keys_table.setItem(r, 3, fails)
+            self.api_keys_table.setItem(r, 4, enabled_item)
+
+    def _open_add_api_key(self):
         from claynext.gui.dialogs.api_keys_dialog import ApiKeysDialog
-        ApiKeysDialog(self).exec()
+
+        dlg = ApiKeysDialog(self, provider=self._api_provider_id())
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            # Keep provider filter on the key that was added
+            pid = dlg.provider_id()
+            idx = self.combo_api_provider.findData(pid)
+            if idx >= 0:
+                self.combo_api_provider.blockSignals(True)
+                self.combo_api_provider.setCurrentIndex(idx)
+                self.combo_api_provider.blockSignals(False)
+            self._reload_api_keys()
+
+    def _toggle_api_key(self):
+        key_id = self._selected_api_key_id()
+        if key_id is None:
+            return
+        rec = next(
+            (r for r in self._api_key_pool.list_keys(self._api_provider_id()) if int(r["id"]) == key_id),
+            None,
+        )
+        if not rec:
+            return
+        self._api_key_pool.set_enabled(key_id, int(rec.get("enabled") or 0) != 1)
+        self._reload_api_keys()
+
+    def _remove_api_key(self):
+        key_id = self._selected_api_key_id()
+        if key_id is None:
+            return
+        self._api_key_pool.remove_key(key_id)
+        self._reload_api_keys()
+
+    def _clear_api_cooldowns(self):
+        store = get_store()
+        for rec in self._api_key_pool.list_keys(self._api_provider_id()):
+            store.update_api_key_state(int(rec["id"]), fail_count=0, clear_cooldown=True)
+        self._reload_api_keys()
 
     # ─── Features ────────────────────────────────────────────────────
 
     def _build_features_tab(self) -> QWidget:
         page, lay = self._scroll_page()
 
-        tools, t = self._section(
-            "Tool Backends",
-            "Optional AI models and neural voice engines.",
-        )
-        summary = QLabel()
-        summary.setObjectName("settings_section_hint")
-        self.lbl_feature_summary = summary
-        t.addWidget(summary)
+        lay.addWidget(self._field_label("Tool backends"))
+        self.lbl_feature_summary = QLabel()
+        self.lbl_feature_summary.setObjectName("settings_section_hint")
+        lay.addWidget(self.lbl_feature_summary)
 
         cards_host = QWidget()
+        cards_host.setObjectName("settings_feature_list")
         self._features_lay = QVBoxLayout(cards_host)
-        self._features_lay.setContentsMargins(0, 4, 0, 0)
-        self._features_lay.setSpacing(2)
-        t.addWidget(cards_host)
-        lay.addWidget(tools)
+        self._features_lay.setContentsMargins(0, 2, 0, 2)
+        self._features_lay.setSpacing(0)
+        lay.addWidget(cards_host)
 
         lay.addWidget(self._divider())
 
-        mix, m = self._section(
-            "Dubbing & Separation",
-            "Stem isolation and default engine preferences.",
-        )
+        lay.addWidget(self._field_label("Stem separation"))
         self.lbl_stem_status = QLabel()
         self.lbl_stem_status.setObjectName("settings_section_hint")
         self.lbl_stem_status.setWordWrap(True)
-        m.addWidget(self.lbl_stem_status)
+        lay.addWidget(self.lbl_stem_status)
 
         row = QHBoxLayout()
-        row.setSpacing(12)
+        row.setSpacing(14)
         left = QVBoxLayout()
-        left.setSpacing(6)
-        left.addWidget(self._field_label("Stem separation"))
+        left.setSpacing(5)
+        left.addWidget(self._field_label("Mode"))
         self.combo_stem_mode = QComboBox()
-        self.combo_stem_mode.setFixedHeight(26)
+        self.combo_stem_mode.setFixedHeight(28)
         self.combo_stem_mode.addItem("Auto — Demucs when installed", "auto")
         self.combo_stem_mode.addItem("Force Demucs", "demucs")
         self.combo_stem_mode.addItem("FFmpeg mid-side only", "ffmpeg")
@@ -231,22 +370,22 @@ class SettingsDialog(QDialog):
         row.addLayout(left, 1)
 
         right = QVBoxLayout()
-        right.setSpacing(6)
+        right.setSpacing(5)
         right.addWidget(self._field_label("Demucs model"))
         self.combo_demucs_model = QComboBox()
-        self.combo_demucs_model.setFixedHeight(26)
+        self.combo_demucs_model.setFixedHeight(28)
         for name in DEMUCS_MODELS:
             self.combo_demucs_model.addItem(name, name)
         self.combo_demucs_model.currentIndexChanged.connect(self._refresh_stem_status_label)
         right.addWidget(self.combo_demucs_model)
         row.addLayout(right, 1)
-        m.addLayout(row)
+        lay.addLayout(row)
 
+        lay.addSpacing(4)
         self.chk_prefer_whisperx = QCheckBox("Prefer WhisperX for dubbing ASR")
         self.chk_prefer_voxcpm = QCheckBox("Prefer VoxCPM voices in TTS Studio")
-        m.addWidget(self.chk_prefer_whisperx)
-        m.addWidget(self.chk_prefer_voxcpm)
-        lay.addWidget(mix)
+        lay.addWidget(self.chk_prefer_whisperx)
+        lay.addWidget(self.chk_prefer_voxcpm)
 
         self._populate_features_cards()
         lay.addStretch(1)
@@ -264,33 +403,37 @@ class SettingsDialog(QDialog):
         rows = list_features()
         ready = sum(1 for r in rows if r["status"] == "Ready")
         self.lbl_feature_summary.setText(
-            f"{ready} of {len(rows)} ready · copy an install command if a backend is missing"
+            f"{ready} of {len(rows)} ready · Install copies the uv sync command"
         )
-        for item in rows:
-            self._features_lay.addWidget(self._make_feature_card(item))
+        for i, item in enumerate(rows):
+            card = self._make_feature_card(item, last=(i == len(rows) - 1))
+            self._features_lay.addWidget(card)
 
-    def _make_feature_card(self, item: dict) -> QFrame:
+    def _make_feature_card(self, item: dict, *, last: bool = False) -> QFrame:
         row = QFrame()
         row.setObjectName("settings_feature_row")
+        if last:
+            row.setProperty("last", "true")
         row.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        row.setFixedHeight(30)
+        row.setFixedHeight(36)
         lay = QHBoxLayout(row)
-        lay.setContentsMargins(2, 0, 2, 0)
-        lay.setSpacing(8)
+        lay.setContentsMargins(12, 0, 10, 0)
+        lay.setSpacing(10)
 
         title = QLabel(item["label"])
         title.setObjectName("settings_feature_title")
-        lay.addWidget(title)
+        lay.addWidget(title, 0, Qt.AlignmentFlag.AlignVCenter)
 
         cat = QLabel(str(item.get("category", "")).upper())
         cat.setObjectName("settings_cat_pill")
-        lay.addWidget(cat)
+        lay.addWidget(cat, 0, Qt.AlignmentFlag.AlignVCenter)
 
         raw_hint = item.get("hint") or ""
         short_hint = raw_hint.split(". uv sync")[0].strip()
         meta = QLabel(short_hint)
         meta.setObjectName("settings_feature_meta")
-        lay.addWidget(meta, 1)
+        meta.setToolTip(raw_hint)
+        lay.addWidget(meta, 1, Qt.AlignmentFlag.AlignVCenter)
 
         status = str(item.get("status") or "Not installed")
         pill = QLabel(status)
@@ -315,10 +458,11 @@ class SettingsDialog(QDialog):
             lay.addWidget(copy, 0, Qt.AlignmentFlag.AlignVCenter)
         elif status == "Ready":
             ok = QLabel("Active")
-            ok.setObjectName("settings_feature_meta")
-            ok.setStyleSheet("color: #10b981; font-weight: 600; font-size: 10.5px;")
+            ok.setObjectName("settings_feature_active")
             lay.addWidget(ok, 0, Qt.AlignmentFlag.AlignVCenter)
 
+        row.style().unpolish(row)
+        row.style().polish(row)
         self._feature_cards.append(row)
         return row
 
@@ -353,16 +497,8 @@ class SettingsDialog(QDialog):
 
         top = QHBoxLayout()
         top.setSpacing(8)
-        hdr_col = QVBoxLayout()
-        hdr_col.setSpacing(1)
-        hdr = QLabel("Model Registry")
-        hdr.setObjectName("settings_section_title")
-        hdr.setStyleSheet("font-size: 13px; font-weight: 700; color: #f1f5f9;")
-        hint = QLabel("Hugging Face & local models")
-        hint.setObjectName("settings_section_hint")
-        hdr_col.addWidget(hdr)
-        hdr_col.addWidget(hint)
-        top.addLayout(hdr_col, 1)
+        top.addWidget(self._field_label("Models"), 0, Qt.AlignmentFlag.AlignVCenter)
+        top.addStretch(1)
 
         self.combo_model_filter = QComboBox()
         self.combo_model_filter.setObjectName("settings_filter_combo")
@@ -508,54 +644,49 @@ class SettingsDialog(QDialog):
 
     def _build_hardware_paths_tab(self) -> QWidget:
         page, lay = self._scroll_page()
-        sec_dev, d = self._section("Compute & Hardware", "Execution device and worker pool threads.")
 
-        d.addWidget(self._field_label("Preferred device"))
+        lay.addWidget(self._field_label("Preferred device"))
         self.combo_device = QComboBox()
-        self.combo_device.setFixedHeight(26)
+        self.combo_device.setFixedHeight(28)
         self.combo_device.addItems([
             "CUDA (NVIDIA GPU)", "DirectML (AMD / Intel GPU)", "CPU Threadpool (Fallback)",
         ])
-        d.addWidget(self.combo_device)
+        lay.addWidget(self.combo_device)
 
-        d.addWidget(self._field_label("Worker threads"))
+        lay.addWidget(self._field_label("Worker threads"))
         self.spin_threads = QSpinBox()
-        self.spin_threads.setFixedHeight(26)
+        self.spin_threads.setFixedHeight(28)
         self.spin_threads.setRange(1, 16)
         self.spin_threads.setValue(4)
-        d.addWidget(self.spin_threads)
-        lay.addWidget(sec_dev)
+        lay.addWidget(self.spin_threads)
 
         lay.addWidget(self._divider())
 
-        sec_paths, p = self._section("Storage & Paths", "Model cache and default export directories.")
-
-        p.addWidget(self._field_label("Models cache"))
+        lay.addWidget(self._field_label("Models cache"))
         models_box = QHBoxLayout()
         models_box.setSpacing(6)
         self.txt_models_dir = QLineEdit(str(MODELS_DIR))
-        self.txt_models_dir.setFixedHeight(26)
+        self.txt_models_dir.setFixedHeight(28)
         btn_b_models = QPushButton("Browse")
         btn_b_models.setObjectName("btn_secondary")
         btn_b_models.setFixedWidth(74)
         btn_b_models.clicked.connect(lambda: self.browse_folder(self.txt_models_dir))
         models_box.addWidget(self.txt_models_dir, 1)
         models_box.addWidget(btn_b_models)
-        p.addLayout(models_box)
+        lay.addLayout(models_box)
 
-        p.addWidget(self._field_label("Default exports"))
+        lay.addWidget(self._field_label("Default exports"))
         outputs_box = QHBoxLayout()
         outputs_box.setSpacing(6)
         self.txt_outputs_dir = QLineEdit(str(OUTPUTS_DIR))
-        self.txt_outputs_dir.setFixedHeight(26)
+        self.txt_outputs_dir.setFixedHeight(28)
         btn_b_outputs = QPushButton("Browse")
         btn_b_outputs.setObjectName("btn_secondary")
         btn_b_outputs.setFixedWidth(74)
         btn_b_outputs.clicked.connect(lambda: self.browse_folder(self.txt_outputs_dir))
         outputs_box.addWidget(self.txt_outputs_dir, 1)
         outputs_box.addWidget(btn_b_outputs)
-        p.addLayout(outputs_box)
-        lay.addWidget(sec_paths)
+        lay.addLayout(outputs_box)
 
         lay.addStretch(1)
         return page
@@ -564,33 +695,29 @@ class SettingsDialog(QDialog):
 
     def _build_appearance_tab(self) -> QWidget:
         page, lay = self._scroll_page()
-        sec_theme, t = self._section("Interface Theme", "Studio color scheme and accent palette.")
 
-        t.addWidget(self._field_label("Theme"))
+        lay.addWidget(self._field_label("Theme"))
         self.combo_theme = QComboBox()
-        self.combo_theme.setFixedHeight(26)
+        self.combo_theme.setFixedHeight(28)
         self.combo_theme.addItems(["CamDot Dark Obsidian (Default)", "System Light Mode"])
-        t.addWidget(self.combo_theme)
+        lay.addWidget(self.combo_theme)
 
-        t.addWidget(self._field_label("Accent"))
+        lay.addWidget(self._field_label("Accent"))
         self.combo_accent = QComboBox()
-        self.combo_accent.setFixedHeight(26)
+        self.combo_accent.setFixedHeight(28)
         self.combo_accent.addItems([
             "Indigo / Purple (#6366f1)",
             "Emerald Green (#10b981)",
             "Cyan Blue (#06b6d4)",
             "Rose Pink (#f43f5e)",
         ])
-        t.addWidget(self.combo_accent)
-        lay.addWidget(sec_theme)
+        lay.addWidget(self.combo_accent)
 
         lay.addWidget(self._divider())
 
-        sec_motion, m = self._section("Visual Effects", "Motion transitions and animations.")
         self.chk_anim = QCheckBox("Enable UI micro-animations")
         self.chk_anim.setChecked(True)
-        m.addWidget(self.chk_anim)
-        lay.addWidget(sec_motion)
+        lay.addWidget(self.chk_anim)
 
         lay.addStretch(1)
         return page

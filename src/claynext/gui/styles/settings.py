@@ -39,16 +39,18 @@ QTabWidget#settingsTabs QPushButton#btn_primary {{
     font-size: 11px;
 }}
 QTabWidget#settingsTabs::pane {{
-    border: 1px solid {COLOR_BORDER};
-    border-radius: 8px;
-    background: {COLOR_BG_CARD};
+    border: none;
+    border-top: 1px solid {COLOR_BORDER}66;
+    border-radius: 0;
+    background: transparent;
     top: -1px;
     padding: 0;
+    margin-top: 2px;
 }}
 QTabWidget#settingsTabs QTabBar::tab {{
     background: transparent;
     color: {COLOR_TEXT_MUTED};
-    padding: 6px 12px;
+    padding: 7px 12px;
     margin-right: 2px;
     border: none;
     border-bottom: 2px solid transparent;
@@ -147,12 +149,18 @@ QTabWidget#settingsTabs QSpinBox:focus {{
 
 QLabel#settings_section_title {{
     color: {COLOR_TEXT_MAIN};
-    font-size: 12.5px;
+    font-size: 12px;
     font-weight: 700;
+    letter-spacing: 0.2px;
+    padding: 0;
+    margin: 0;
 }}
 QLabel#settings_section_hint {{
     color: {COLOR_TEXT_MUTED};
     font-size: 10.5px;
+    line-height: 1.35;
+    padding: 0;
+    margin: 0;
 }}
 QLabel#settings_field_label {{
     color: {COLOR_TEXT_SUB};
@@ -160,12 +168,17 @@ QLabel#settings_field_label {{
     font-weight: 600;
 }}
 
+QWidget#settings_divider_wrap {{
+    background: transparent;
+    border: none;
+    min-height: 18px;
+}}
 QFrame#settings_divider {{
-    background-color: {COLOR_BORDER};
+    background-color: {COLOR_BORDER}66;
     border: none;
     height: 1px;
     max-height: 1px;
-    margin: 6px 0;
+    margin: 0;
 }}
 
 QWidget#settings_section {{
@@ -173,28 +186,40 @@ QWidget#settings_section {{
     border: none;
 }}
 
+QWidget#settings_feature_list {{
+    background: transparent;
+    border: none;
+}}
 QFrame#settings_feature_row {{
     background: transparent;
     border: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid {COLOR_BORDER}33;
+}}
+QFrame#settings_feature_row[last="true"] {{
+    border-bottom: none;
 }}
 QFrame#settings_feature_row:hover {{
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.025);
 }}
 
 QLabel#settings_feature_title {{
     color: {COLOR_TEXT_MAIN};
     font-size: 11.5px;
-    font-weight: 700;
+    font-weight: 650;
+    min-width: 108px;
 }}
 QLabel#settings_feature_meta {{
     color: {COLOR_TEXT_MUTED};
     font-size: 10.5px;
 }}
+QLabel#settings_feature_active {{
+    color: {COLOR_ACCENT_EMERALD};
+    font-size: 10.5px;
+    font-weight: 600;
+}}
 QLabel#settings_status_pill {{
-    border-radius: 6px;
-    padding: 2px 7px;
+    border-radius: 5px;
+    padding: 2px 8px;
     font-size: 9.5px;
     font-weight: 700;
 }}
@@ -214,8 +239,8 @@ QLabel#settings_cat_pill {{
     color: {COLOR_ACCENT_CYAN};
     background: rgba(6, 182, 212, 0.12);
     border-radius: 4px;
-    padding: 1px 5px;
-    font-size: 9.5px;
+    padding: 2px 6px;
+    font-size: 9px;
     font-weight: 700;
 }}
 
@@ -224,10 +249,10 @@ QPushButton#settings_copy_btn {{
     border: 1px solid {COLOR_BORDER};
     border-radius: 5px;
     color: {COLOR_TEXT_SUB};
-    padding: 2px 8px;
+    padding: 2px 10px;
     font-size: 10px;
     font-weight: 600;
-    height: 20px;
+    min-height: 22px;
 }}
 QPushButton#settings_copy_btn:hover {{
     border-color: {primary};
@@ -241,42 +266,67 @@ QComboBox#settings_filter_combo {{
     font-size: 11px;
 }}
 
-QTableWidget#settings_models_table {{
-    background: {COLOR_BG_INPUT};
-    border: 1px solid {COLOR_BORDER};
-    border-radius: 8px;
+QTableWidget#settings_models_table,
+QTableWidget#settings_api_keys_table {{
+    background: transparent;
+    alternate-background-color: rgba(255, 255, 255, 0.02);
+    border: none;
+    border-top: 1px solid {COLOR_BORDER}44;
+    border-bottom: 1px solid {COLOR_BORDER}33;
+    border-radius: 0;
     gridline-color: transparent;
     selection-background-color: transparent;
+    outline: none;
 }}
-QTableWidget#settings_models_table::item {{
-    padding: 2px 6px;
+QTableWidget#settings_models_table::item,
+QTableWidget#settings_api_keys_table::item {{
+    padding: 4px 8px;
     font-size: 11.5px;
     color: {COLOR_TEXT_MAIN};
+    border: none;
 }}
-QTableWidget#settings_models_table QHeaderView::section {{
-    background-color: {COLOR_BG_CARD};
+QTableWidget#settings_api_keys_table::item:selected {{
+    background: {wash};
+    color: {COLOR_TEXT_MAIN};
+}}
+QTableWidget#settings_models_table QHeaderView::section,
+QTableWidget#settings_api_keys_table QHeaderView::section {{
+    background-color: transparent;
     color: {COLOR_TEXT_MUTED};
     border: none;
-    border-bottom: 1px solid {COLOR_BORDER};
-    padding: 4px 6px;
-    font-size: 10.5px;
-    font-weight: 600;
+    border-bottom: 1px solid {COLOR_BORDER}55;
+    padding: 6px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
 }}
-QTableWidget#settings_models_table QScrollBar:vertical {{
+QLabel#settings_api_keys_empty {{
+    color: {COLOR_TEXT_MUTED};
+    font-size: 11.5px;
+    background: transparent;
+    border: none;
+}}
+QTableWidget#settings_models_table QScrollBar:vertical,
+QTableWidget#settings_api_keys_table QScrollBar:vertical {{
     background: transparent;
     width: 6px;
     margin: 2px 0;
 }}
-QTableWidget#settings_models_table QScrollBar::handle:vertical {{
+QTableWidget#settings_models_table QScrollBar::handle:vertical,
+QTableWidget#settings_api_keys_table QScrollBar::handle:vertical {{
     background: {COLOR_BORDER};
     border-radius: 3px;
     min-height: 20px;
 }}
-QTableWidget#settings_models_table QScrollBar::handle:vertical:hover {{
+QTableWidget#settings_models_table QScrollBar::handle:vertical:hover,
+QTableWidget#settings_api_keys_table QScrollBar::handle:vertical:hover {{
     background: {COLOR_TEXT_MUTED};
 }}
 QTableWidget#settings_models_table QScrollBar::add-line:vertical,
-QTableWidget#settings_models_table QScrollBar::sub-line:vertical {{
+QTableWidget#settings_models_table QScrollBar::sub-line:vertical,
+QTableWidget#settings_api_keys_table QScrollBar::add-line:vertical,
+QTableWidget#settings_api_keys_table QScrollBar::sub-line:vertical {{
     height: 0px;
 }}
 """

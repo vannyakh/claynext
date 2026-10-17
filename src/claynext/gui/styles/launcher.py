@@ -4,7 +4,7 @@ from __future__ import annotations
 from claynext.constants.theme_constants import (
     COLOR_BG_DARK, COLOR_BG_SIDEBAR, COLOR_BG_HEADER, COLOR_BG_TITLEBAR,
     COLOR_BG_CARD, COLOR_BG_CARD_HOVER, COLOR_BG_INPUT, COLOR_BG_STATUSBAR,
-    COLOR_BORDER, COLOR_PRIMARY, COLOR_PRIMARY_HOVER,
+    COLOR_BORDER, COLOR_BORDER_FOCUS, COLOR_PRIMARY, COLOR_PRIMARY_HOVER,
     COLOR_TEXT_MAIN, COLOR_TEXT_MUTED, COLOR_TEXT_SUB,
     COLOR_ACCENT_EMERALD, COLOR_ACCENT_PURPLE,
 )
@@ -184,28 +184,61 @@ def launcher_qss(accent: str, wash: str) -> str:
     border-bottom: 2px solid {accent};
 }}
 
-/* ─── API keys dialog ────────────────────────────────────────────── */
-#apiKeysDialog QLineEdit, #apiKeysDialog QComboBox {{
-    min-height: 24px;
-    padding: 3px 8px;
+/* ─── API keys dialog (match Settings field size) ────────────────── */
+#apiKeysDialog {{
+    background: {COLOR_BG_DARK};
+}}
+#apiKeysDialog QLineEdit,
+#apiKeysDialog QComboBox,
+#apiKeysDialog QLineEdit#api_keys_input,
+#apiKeysDialog QComboBox#api_keys_combo {{
+    background: {COLOR_BG_DARK};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 6px;
+    color: {COLOR_TEXT_MAIN};
+    padding: 0 8px;
     font-size: 11px;
+    height: 28px;
+    min-height: 28px;
+    max-height: 28px;
+}}
+#apiKeysDialog QComboBox:hover,
+#apiKeysDialog QComboBox#api_keys_combo:hover {{
+    border-color: {accent};
+}}
+#apiKeysDialog QLineEdit:focus,
+#apiKeysDialog QComboBox:focus,
+#apiKeysDialog QLineEdit#api_keys_input:focus,
+#apiKeysDialog QComboBox#api_keys_combo:focus {{
+    border-color: {accent};
+}}
+#apiKeysDialog QPushButton#btn_secondary,
+#apiKeysDialog QPushButton#btn_primary {{
+    min-height: 26px;
+    max-height: 28px;
+    padding: 0 14px;
+    font-size: 11.5px;
+    font-weight: 600;
 }}
 #api_keys_btn, #api_keys_btn_primary {{
-    min-height: 24px;
-    max-height: 26px;
-    padding: 2px 10px;
+    min-height: 26px;
+    padding: 0 12px;
     font-size: 11px;
     font-weight: 600;
     border-radius: 6px;
 }}
 #api_keys_btn {{
-    background-color: #1a2230;
+    background-color: transparent;
     color: {COLOR_TEXT_MAIN};
     border: 1px solid {COLOR_BORDER};
 }}
 #api_keys_btn:hover {{
-    background-color: #243044;
-    border-color: #3d4f66;
+    background-color: rgba(255, 255, 255, 0.04);
+    border-color: {COLOR_BORDER_FOCUS};
+}}
+#api_keys_btn:disabled {{
+    color: {COLOR_TEXT_MUTED};
+    border-color: {COLOR_BORDER}66;
 }}
 #api_keys_btn_primary {{
     background-color: {COLOR_PRIMARY};

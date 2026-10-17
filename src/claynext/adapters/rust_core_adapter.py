@@ -40,11 +40,50 @@ LEGACY_RELEASE_TARGET_DIR = BACKENDS_DIR / "target" / "release"
 def _find_binary(bin_name: str) -> Path | None:
     ext = ".exe" if os.name == "nt" else ""
     full_name = f"{bin_name}{ext}"
-    for candidate_dir in (RELEASE_TARGET_DIR, TARGET_DIR, LEGACY_RELEASE_TARGET_DIR, LEGACY_TARGET_DIR):
+    dirs: list[Path] = [RELEASE_TARGET_DIR, TARGET_DIR, LEGACY_RELEASE_TARGET_DIR, LEGACY_TARGET_DIR]
+    # Honour cargo target override (CI / sandboxed builds).
+    cargo_target = os.environ.get("CARGO_TARGET_DIR")
+    if cargo_target:
+        root = Path(cargo_target)
+        dirs = [root / "release", root / "debug", *dirs]
+    for candidate_dir in dirs:
         p = candidate_dir / full_name
         if p.is_file():
             return p
     return None
+
+
+def _ensure_bundled_ffmpeg_env() -> None:
+    """Point the Rust FFmpeg backend at imageio-ffmpeg when system PATH has no ffmpeg."""
+    if os.environ.get("CLAYNEXT_FFMPEG_PATH"):
+        return
+    try:
+        import imageio_ffmpeg
+
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and Path(exe).is_file():
+            os.environ["CLAYNEXT_FFMPEG_PATH"] = exe
+            # ffprobe is optional; probe falls back to ffmpeg -i when missing.
+    except Exception:
+        pass
+
+
+def _run_rust(
+    binary: Path,
+    args: list[str],
+    *,
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    _ensure_bundled_ffmpeg_env()
+    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    return subprocess.run(
+        [str(binary), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=timeout,
+        creationflags=creationflags,
+    )
 
 
 class RustFfmpegAdapter:
@@ -60,12 +99,9 @@ class RustFfmpegAdapter:
         if not binary:
             return None
         try:
-            res = subprocess.run(
-                [str(binary), "probe", str(file_path)],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+            res = _run_rust(binary, ["probe", str(file_path)], timeout=60)
+            if res.returncode != 0:
+                raise RuntimeError(res.stderr.strip() or "probe failed")
             raw = json.loads(res.stdout)
             return cls._parse_metadata(raw)
         except Exception as e:
@@ -74,40 +110,90 @@ class RustFfmpegAdapter:
 
     @classmethod
     def extract_frame_rgba(
-        cls, file_path: str | Path, timestamp_secs: float
+        cls,
+        file_path: str | Path,
+        timestamp_secs: float,
+        *,
+        width: int | None = None,
+        height: int | None = None,
     ) -> DecodedVideoFrame | None:
+        """Probe-level frame extract (CLI logs dims). Prefer extract_still for previews."""
         binary = _find_binary("claynext-ffmpeg")
         if not binary:
             return None
         try:
-            res = subprocess.run(
-                [str(binary), "extract-frame", str(file_path), f"{timestamp_secs:.3f}"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            # Binary prints extracted dimensions, pts and size
-            logger.debug(f"Rust extract-frame output: {res.stdout.strip()}")
-            return None  # Frame buffer is piped in memory in production C-ABI
+            args = ["extract-frame", str(file_path), f"{timestamp_secs:.3f}"]
+            if width:
+                args.append(str(int(width)))
+            if height:
+                args.append(str(int(height)))
+            res = _run_rust(binary, args, timeout=60)
+            if res.returncode != 0:
+                raise RuntimeError(res.stderr.strip() or "extract-frame failed")
+            logger.debug("Rust extract-frame: %s", res.stdout.strip())
+            return None
         except Exception as e:
             logger.warning(f"Rust frame extraction failed: {e}")
             return None
 
     @classmethod
+    def extract_still(
+        cls,
+        file_path: str | Path,
+        output_path: str | Path,
+        *,
+        timestamp_secs: float = 1.0,
+        max_width: int | None = 160,
+    ) -> bool:
+        """Write a JPEG/PNG still via claynext-ffmpeg (thumbnails / posters)."""
+        binary = _find_binary("claynext-ffmpeg")
+        if not binary:
+            return False
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            args = [
+                "extract-still",
+                str(file_path),
+                str(out),
+                f"{float(timestamp_secs):.3f}",
+            ]
+            if max_width:
+                args.append(str(int(max_width)))
+            res = _run_rust(binary, args, timeout=30)
+            if res.returncode == 0 and out.is_file() and out.stat().st_size > 0:
+                return True
+            # Short clips: retry from t=0
+            if timestamp_secs > 0:
+                args[3] = "0.000"
+                res = _run_rust(binary, args, timeout=30)
+                return res.returncode == 0 and out.is_file() and out.stat().st_size > 0
+            return False
+        except Exception as e:
+            logger.warning("Rust still extraction failed: %s", e)
+            return False
+
+    @classmethod
     def decode_audio_pcm_f32(
-        cls, file_path: str | Path
+        cls,
+        file_path: str | Path,
+        *,
+        sample_rate: int = 16000,
+        channels: int = 1,
     ) -> DecodedAudioChunk | None:
         binary = _find_binary("claynext-ffmpeg")
         if not binary:
             return None
         try:
-            res = subprocess.run(
-                [str(binary), "decode-audio", str(file_path)],
-                capture_output=True,
-                text=True,
-                check=True,
+            res = _run_rust(
+                binary,
+                ["decode-audio", str(file_path), str(int(sample_rate)), str(int(channels))],
+                timeout=300,
             )
-            logger.debug(f"Rust decode-audio output: {res.stdout.strip()}")
+            if res.returncode != 0:
+                raise RuntimeError(res.stderr.strip() or "decode-audio failed")
+            logger.debug("Rust decode-audio: %s", res.stdout.strip())
+            # CLI currently reports stats only; PCM pipe ABI lands later.
             return None
         except Exception as e:
             logger.warning(f"Rust audio decode failed: {e}")
@@ -121,12 +207,12 @@ class RustFfmpegAdapter:
         if not binary:
             return False
         try:
-            subprocess.run(
-                [str(binary), "mux", str(video_path), str(audio_path), str(output_path)],
-                check=True,
-                capture_output=True,
+            res = _run_rust(
+                binary,
+                ["mux", str(video_path), str(audio_path), str(output_path)],
+                timeout=600,
             )
-            return Path(output_path).is_file()
+            return res.returncode == 0 and Path(output_path).is_file()
         except Exception as e:
             logger.warning(f"Rust mux failed: {e}")
             return False
@@ -141,14 +227,18 @@ class RustFfmpegAdapter:
         *,
         width: int | None = None,
         height: int | None = None,
+        preset: str = "veryfast",
         audio_codec: str = "aac",
         sample_rate: int = 44100,
         channels: int = 2,
+        start_time_secs: float | None = None,
+        duration_secs: float | None = None,
+        prefer_hardware: bool = False,
         progress_callback: Callable[[float], None] | None = None,
     ) -> bool:
         """
-        Transcode to a Qt-safe H.264 / AAC file.
-        Prefers claynext-ffmpeg export when the binary exists; otherwise imageio-ffmpeg.
+        Transcode / trim / scale for edit export and Qt-safe preview proxies.
+        Prefers claynext-ffmpeg; falls back to bundled imageio-ffmpeg.
         """
         inp = Path(input_path)
         out = Path(output_path)
@@ -163,33 +253,63 @@ class RustFfmpegAdapter:
         if codec in {"", "copy", "auto"}:
             codec = "libx264"
 
+        if prefer_hardware and codec == "libx264":
+            hw = RustHardwareCodecsAdapter.get_optimal_encoder_args(prefer_hevc=False)
+            for i, a in enumerate(hw):
+                if a == "-c:v" and i + 1 < len(hw):
+                    candidate = hw[i + 1]
+                    # Keep H.264 family for widest Qt playback support.
+                    if "264" in candidate or candidate.endswith("_mf"):
+                        codec = candidate
+                    break
+
         binary = _find_binary("claynext-ffmpeg")
-        # CLI export uses default libx264+aac; only use it for standard re-encodes.
-        if binary and codec == "libx264" and width is None and height is None:
+        if binary:
             try:
-                subprocess.run(
-                    [str(binary), "export", str(inp), str(out)],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
-                if out.is_file() and out.stat().st_size > 0:
+                args = [
+                    "export",
+                    str(inp),
+                    str(out),
+                    "--codec", codec,
+                    "--crf", str(int(crf)),
+                    "--preset", preset or "veryfast",
+                    "--sample-rate", str(int(sample_rate)),
+                    "--channels", str(int(channels)),
+                ]
+                if width:
+                    args += ["--width", str(int(width))]
+                if height:
+                    args += ["--height", str(int(height))]
+                if start_time_secs is not None:
+                    args += ["--start", f"{float(start_time_secs):.3f}"]
+                if duration_secs is not None:
+                    args += ["--duration", f"{float(duration_secs):.3f}"]
+                res = _run_rust(binary, args, timeout=None)
+                if res.returncode == 0 and out.is_file() and out.stat().st_size > 0:
                     if progress_callback:
                         progress_callback(100.0)
                     return True
+                logger.warning(
+                    "Rust export failed (rc=%s): %s",
+                    res.returncode,
+                    (res.stderr or res.stdout or "").strip()[:400],
+                )
             except Exception as e:
                 logger.warning("Rust export failed, falling back to imageio-ffmpeg: %s", e)
 
         ok = cls._transcode_via_imageio(
             inp,
             out,
-            video_codec=codec,
+            video_codec=codec if "264" in codec or codec.startswith("libx") else "libx264",
             crf=crf,
             width=width,
             height=height,
+            preset=preset,
             audio_codec=audio_codec,
             sample_rate=sample_rate,
             channels=channels,
+            start_time_secs=start_time_secs,
+            duration_secs=duration_secs,
         )
         if ok and progress_callback:
             progress_callback(100.0)
@@ -204,9 +324,12 @@ class RustFfmpegAdapter:
         crf: int,
         width: int | None,
         height: int | None,
+        preset: str = "veryfast",
         audio_codec: str,
         sample_rate: int,
         channels: int,
+        start_time_secs: float | None = None,
+        duration_secs: float | None = None,
     ) -> bool:
         try:
             import imageio_ffmpeg
@@ -214,18 +337,24 @@ class RustFfmpegAdapter:
             logger.warning("imageio-ffmpeg unavailable for transcode: %s", e)
             return False
         exe = imageio_ffmpeg.get_ffmpeg_exe()
-        args: list[str] = [
-            exe, "-y", "-hide_banner", "-loglevel", "error",
-            "-i", str(input_path),
+        args: list[str] = [exe, "-y", "-hide_banner", "-loglevel", "error"]
+        if start_time_secs is not None:
+            args += ["-ss", f"{float(start_time_secs):.3f}"]
+        args += ["-i", str(input_path)]
+        if duration_secs is not None:
+            args += ["-t", f"{float(duration_secs):.3f}"]
+        args += [
             "-c:v", video_codec,
-            "-preset", "veryfast",
+            "-preset", preset or "veryfast",
             "-crf", str(int(crf)),
             "-pix_fmt", "yuv420p",
         ]
         if width and height:
-            args += ["-vf", f"scale={int(width)}:{int(height)}:force_original_aspect_ratio=decrease"]
+            args += ["-vf", f"scale={int(width)}:{int(height)}"]
         elif height:
             args += ["-vf", f"scale=-2:{int(height)}"]
+        elif width:
+            args += ["-vf", f"scale={int(width)}:-2"]
         args += [
             "-c:a", audio_codec or "aac",
             "-ar", str(int(sample_rate)),
@@ -234,7 +363,8 @@ class RustFfmpegAdapter:
             str(output_path),
         ]
         try:
-            subprocess.run(args, check=True, capture_output=True)
+            creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            subprocess.run(args, check=True, capture_output=True, creationflags=creationflags)
             return output_path.is_file() and output_path.stat().st_size > 0
         except Exception as e:
             logger.warning("imageio-ffmpeg transcode failed: %s", e)
@@ -248,8 +378,7 @@ class RustFfmpegAdapter:
         channels: int = 2,
     ) -> DecodedAudioChunk | None:
         """Alias used by RustCoreAdapter — delegates to decode_audio_pcm_f32."""
-        _ = sample_rate, channels
-        return cls.decode_audio_pcm_f32(file_path)
+        return cls.decode_audio_pcm_f32(file_path, sample_rate=sample_rate, channels=channels)
 
     @staticmethod
     def _parse_metadata(raw: dict[str, Any]) -> MediaMetadata:
@@ -381,12 +510,72 @@ class RustCpuAdapter:
         if not binary:
             return "Rust claynext-cpu binary not available"
         try:
-            res = subprocess.run(
-                [str(binary), "benchmark"], capture_output=True, text=True, check=True
-            )
+            res = _run_rust(binary, ["benchmark"], timeout=120)
+            if res.returncode != 0:
+                return f"CPU benchmark failed: {res.stderr.strip()}"
             return res.stdout.strip()
         except Exception as e:
             return f"CPU benchmark failed: {e}"
+
+    @classmethod
+    def downsample_waveform(
+        cls,
+        raw_pcm_f32: bytes,
+        target_bins: int = 2000,
+    ) -> list[dict[str, float]]:
+        """
+        Peak/RMS bins for timeline waveform painting.
+        Uses claynext-cpu when present; otherwise a fast Python downsample.
+        """
+        bins = max(1, int(target_bins))
+        if not raw_pcm_f32:
+            return [{"min": 0.0, "max": 0.0, "rms": 0.0} for _ in range(bins)]
+
+        binary = _find_binary("claynext-cpu")
+        if binary:
+            try:
+                import tempfile
+
+                with tempfile.NamedTemporaryFile(suffix=".f32", delete=False) as tmp:
+                    tmp.write(raw_pcm_f32)
+                    tmp_path = tmp.name
+                try:
+                    res = _run_rust(
+                        binary,
+                        ["waveform", tmp_path, str(bins)],
+                        timeout=60,
+                    )
+                    if res.returncode == 0 and res.stdout.strip():
+                        data = json.loads(res.stdout)
+                        if isinstance(data, list) and data:
+                            return data
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+            except Exception as e:
+                logger.debug("Rust waveform downsample failed, using Python: %s", e)
+
+        import array
+        import math
+
+        samples = array.array("f")
+        samples.frombytes(raw_pcm_f32)
+        n = len(samples)
+        if n == 0:
+            return [{"min": 0.0, "max": 0.0, "rms": 0.0} for _ in range(bins)]
+        out: list[dict[str, float]] = []
+        for i in range(bins):
+            a = (i * n) // bins
+            b = max(a + 1, ((i + 1) * n) // bins)
+            chunk = samples[a:b]
+            lo = min(chunk)
+            hi = max(chunk)
+            acc = sum(s * s for s in chunk)
+            rms = math.sqrt(acc / len(chunk)) if chunk else 0.0
+            out.append({"min": float(lo), "max": float(hi), "rms": float(rms)})
+        return out
 
 
 class RustAiAdapter:
@@ -571,6 +760,13 @@ class RustCoreAdapter:
         output_path: str | Path,
         video_codec: str = "libx264",
         crf: int = 21,
+        *,
+        width: int | None = None,
+        height: int | None = None,
+        preset: str = "veryfast",
+        start_time_secs: float | None = None,
+        duration_secs: float | None = None,
+        prefer_hardware: bool = False,
         progress_callback: Callable[[float], None] | None = None,
     ) -> bool:
         return self.ffmpeg.transcode_video(
@@ -578,7 +774,28 @@ class RustCoreAdapter:
             output_path=output_path,
             video_codec=video_codec,
             crf=crf,
+            width=width,
+            height=height,
+            preset=preset,
+            start_time_secs=start_time_secs,
+            duration_secs=duration_secs,
+            prefer_hardware=prefer_hardware,
             progress_callback=progress_callback,
+        )
+
+    def extract_still(
+        self,
+        file_path: str | Path,
+        output_path: str | Path,
+        *,
+        timestamp_secs: float = 1.0,
+        max_width: int | None = 160,
+    ) -> bool:
+        return self.ffmpeg.extract_still(
+            file_path,
+            output_path,
+            timestamp_secs=timestamp_secs,
+            max_width=max_width,
         )
 
 

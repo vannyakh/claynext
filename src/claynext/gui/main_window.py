@@ -271,8 +271,7 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def open_api_keys_dialog(self):
-        from claynext.gui.dialogs.api_keys_dialog import ApiKeysDialog
-        ApiKeysDialog(self).exec()
+        self.open_settings_dialog("API Keys")
 
     def toggle_maximize(self):
         if self.isMaximized():

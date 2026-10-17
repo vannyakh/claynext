@@ -17,8 +17,18 @@ class PipelineTools:
     """Background dubbing job and the finished file."""
 
     def _open_api_keys(self):
-        from claynext.gui.dialogs.api_keys_dialog import ApiKeysDialog
-        ApiKeysDialog(self).exec()
+        win = self.window()
+        if win is not None and hasattr(win, "open_settings_dialog"):
+            win.open_settings_dialog("API Keys")
+            return
+        from claynext.gui.dialogs.settings_dialog import SettingsDialog
+
+        dlg = SettingsDialog(self)
+        for i in range(dlg.tabs.count()):
+            if dlg.tabs.tabText(i).replace("&", "").lower() == "api keys":
+                dlg.tabs.setCurrentIndex(i)
+                break
+        dlg.exec()
 
     def start_dubbing(self):
         sources = self._dub_sources()
@@ -44,6 +54,8 @@ class PipelineTools:
         if not voice_id:
             self._show_error("No voice", "Choose an Edge neural voice.")
             return
+
+        # Environment preflight runs in StartLocalizeDialog before Accept.
 
         # Batch: merge episodes into one movie (single process), or dedicated tasks (default).
         if len(sources) >= 2 and opts.get("batch_mode") == "merge":

@@ -44,7 +44,6 @@ def ready_playback_path(media_path: str) -> str | None:
 
 def ensure_playback_file(media_path: str, progress_callback=None) -> str:
     """Ensure media file is in a safe format for fluid playback via Rust transcode."""
-    _ = progress_callback  # Accepted for Worker injection; unused here.
     ready = ready_playback_path(media_path)
     if ready:
         return ready
@@ -58,6 +57,7 @@ def ensure_playback_file(media_path: str, progress_callback=None) -> str:
         output_path=cached,
         video_codec="libx264",
         crf=23,
+        preset="veryfast",
         progress_callback=progress_callback,
     )
     if success and cached.is_file() and cached.stat().st_size > 0:
@@ -66,9 +66,13 @@ def ensure_playback_file(media_path: str, progress_callback=None) -> str:
 
 
 def ensure_proxy_render(media_path: str, progress_callback=None) -> str:
-    """Generate 720p lightweight H.264 proxy via Rust transcode."""
+    """Generate 720p lightweight H.264 proxy via Rust transcode (edit preview recovery)."""
     abs_path = os.path.abspath(media_path)
-    key = hashlib.sha1(f"{abs_path}|proxy_720p".encode()).hexdigest()
+    try:
+        stamp = f"{os.path.getmtime(abs_path)}|{os.path.getsize(abs_path)}"
+    except OSError:
+        stamp = "0"
+    key = hashlib.sha1(f"{abs_path}|{stamp}|proxy_720p_v2".encode()).hexdigest()
     PROXY_DIR.mkdir(parents=True, exist_ok=True)
     out_path = PROXY_DIR / f"{key}.mp4"
     if out_path.is_file() and out_path.stat().st_size > 0:
@@ -80,6 +84,7 @@ def ensure_proxy_render(media_path: str, progress_callback=None) -> str:
         video_codec="libx264",
         crf=26,
         height=720,
+        preset="ultrafast",
         progress_callback=progress_callback,
     )
     if ok and out_path.is_file() and out_path.stat().st_size > 0:

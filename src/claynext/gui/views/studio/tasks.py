@@ -35,6 +35,7 @@ _STATUS_COLORS = {
     "failed": "#f87171",
     "cancelled": COLOR_TEXT_MUTED,
 }
+# Internal pipeline stages (progress mapping only — not shown as table columns).
 STAGES = (
     ("AUD", "Audio · Demux and separate the movie audio", 0, 16),
     ("ASR", "ASR · Transcribe the dialogue", 16, 38),
@@ -45,9 +46,8 @@ STAGES = (
 _CHECK_COL = 0
 _INDEX_COL = 1
 _NAME_COL = 2
-_STAGE_COL = 3
-_STATUS_COL = _STAGE_COL + len(STAGES)
-_COL_COUNT = _STATUS_COL + 1
+_STATUS_COL = 3
+_COL_COUNT = 4
 _STATUS_LABELS = {
     "queued": "Queued",
     "running": "Dubbing",
@@ -69,8 +69,7 @@ _THUMB_SIZE = 32
 _ROW_H = 50
 _CHECK_W = 22
 _INDEX_W = 18
-_STAGE_W = 24
-_STATUS_W = 54
+_STATUS_W = 72
 
 
 
@@ -199,76 +198,6 @@ class TaskNameDelegate(QStyledItemDelegate):
 
         painter.restore()
 
-
-
-class StageBadgeDelegate(QStyledItemDelegate):
-    """Paints sleek Cyber Dark pipeline badge pills without ugly focus outlines."""
-
-    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex):
-        opt = QStyleOptionViewItem(option)
-        opt.state &= ~QStyle.StateFlag.State_HasFocus
-        opt.state &= ~QStyle.StateFlag.State_KeyboardFocusChange
-        rect = opt.rect
-
-        painter.save()
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setClipRect(rect)
-
-        if opt.state & QStyle.StateFlag.State_Selected:
-            painter.fillRect(rect, QColor(99, 102, 241, 40))
-        elif opt.state & QStyle.StateFlag.State_MouseOver:
-            painter.fillRect(rect, QColor(255, 255, 255, 8))
-
-        val = index.data(Qt.ItemDataRole.UserRole)
-        status = index.data(Qt.ItemDataRole.UserRole + 1)
-        is_cur = index.data(Qt.ItemDataRole.UserRole + 2)
-
-        badge_w, badge_h = 19, 19
-        cx = rect.x() + (rect.width() - badge_w) // 2
-        cy = rect.y() + (rect.height() - badge_h) // 2
-        badge_rect = QRectF(cx, cy, badge_w, badge_h)
-
-        if val is not None and val >= 100:
-            painter.setBrush(QColor(16, 185, 129, 28))
-            painter.setPen(QPen(QColor(16, 185, 129, 80), 1))
-            painter.drawRoundedRect(badge_rect, 5, 5)
-
-            painter.setPen(QColor("#10b981"))
-            f = painter.font()
-            f.setPixelSize(11)
-            f.setBold(True)
-            painter.setFont(f)
-            painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, "✓")
-        elif is_cur and status in _ACTIVE:
-            painter.setBrush(QColor(6, 182, 212, 35))
-            painter.setPen(QPen(QColor(6, 182, 212, 160), 1))
-            painter.drawRoundedRect(badge_rect, 5, 5)
-
-            painter.setPen(QColor("#06b6d4"))
-            f = painter.font()
-            f.setPixelSize(9)
-            f.setBold(True)
-            painter.setFont(f)
-            pct = f"{max(0, val)}%" if val is not None and val >= 0 else "…"
-            painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, pct)
-        elif is_cur and status in _FAILED:
-            painter.setBrush(QColor(248, 113, 113, 30))
-            painter.setPen(QPen(QColor(248, 113, 113, 120), 1))
-            painter.drawRoundedRect(badge_rect, 5, 5)
-
-            painter.setPen(QColor("#f87171"))
-            f = painter.font()
-            f.setPixelSize(11)
-            f.setBold(True)
-            painter.setFont(f)
-            painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, "✕")
-        else:
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(107, 119, 133, 75))
-            dot_r = 2.0
-            painter.drawEllipse(QRectF(rect.center().x() - dot_r, rect.center().y() - dot_r, dot_r * 2, dot_r * 2))
-
-        painter.restore()
 
 
 class StatusBadgeDelegate(QStyledItemDelegate):
@@ -487,9 +416,7 @@ class TaskTools:
         self.task_table = TaskTableWidget()
         self.task_table.setObjectName("transcript_table")
         self.task_table.setColumnCount(_COL_COUNT)
-        self.task_table.setHorizontalHeaderLabels(
-            ["", "#", "TASK", *[s[0] for s in STAGES], "STATUS"],
-        )
+        self.task_table.setHorizontalHeaderLabels(["", "#", "PROJECT", "STATUS"])
         self.task_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
         header = self.task_table.horizontalHeader()
@@ -501,19 +428,11 @@ class TaskTools:
         self.task_table.setColumnWidth(_INDEX_COL, _INDEX_W)
         self.task_table.horizontalHeaderItem(_INDEX_COL).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         header.setSectionResizeMode(_NAME_COL, QHeaderView.ResizeMode.Stretch)
-        for i, (_name, tip, _a, _b) in enumerate(STAGES):
-            col = _STAGE_COL + i
-            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
-            self.task_table.setColumnWidth(col, _STAGE_W)
-            self.task_table.horizontalHeaderItem(col).setToolTip(tip)
-            self.task_table.horizontalHeaderItem(col).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         header.setSectionResizeMode(_STATUS_COL, QHeaderView.ResizeMode.Fixed)
         self.task_table.setColumnWidth(_STATUS_COL, _STATUS_W)
+        self.task_table.horizontalHeaderItem(_STATUS_COL).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Set custom delegates for ultra-clean rendering
         self.task_table.setItemDelegateForColumn(_NAME_COL, TaskNameDelegate(self.task_table))
-        for i in range(len(STAGES)):
-            self.task_table.setItemDelegateForColumn(_STAGE_COL + i, StageBadgeDelegate(self.task_table))
         self.task_table.setItemDelegateForColumn(_STATUS_COL, StatusBadgeDelegate(self.task_table))
 
         # Header checkbox for batch select / clear — centered in the check column.
@@ -952,6 +871,27 @@ class TaskTools:
         if not voice_id:
             self._show_error("No voice", "Choose an Edge neural voice.")
             return
+        from claynext.gui.dialogs.env_alert import ensure_job_environment
+
+        sec = (
+            self.combo_voice_sec.currentData()
+            if hasattr(self, "combo_voice_sec")
+            else ""
+        )
+        asr_model = (
+            self.combo_model.currentText()
+            if hasattr(self, "combo_model")
+            else "whisper-small"
+        )
+        if not ensure_job_environment(
+            self,
+            voice_id=str(voice_id or ""),
+            secondary_voice_id=str(sec or ""),
+            asr_model=str(asr_model or ""),
+            title="Download environment",
+        ):
+            self.log.warn("Task start blocked — missing environment")
+            return
         self._dub_queue = [
             t["source"] for t in self._tasks
             if t["status"] == "queued" and t["id"] != task_id and t.get("source")
@@ -1371,10 +1311,6 @@ class TaskTools:
             name.setData(Qt.ItemDataRole.UserRole + 3, self._format_task_subtitle(task))
             table.setItem(row, _NAME_COL, name)
             table.setRowHeight(row, _ROW_H)
-
-
-            for i, (stage_name, stage_tip, _a, _b) in enumerate(STAGES):
-                table.setItem(row, _STAGE_COL + i, self._stage_item(task, i, stage_name, stage_tip))
             self._sync_status_cell(row, task)
             if task["id"] == self._task_selected_id:
                 current = row
@@ -1427,26 +1363,6 @@ class TaskTools:
         if queued:
             parts.append(f"{queued} queued")
         self.task_hint.setText(" · ".join(parts))
-
-    @staticmethod
-    def _stage_item(task: dict, index: int, stage_name: str, tip: str) -> QTableWidgetItem:
-        value = task["stages"][index]
-        status = task["status"]
-        current = (index == task["stage"])
-        item = QTableWidgetItem()
-        item.setData(Qt.ItemDataRole.UserRole, value)
-        item.setData(Qt.ItemDataRole.UserRole + 1, status)
-        item.setData(Qt.ItemDataRole.UserRole + 2, current)
-        if value >= 100:
-            st = "Completed ✓"
-        elif current and status in _ACTIVE:
-            st = f"In progress ({max(0, value)}%)"
-        elif current and status in _FAILED:
-            st = f"Failed ✕ ({task.get('message', '')})"
-        else:
-            st = "Waiting"
-        item.setToolTip(f"{stage_name} · {tip}\nStatus: {st}")
-        return item
 
     def _toggle_timeline(self, checked: bool | None = None):
         if isinstance(checked, bool) and self.sender() is getattr(self, "act_timeline", None):

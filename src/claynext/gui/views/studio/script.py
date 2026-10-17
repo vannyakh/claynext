@@ -7,7 +7,7 @@ import os
 import shutil
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QSettings, QUrl, QThreadPool
+from PySide6.QtCore import QEvent, Qt, QSettings, QSize, QUrl, QThreadPool
 from PySide6.QtGui import QBrush, QColor, QKeySequence, QShortcut
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
@@ -27,12 +27,34 @@ from claynext.models.tts_expression import EXPRESSION_CHIPS
 from claynext.models.canvas import is_neutral
 from claynext.gui.worker import Worker
 from claynext.gui.components.field_controls import SearchField, SelectField
-from claynext.gui.components.shelf_header import make_shelf_header
+from claynext.gui.components.shelf_header import make_shelf_button, make_shelf_header
 from claynext.gui.components.spinner import Spinner
 from claynext.gui.components.table_fit import fit_or_scroll
 from claynext.gui.views.studio.helpers import export_segments, import_segments
 from claynext.gui.views.studio.merge import MergeOrderDialog
 from claynext.utils.config import CACHE_DIR, OUTPUTS_DIR
+
+_SCRIPT_VIEW_FILTERS = (
+    ("all", "All lines"),
+    ("pending", "Pending edits"),
+    ("dubbed", "Has dub text"),
+    ("source", "Source only"),
+)
+
+
+def _format_script_error(hint: str) -> str:
+    """Turn raw engine errors into short, actionable empty-state copy."""
+    text = str(hint or "").strip()
+    low = text.lower()
+    if "voxcpm is not installed" in low or "extra voxcpm" in low:
+        return (
+            "VoxCPM optional pack is missing.\n"
+            "Run: uv sync --extra voxcpm\n"
+            "Or pick Edge / Kitten voices in Settings and retry."
+        )
+    if "choose an edge" in low or "no voice" in low:
+        return "Pick a TTS voice in the Voices shelf, then retry dub."
+    return text
 
 
 def _line_snapshot(seg: dict) -> dict:
@@ -449,54 +471,76 @@ class ScriptTools:
             return
 
     def _build_script_header(self) -> QWidget:
-        """Shelf title strip: line count, import/export menus, spinner."""
+        """Shelf title strip: count, import/export, regenerate, more."""
         self.lbl_script_count = QLabel("")
         self.lbl_script_count.setObjectName("transcript_count")
         self.lbl_script_count.setAlignment(
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight
         )
 
-        self.btn_script_import = QPushButton("Import ▾")
-        self.btn_script_import.setObjectName("media_lib_menu_btn")
-        self.btn_script_import.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_script_import.setFixedHeight(22)
-        self.btn_script_import.setToolTip("Load script · SRT, VTT, or JSON")
+        self.btn_script_import = make_shelf_button(
+            "Import", tip="Load script · SRT, VTT, or JSON", icon_name="folder", menu=True,
+        )
         import_menu = QMenu(self.btn_script_import)
         import_menu.setObjectName("media_lib_menu")
-        act_import = import_menu.addAction("Import script…")
-        act_import.triggered.connect(lambda: self._import_script())
+        import_menu.addAction(icon("folder", size=14), "Import script…").triggered.connect(
+            lambda: self._import_script()
+        )
         import_menu.addSeparator()
-        act_in_srt = import_menu.addAction("SRT…")
-        act_in_srt.triggered.connect(lambda: self._import_script("srt"))
-        act_in_vtt = import_menu.addAction("VTT…")
-        act_in_vtt.triggered.connect(lambda: self._import_script("vtt"))
-        act_in_json = import_menu.addAction("JSON…")
-        act_in_json.triggered.connect(lambda: self._import_script("json"))
+        import_menu.addAction("SRT…").triggered.connect(lambda: self._import_script("srt"))
+        import_menu.addAction("VTT…").triggered.connect(lambda: self._import_script("vtt"))
+        import_menu.addAction("JSON…").triggered.connect(lambda: self._import_script("json"))
         self.btn_script_import.setMenu(import_menu)
 
-        self.btn_script_export = QPushButton("Export ▾")
-        self.btn_script_export.setObjectName("media_lib_menu_btn")
-        self.btn_script_export.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_script_export = make_shelf_button(
+            "Export", tip="Export script · SRT, VTT, or JSON", icon_name="download", menu=True,
+        )
         self.btn_script_export.setEnabled(False)
-        self.btn_script_export.setFixedHeight(22)
-        self.btn_script_export.setToolTip("Export script text · SRT, VTT, or JSON")
         export_menu = QMenu(self.btn_script_export)
         export_menu.setObjectName("media_lib_menu")
-        act_dialog = export_menu.addAction("Export script…")
-        act_dialog.triggered.connect(lambda: self.open_export_dialog(script_only=True))
+        export_menu.addAction(icon("download", size=14), "Export script…").triggered.connect(
+            lambda: self.open_export_dialog(script_only=True)
+        )
         export_menu.addSeparator()
-        act_srt = export_menu.addAction("SRT…")
-        act_srt.triggered.connect(lambda: self._export_subtitles("srt", "current"))
-        act_vtt = export_menu.addAction("VTT…")
-        act_vtt.triggered.connect(lambda: self._export_subtitles("vtt", "current"))
-        act_json = export_menu.addAction("JSON…")
-        act_json.triggered.connect(lambda: self._export_subtitles("json", "current"))
+        export_menu.addAction("SRT…").triggered.connect(
+            lambda: self._export_subtitles("srt", "current")
+        )
+        export_menu.addAction("VTT…").triggered.connect(
+            lambda: self._export_subtitles("vtt", "current")
+        )
+        export_menu.addAction("JSON…").triggered.connect(
+            lambda: self._export_subtitles("json", "current")
+        )
         export_menu.addSeparator()
-        act_back_srt = export_menu.addAction("Previous version (SRT)…")
-        act_back_srt.triggered.connect(lambda: self._export_subtitles("srt", "back"))
-        act_back_vtt = export_menu.addAction("Previous version (VTT)…")
-        act_back_vtt.triggered.connect(lambda: self._export_subtitles("vtt", "back"))
+        export_menu.addAction("Previous version (SRT)…").triggered.connect(
+            lambda: self._export_subtitles("srt", "back")
+        )
+        export_menu.addAction("Previous version (VTT)…").triggered.connect(
+            lambda: self._export_subtitles("vtt", "back")
+        )
         self.btn_script_export.setMenu(export_menu)
+
+        self.btn_script_regen = make_shelf_button(
+            tip="Regenerate · transcript, translate, TTS", icon_name="sparkles", menu=True,
+        )
+        self.btn_script_regen.setEnabled(False)
+        regen_menu = QMenu(self.btn_script_regen)
+        regen_menu.setObjectName("media_lib_menu")
+        regen_menu.setToolTipsVisible(True)
+        self._script_regen_menu = regen_menu
+        self.btn_script_regen.setMenu(regen_menu)
+        regen_menu.aboutToShow.connect(self._fill_script_regen_menu)
+
+        self.btn_script_actions = make_shelf_button(
+            tip="More script actions", icon_name="more", menu=True,
+        )
+        self.btn_script_actions.setEnabled(False)
+        actions_menu = QMenu(self.btn_script_actions)
+        actions_menu.setObjectName("media_lib_menu")
+        actions_menu.setToolTipsVisible(True)
+        self._script_actions_menu = actions_menu
+        self.btn_script_actions.setMenu(actions_menu)
+        actions_menu.aboutToShow.connect(self._fill_script_actions_menu)
 
         self.table_spinner = Spinner(size=16)
         self.script_header = make_shelf_header(
@@ -504,6 +548,8 @@ class ScriptTools:
             self.lbl_script_count,
             self.btn_script_import,
             self.btn_script_export,
+            self.btn_script_regen,
+            self.btn_script_actions,
             self.table_spinner,
         )
         return self.script_header
@@ -511,6 +557,7 @@ class ScriptTools:
     def _build_script_panel(self) -> QWidget:
         panel = QWidget()
         panel.setObjectName("transcript_panel")
+        self.script_panel = panel
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -519,81 +566,98 @@ class ScriptTools:
 
         tools = QFrame()
         tools.setObjectName("transcript_tools")
+        self.script_tools = tools
         filter_row = QHBoxLayout(tools)
-        filter_row.setContentsMargins(12, 10, 12, 8)
-        filter_row.setSpacing(8)
+        filter_row.setContentsMargins(10, 6, 10, 6)
+        filter_row.setSpacing(6)
 
-        # Left: search + character select · Right: action buttons
-        left = QHBoxLayout()
-        left.setContentsMargins(0, 0, 0, 0)
-        left.setSpacing(8)
-
-        self.script_search = SearchField("Find in script…", size="md")
-        self.script_search.setMinimumWidth(160)
-        self.script_search.setMaximumWidth(260)
+        self.script_search = SearchField("Find in script…", size="sm")
+        self.script_search.setMinimumWidth(96)
+        self.script_search.setMaximumWidth(16777215)
         self.script_search.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
         self.script_search.textChanged.connect(lambda _: self._apply_script_filters())
-        left.addWidget(self.script_search, 0, Qt.AlignmentFlag.AlignVCenter)
+        filter_row.addWidget(self.script_search, 1, Qt.AlignmentFlag.AlignVCenter)
 
-        self.script_character_filter = SelectField(size="sm", width=148)
+        self.script_character_filter = SelectField(size="sm", width=120)
         self.script_character_filter.setObjectName("script_character_filter")
+        self.script_character_filter.setToolTip("Filter by character")
+        self.script_character_filter.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
+        )
         self.script_character_filter.addItem("All characters", "all")
         self.script_character_filter.currentIndexChanged.connect(
             lambda _: self._apply_script_filters()
         )
-        left.addWidget(self.script_character_filter, 0, Qt.AlignmentFlag.AlignVCenter)
-        filter_row.addLayout(left, 0)
+        filter_row.addWidget(self.script_character_filter, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        filter_row.addStretch(1)
+        self.script_view_filter = SelectField(size="sm", width=112)
+        self.script_view_filter.setObjectName("script_view_filter")
+        self.script_view_filter.setToolTip("Filter by line status")
+        self.script_view_filter.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
+        )
+        for key, label in _SCRIPT_VIEW_FILTERS:
+            self.script_view_filter.addItem(label, key)
+        self.script_view_filter.currentIndexChanged.connect(
+            lambda _: self._apply_script_filters()
+        )
+        filter_row.addWidget(self.script_view_filter, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        self.btn_script_pending = QToolButton()
-        self.btn_script_pending.setObjectName("media_lib_icon_btn")
-        self.btn_script_pending.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_script_pending.setIcon(icon("sparkles", color="#e7ecf3", size=14))
-        self.btn_script_pending.setFixedSize(28, 28)
-        self.btn_script_pending.setToolTip("Next pending version")
+        self.btn_script_pending = make_shelf_button(
+            tip="Jump to next pending edit", icon_name="chevron-right",
+        )
         self.btn_script_pending.setEnabled(False)
         self.btn_script_pending.clicked.connect(lambda: self._jump_pending(1))
         filter_row.addWidget(self.btn_script_pending, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        self.btn_script_actions = QToolButton()
-        self.btn_script_actions.setObjectName("media_lib_icon_btn")
-        self.btn_script_actions.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_script_actions.setIcon(icon("more", color="#e7ecf3", size=14))
-        self.btn_script_actions.setFixedSize(28, 28)
-        self.btn_script_actions.setToolTip("Script actions")
-        self.btn_script_actions.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.btn_script_actions.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.btn_script_actions.setEnabled(False)
-        actions_menu = QMenu(self.btn_script_actions)
-        actions_menu.setObjectName("media_lib_menu")
-        actions_menu.setToolTipsVisible(True)
-        self._script_actions_menu = actions_menu
-        self.btn_script_actions.setMenu(actions_menu)
-        actions_menu.aboutToShow.connect(self._fill_script_actions_menu)
-        filter_row.addWidget(self.btn_script_actions, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(tools)
 
         self.script_stack = QStackedWidget()
         empty = QWidget()
         empty.setObjectName("transcript_empty")
         empty_lay = QVBoxLayout(empty)
+        empty_lay.setContentsMargins(16, 12, 16, 16)
+        empty_lay.setSpacing(6)
         empty_lay.addStretch(1)
         self.empty_title = QLabel("No dubbed script")
         self.empty_title.setObjectName("transcript_empty_title")
         self.empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_lay.addWidget(self.empty_title)
-        self.empty_hint = QLabel(
-            "Select a movie and dub, or Import a script (SRT / VTT / JSON)"
-        )
+        self.empty_hint = QLabel("Dub a movie from Tasks, or")
         self.empty_hint.setObjectName("transcript_empty_hint")
-        self.empty_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_hint.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         self.empty_hint.setWordWrap(True)
-        empty_lay.addWidget(self.empty_hint)
+        empty_lay.addWidget(self.empty_hint, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        empty_actions = QHBoxLayout()
+        empty_actions.setContentsMargins(0, 6, 0, 0)
+        empty_actions.setSpacing(6)
+        empty_actions.addStretch(1)
+        self.btn_empty_import = QPushButton("Import script")
+        self.btn_empty_import.setObjectName("transcript_empty_btn")
+        self.btn_empty_import.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_empty_import.setFixedHeight(24)
+        self.btn_empty_import.setIcon(icon("folder", color="#e7ecf3", size=13))
+        self.btn_empty_import.setIconSize(QSize(13, 13))
+        self.btn_empty_import.clicked.connect(lambda: self._import_script())
+        empty_actions.addWidget(self.btn_empty_import)
+        self.btn_empty_retry = QPushButton("Retry dub")
+        self.btn_empty_retry.setObjectName("transcript_empty_btn_primary")
+        self.btn_empty_retry.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_empty_retry.setFixedHeight(24)
+        self.btn_empty_retry.setIcon(icon("refresh", color="#e7ecf3", size=13))
+        self.btn_empty_retry.setIconSize(QSize(13, 13))
+        self.btn_empty_retry.setVisible(False)
+        self.btn_empty_retry.clicked.connect(self._retry_script_all)
+        empty_actions.addWidget(self.btn_empty_retry)
+        empty_actions.addStretch(1)
+        empty_lay.addLayout(empty_actions)
         empty_lay.addStretch(2)
         self.script_stack.addWidget(empty)
+        self._script_compact = None
+        panel.installEventFilter(self)
 
         self.table = QTableWidget()
         self.table.setObjectName("transcript_table")
@@ -646,7 +710,61 @@ class ScriptTools:
             lambda: self._copy_script_lines("times")
         )
         self._update_script_meta()
+        self._sync_script_panel_layout(panel.width() or 420)
         return panel
+
+    def eventFilter(self, obj, event):
+        if obj is getattr(self, "script_panel", None) and event.type() == QEvent.Type.Resize:
+            self._sync_script_panel_layout(event.size().width())
+        return super().eventFilter(obj, event)
+
+    def _sync_script_panel_layout(self, width: int):
+        """Compact header / filters / columns when the script shelf is narrow."""
+        w = max(0, int(width or 0))
+        compact = w < 420
+        tight = w < 340
+        if self._script_compact == (compact, tight, w // 40):
+            return
+        self._script_compact = (compact, tight, w // 40)
+
+        for btn, label in (
+            (getattr(self, "btn_script_import", None), "Import"),
+            (getattr(self, "btn_script_export", None), "Export"),
+        ):
+            if isinstance(btn, QToolButton):
+                if compact:
+                    btn.setText("")
+                    btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+                    btn.setProperty("icon_only", "true")
+                    btn.setFixedSize(24, 24)
+                else:
+                    btn.setText(label)
+                    btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+                    btn.setProperty("icon_only", "false")
+                    btn.setFixedHeight(24)
+                    btn.setMinimumWidth(0)
+                    btn.setMaximumWidth(16777215)
+                    btn.setMinimumWidth(max(56, btn.sizeHint().width()))
+                btn.style().unpolish(btn)
+                btn.style().polish(btn)
+
+        if hasattr(self, "script_search"):
+            self.script_search.setMinimumWidth(72 if tight else 96)
+            self.script_search.setMaximumWidth(16777215)
+
+        if hasattr(self, "script_character_filter"):
+            cw = 96 if tight else (108 if compact else 120)
+            self.script_character_filter.setFixedWidth(cw)
+            self.script_character_filter.setVisible(not tight or w >= 280)
+
+        if hasattr(self, "script_view_filter"):
+            vw = 88 if tight else (100 if compact else 112)
+            self.script_view_filter.setFixedWidth(vw)
+
+        if hasattr(self, "empty_hint"):
+            self.empty_hint.setMaximumWidth(max(160, w - 32))
+
+        self._fit_script_columns()
 
     def _lines_for_export(self, mode: str) -> list[dict]:
         rows = []
@@ -1046,45 +1164,74 @@ class ScriptTools:
             visible = sum(
                 1 for r in range(self.table.rowCount()) if not self.table.isRowHidden(r)
             )
+        pending_n = sum(1 for seg in self._segments if seg.get("pending"))
         if hasattr(self, "lbl_script_count"):
             if not n:
                 self.lbl_script_count.setText("")
+            elif pending_n and visible == n:
+                self.lbl_script_count.setText(
+                    f"{n} line{'s' if n != 1 else ''} · {pending_n} pending"
+                )
             elif visible < n:
                 self.lbl_script_count.setText(f"{visible} of {n}")
             else:
                 self.lbl_script_count.setText(f"{n} line{'s' if n != 1 else ''}")
         if hasattr(self, "btn_script_export"):
             self.btn_script_export.setEnabled(n > 0)
+        has_source = bool(
+            str(getattr(self, "selected_file", "") or "")
+            and os.path.isfile(str(self.selected_file))
+        )
+        can_retry = has_source or self._current_script_task_id() >= 0
         if hasattr(self, "script_search"):
             self.script_search.setEnabled(n > 0)
             self.script_character_filter.setEnabled(n > 0)
-        has_pending = any(seg.get("pending") for seg in self._segments)
+            if hasattr(self, "script_view_filter"):
+                self.script_view_filter.setEnabled(n > 0)
+        has_pending = pending_n > 0
         if hasattr(self, "btn_script_pending"):
             self.btn_script_pending.setEnabled(has_pending)
+            self.btn_script_pending.setToolTip(
+                f"Next pending edit ({pending_n})" if has_pending else "No pending edits"
+            )
         if hasattr(self, "btn_script_actions"):
-            self.btn_script_actions.setEnabled(n > 0)
+            self.btn_script_actions.setEnabled(n > 0 or can_retry)
+        if hasattr(self, "btn_script_regen"):
+            self.btn_script_regen.setEnabled(n > 0 or can_retry)
+        err = bool(getattr(self, "_error", ""))
+        if hasattr(self, "btn_empty_retry"):
+            self.btn_empty_retry.setVisible(err and can_retry)
         self.script_stack.setCurrentIndex(1 if n else 0)
         spinning = self.table_spinner.is_spinning()
-        if n == 0 and not spinning and not self._error:
+        if n == 0 and not spinning and not err:
             self.empty_title.setText("No dubbed script")
-            self.empty_hint.setText(
-                "Select a movie and dub, or Import a script (SRT / VTT / JSON)"
-            )
+            self.empty_hint.setText("Dub a movie from Tasks, or")
+            if hasattr(self, "btn_empty_retry"):
+                self.btn_empty_retry.setVisible(False)
 
     def _fit_script_columns(self):
         """Keep meta columns compact; Source / Dub share the remaining width."""
         if not hasattr(self, "table"):
             return
-        self.table.setColumnWidth(0, 36)
-        self.table.setColumnWidth(1, 118)
-        self.table.setColumnWidth(3, 72)
+        panel_w = 0
+        if hasattr(self, "script_panel") and self.script_panel is not None:
+            panel_w = self.script_panel.width()
+        narrow = panel_w > 0 and panel_w < 420
+        tight = panel_w > 0 and panel_w < 340
+
+        self.table.setColumnHidden(3, tight)  # Gender
+        self.table.setColumnWidth(0, 32 if tight else 36)
+        self.table.setColumnWidth(1, 88 if tight else (104 if narrow else 118))
+        if not tight:
+            self.table.setColumnWidth(3, 64 if narrow else 72)
         # Character: fit longest visible name, then clamp so Source/Dub stay readable.
         header = self.table.horizontalHeader()
         mode = header.sectionResizeMode(2)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         width = self.table.columnWidth(2)
         header.setSectionResizeMode(2, mode)
-        self.table.setColumnWidth(2, max(96, min(148, width + 8)))
+        lo, hi = (72, 110) if tight else ((84, 128) if narrow else (96, 148))
+        self.table.setColumnWidth(2, max(lo, min(hi, width + 8)))
 
     def _refresh_character_filter(self):
         if not hasattr(self, "script_character_filter"):
@@ -1108,19 +1255,32 @@ class ScriptTools:
             if hasattr(self, "script_character_filter")
             else "all"
         ) or "all"
+        view = (
+            self.script_view_filter.currentData()
+            if hasattr(self, "script_view_filter")
+            else "all"
+        ) or "all"
         for row, seg in enumerate(self._segments):
             if row >= self.table.rowCount():
                 break
             hide = False
             name = str(seg.get("speaker") or "").strip()
+            dub = str(seg.get("translated_text") or "").strip()
             if character not in (None, "all") and name != character:
+                hide = True
+            if not hide and view == "pending" and not seg.get("pending"):
+                hide = True
+            elif not hide and view == "dubbed" and not dub:
+                hide = True
+            elif not hide and view == "source" and dub:
                 hide = True
             if q and not hide:
                 blob = " ".join([
                     name,
                     str(seg.get("original_text") or seg.get("text") or ""),
-                    str(seg.get("translated_text") or ""),
+                    dub,
                     str(seg.get("start") or ""),
+                    str(seg.get("gender") or ""),
                 ]).lower()
                 if q not in blob:
                     hide = True
@@ -1141,6 +1301,67 @@ class ScriptTools:
         act.triggered.connect(slot)
         return act
 
+    def _fill_script_regen_menu(self):
+        """Header sparkles menu — regenerate / retry pipeline features."""
+        menu = getattr(self, "_script_regen_menu", None)
+        if menu is None:
+            return
+        menu.clear()
+        n = len(self._segments)
+        busy = self._script_worker is not None or bool(getattr(self, "_dub_busy", False))
+        has_source = bool(
+            str(getattr(self, "selected_file", "") or "")
+            and os.path.isfile(str(self.selected_file))
+        )
+        can_retry = has_source or self._current_script_task_id() >= 0
+        all_rows = list(range(n))
+        selected = self._selected_rows() if n else []
+
+        act_asr = self._script_menu_action(
+            menu, "mic", "Retry transcript",
+            self._retry_script_transcript,
+            tip="Re-run ASR on the movie (starts a new dub pass)",
+        )
+        act_asr.setEnabled(can_retry and not busy)
+
+        act_tr = self._script_menu_action(
+            menu, "globe", "Retry translate (all)",
+            lambda: self._regenerate_rows(all_rows),
+            tip="Re-translate every line from the source text",
+        )
+        act_tr.setEnabled(n > 0 and not busy)
+
+        if selected:
+            act_tr_sel = self._script_menu_action(
+                menu, "globe", f"Retry translate ({len(selected)} selected)",
+                lambda rows=list(selected): self._regenerate_rows(rows),
+                tip="Re-translate only the selected lines",
+            )
+            act_tr_sel.setEnabled(not busy)
+
+        act_tts = self._script_menu_action(
+            menu, "volume", "Retry TTS (all)",
+            lambda: self._resynthesize_rows(all_rows),
+            tip="Re-synthesize voice audio for every line",
+        )
+        act_tts.setEnabled(n > 0 and not busy)
+
+        if selected:
+            act_tts_sel = self._script_menu_action(
+                menu, "volume", f"Retry TTS ({len(selected)} selected)",
+                lambda rows=list(selected): self._resynthesize_rows(rows),
+                tip="Re-speak only the selected lines",
+            )
+            act_tts_sel.setEnabled(not busy)
+
+        menu.addSeparator()
+        act_all = self._script_menu_action(
+            menu, "refresh", "Retry full dub",
+            self._retry_script_all,
+            tip="Full redub · transcript → translate → TTS → mix",
+        )
+        act_all.setEnabled(can_retry and not busy)
+
     def _fill_script_actions_menu(self):
         menu = getattr(self, "_script_actions_menu", None)
         if menu is None:
@@ -1148,64 +1369,56 @@ class ScriptTools:
         menu.clear()
         n = len(self._segments)
         busy = self._script_worker is not None or bool(getattr(self, "_dub_busy", False))
-        has_source = bool(str(getattr(self, "selected_file", "") or "") and os.path.isfile(str(self.selected_file)))
         all_rows = list(range(n))
+        pending_n = sum(1 for seg in self._segments if seg.get("pending"))
 
-        self._script_menu_action(
+        act_accept = self._script_menu_action(
             menu, "check_on", "Accept all pending",
             lambda: self._accept_versions(all_rows),
             tip="Keep every pending edit",
         )
-        self._script_menu_action(
+        act_accept.setEnabled(pending_n > 0 and not busy)
+        act_rev = self._script_menu_action(
             menu, "undo", "Reverse all pending",
             lambda: self._reverse_versions(all_rows),
             tip="Restore the last accepted version",
         )
-        menu.addSeparator()
-
-        act_asr = self._script_menu_action(
-            menu, "mic", "Retry transcript",
-            self._retry_script_transcript,
-            tip="Re-run ASR on the movie (starts a new dub pass)",
+        act_rev.setEnabled(pending_n > 0 and not busy)
+        act_jump = self._script_menu_action(
+            menu, "chevron-right", "Next pending edit",
+            lambda: self._jump_pending(1),
+            tip="Jump to the next line with a pending version",
         )
-        act_asr.setEnabled(has_source and not busy)
-
-        act_tr = self._script_menu_action(
-            menu, "globe", "Retry translate",
-            lambda: self._regenerate_rows(all_rows),
-            tip="Re-translate every line from the source text",
-        )
-        act_tr.setEnabled(n > 0 and not busy)
-
-        act_tts = self._script_menu_action(
-            menu, "volume", "Retry TTS",
-            lambda: self._resynthesize_rows(all_rows),
-            tip="Re-synthesize voice audio for every line",
-        )
-        act_tts.setEnabled(n > 0 and not busy)
-
-        act_all = self._script_menu_action(
-            menu, "refresh", "Retry all",
-            self._retry_script_all,
-            tip="Full redub · transcript → translate → TTS → mix",
-        )
-        act_all.setEnabled(has_source and not busy)
+        act_jump.setEnabled(pending_n > 0)
 
         menu.addSeparator()
-        self._script_menu_action(
+        act_gender = self._script_menu_action(
             menu, "sparkles", "Auto-detect gender · best voices",
             lambda: self._autodetect_genders(None, all_lines=True),
+            tip="Match character gender and assign TTS voices",
         )
+        act_gender.setEnabled(n > 0 and not busy)
+
+        menu.addSeparator()
+        copy_menu = menu.addMenu(icon("copy", size=14), "Copy visible…")
+        copy_menu.setObjectName("media_lib_menu")
+        copy_menu.addAction("Dub text", lambda: self._copy_script_lines("dub"))
+        copy_menu.addAction("Source text", lambda: self._copy_script_lines("source"))
+        copy_menu.addAction("Source + dub", lambda: self._copy_script_lines("both"))
+        copy_menu.addAction("With times", lambda: self._copy_script_lines("times"))
+        copy_menu.setEnabled(n > 0)
+
         menu.addSeparator()
         self._script_menu_action(
             menu, "folder", "Import script…",
             lambda: self._import_script(),
             tip="Load lines from SRT, VTT, or JSON",
         )
-        self._script_menu_action(
+        act_exp = self._script_menu_action(
             menu, "download", "Export script…",
             lambda: self.open_export_dialog(script_only=True),
         )
+        act_exp.setEnabled(n > 0)
 
     def _current_script_task_id(self) -> int:
         viewing = int(getattr(self, "_viewing_task", -1) or -1)
@@ -1227,6 +1440,23 @@ class ScriptTools:
         """Full pipeline retry for the movie tied to this script."""
         if bool(getattr(self, "_dub_busy", False)):
             self.log.warn("Dub already running")
+            return
+        from claynext.gui.dialogs.env_alert import ensure_job_environment
+
+        lead, co = self._primary_voices()
+        asr_model = (
+            self.combo_model.currentText()
+            if hasattr(self, "combo_model")
+            else "whisper-small"
+        )
+        if not ensure_job_environment(
+            self,
+            voice_id=str(lead or ""),
+            secondary_voice_id=str(co or ""),
+            asr_model=str(asr_model or ""),
+            title="Download environment",
+        ):
+            self.log.warn("Retry all blocked — missing environment")
             return
         tid = self._current_script_task_id()
         if tid >= 0 and hasattr(self, "_retry_task"):
@@ -1269,6 +1499,20 @@ class ScriptTools:
             })
         if not work:
             self.log.warn("Retry TTS · no speakable lines")
+            return
+
+        from claynext.gui.dialogs.env_alert import ensure_job_environment
+
+        sample_voice = str(work[0].get("voice") or lead or "")
+        if not ensure_job_environment(
+            self,
+            voice_id=sample_voice,
+            secondary_voice_id=str(co_star or ""),
+            asr_model=None,
+            check_stems=False,
+            title="Download TTS environment",
+        ):
+            self.log.warn("Retry TTS blocked — missing environment")
             return
 
         self.table_spinner.start()
@@ -1886,17 +2130,18 @@ class ScriptTools:
     def _show_error(self, title: str, hint: str):
         self._error = hint
         self._fill_table([])
-        self.empty_title.setText(title)
-        self.empty_hint.setText(hint)
+        self.empty_title.setText(title or "Dubbing failed")
+        self.empty_hint.setText(_format_script_error(hint))
         self._set_error_style(True)
         self.script_stack.setCurrentIndex(0)
+        self._update_script_meta()
         self._focus_script_shelf()
 
     def _clear_error(self):
         self._error = ""
         self._set_error_style(False)
         self.empty_title.setText("No dubbed script")
-        self.empty_hint.setText(
-            "Select a movie and dub, or Import a script (SRT / VTT / JSON)"
-        )
+        self.empty_hint.setText("Dub a movie from Tasks, or")
+        if hasattr(self, "btn_empty_retry"):
+            self.btn_empty_retry.setVisible(False)
 

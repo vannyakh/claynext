@@ -12,7 +12,8 @@ pub use decoder::{
 };
 pub use demuxer::{extract_stream_copy, StreamSelector};
 pub use encoder::{
-    is_encoder_available, run_export_job, AudioEncoderConfig, ExportJob, VideoEncoderConfig,
+    extract_still_image, is_encoder_available, run_export_job, AudioEncoderConfig, ExportJob,
+    VideoEncoderConfig,
 };
 pub use error::{FfmpegError, Result};
 pub use muxer::{mux_video_audio, ContainerFormat, MuxOptions};

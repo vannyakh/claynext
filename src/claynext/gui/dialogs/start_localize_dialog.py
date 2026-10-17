@@ -102,7 +102,7 @@ class StartLocalizeDialog(QDialog):
         self.btn_start.setMinimumWidth(148)
         self.btn_start.setDefault(True)
         self.btn_start.setEnabled(n > 0)
-        self.btn_start.clicked.connect(self.accept)
+        self.btn_start.clicked.connect(self._accept_if_ready)
         actions.addWidget(cancel)
         actions.addWidget(self.btn_start)
         body_l.addLayout(actions)
@@ -111,6 +111,29 @@ class StartLocalizeDialog(QDialog):
         self._voice_prim = defaults.get("voice", "")
         self._voice_sec = defaults.get("secondary_voice", "")
         self._refill_voices(self.combo_target.currentText())
+
+    def _accept_if_ready(self):
+        """Block start when the selected cast / engine environment is missing."""
+        from claynext.gui.dialogs.env_alert import ensure_job_environment
+
+        voice = str(self.combo_voice.currentData() or "")
+        if not voice:
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(self, "No voice", "Choose a lead TTS voice first.")
+            return
+        asr_model = ""
+        if hasattr(self, "combo_model"):
+            asr_model = str(self.combo_model.currentText() or "")
+        if not ensure_job_environment(
+            self,
+            voice_id=voice,
+            secondary_voice_id=str(self.combo_voice_sec.currentData() or ""),
+            asr_model=asr_model or None,
+            title="Download environment",
+        ):
+            return
+        self.accept()
 
     def _show_tab(self, index: int):
         self.stack.setCurrentIndex(max(0, int(index)))

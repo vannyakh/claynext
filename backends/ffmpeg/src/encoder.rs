@@ -123,17 +123,40 @@ where
 
     // Video options
     cmd.args(["-c:v", &job.video.codec]);
-    cmd.args(["-preset", &job.video.preset]);
+    // Hardware encoders use different preset namespaces; keep the requested value.
+    if !job.video.preset.is_empty() {
+        cmd.args(["-preset", &job.video.preset]);
+    }
     cmd.args(["-pix_fmt", &job.video.pixel_format]);
 
     if let Some(crf) = job.video.crf {
-        cmd.args(["-crf", &crf.to_string()]);
+        // NVENC/QSV/AMF prefer -cq / -qp; map CRF onto the closest portable flag.
+        let codec = job.video.codec.to_ascii_lowercase();
+        if codec.contains("nvenc") {
+            cmd.args(["-cq", &crf.to_string()]);
+        } else if codec.contains("qsv") {
+            cmd.args(["-global_quality", &crf.to_string()]);
+        } else if codec.contains("amf") {
+            cmd.args(["-qp_i", &crf.to_string(), "-qp_p", &crf.to_string()]);
+        } else {
+            cmd.args(["-crf", &crf.to_string()]);
+        }
     } else if let Some(br) = job.video.bitrate_kbps {
         cmd.args(["-b:v", &format!("{}k", br)]);
     }
 
-    if let (Some(w), Some(h)) = (job.video.width, job.video.height) {
-        cmd.args(["-vf", &format!("scale={}:{}", w, h)]);
+    // Scaling: both dims = exact; one dim = keep aspect (even width/height for H.264).
+    match (job.video.width, job.video.height) {
+        (Some(w), Some(h)) => {
+            cmd.args(["-vf", &format!("scale={}:{}", w, h)]);
+        }
+        (None, Some(h)) => {
+            cmd.args(["-vf", &format!("scale=-2:{}", h)]);
+        }
+        (Some(w), None) => {
+            cmd.args(["-vf", &format!("scale={}:-2", w)]);
+        }
+        (None, None) => {}
     }
 
     if let Some(fps) = job.video.fps {
@@ -152,6 +175,17 @@ where
         }
     }
 
+    // Qt / web players need moov at the front for progressive playback.
+    let out_ext = job
+        .output_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if matches!(out_ext.as_str(), "mp4" | "m4v" | "mov") {
+        cmd.args(["-movflags", "+faststart"]);
+    }
+
     cmd.arg(job.output_path.to_str().unwrap_or_default());
 
     let process = ManagedProcess::spawn(cmd, cancel_token, timeout)?;
@@ -164,5 +198,50 @@ where
         )));
     }
 
+    Ok(())
+}
+
+/// Extract a single JPEG/PNG still for library thumbnails and timeline posters.
+pub fn extract_still_image(
+    input: &std::path::Path,
+    output: &std::path::Path,
+    timestamp_secs: f64,
+    max_width: Option<u32>,
+) -> Result<()> {
+    if !input.exists() {
+        return Err(FfmpegError::InvalidInput(format!(
+            "Input file not found: {}",
+            input.display()
+        )));
+    }
+    if let Some(parent) = output.parent() {
+        std::fs::create_dir_all(parent).map_err(FfmpegError::Io)?;
+    }
+
+    let ffmpeg_exe = find_executable("ffmpeg").ok_or(FfmpegError::FfmpegNotFound)?;
+    let ts = format!("{:.3}", timestamp_secs.max(0.0));
+
+    let mut cmd = Command::new(&ffmpeg_exe);
+    cmd.args(["-y", "-hide_banner", "-loglevel", "error"]);
+    // Fast seek before demux for preview/thumbnail latency.
+    cmd.args(["-ss", &ts]);
+    cmd.args(["-i", input.to_str().unwrap_or_default()]);
+    cmd.args(["-frames:v", "1"]);
+    if let Some(w) = max_width {
+        cmd.args([
+            "-vf",
+            &format!("scale={}:-1:force_original_aspect_ratio=decrease", w),
+        ]);
+    }
+    cmd.args(["-q:v", "4"]);
+    cmd.arg(output.to_str().unwrap_or_default());
+
+    let status = cmd.status().map_err(FfmpegError::ProcessSpawn)?;
+    if !status.success() || !output.is_file() {
+        return Err(FfmpegError::OutputValidation(format!(
+            "Still extraction failed for {}",
+            output.display()
+        )));
+    }
     Ok(())
 }

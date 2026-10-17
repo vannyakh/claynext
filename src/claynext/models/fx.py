@@ -45,11 +45,22 @@ def clean_fx(kind_or_data: Any = None, data: dict | None = None) -> dict:
         kind = "effect"
 
     def_intensity = DEFAULT_INTENSITY.get(kind, 80) if isinstance(DEFAULT_INTENSITY, dict) else DEFAULT_INTENSITY
+    # Shelf tiles store the look under ``filter``; keep both keys in sync.
+    look = str(src.get("look") or src.get("filter") or "clean").strip() or "clean"
+    # Heal older clips that only kept the display name after a prior clean wiped ``filter``.
+    if kind == "filter" and look in ("", "clean"):
+        name = str(src.get("name") or "").strip().lower()
+        for lid, label in FILTER_LOOKS:
+            if name == label.lower() or name == lid.replace("_", " "):
+                look = lid
+                break
+    effect = str(src.get("effect") or "none").strip() or "none"
     return {
         "kind": kind,
-        "effect": src.get("effect", "none"),
+        "effect": effect,
+        "filter": look if kind == "filter" else str(src.get("filter") or ""),
         "intensity": max(0, min(100, int(src.get("intensity", def_intensity)))),
-        "look": src.get("look", "clean"),
+        "look": look,
         "duration": float(src.get("duration", 1.0)),
     }
 
@@ -105,19 +116,46 @@ def apply_fx(rgb: Any, spans: list[dict] | dict | None = None, now_ms: int = 0) 
     if rgb.ndim != 3 or rgb.shape[2] < 3:
         return rgb
 
+    from claynext.models.adjust import FILTER_PRESETS, grade_rgb, scaled_adjust
+
     span_list = [spans] if isinstance(spans, dict) else list(spans)
     out = rgb.copy()
+    _ = now_ms  # reserved for timed progress (flash/zoom/transitions)
 
     for item in span_list:
         if not isinstance(item, dict):
             continue
-        kind = item.get("kind", "effect")
-        key = item.get(kind) or item.get("effect") or item.get("filter") or item.get("transition") or "none"
-        intensity = float(item.get("intensity", 80)) / 100.0
+        kind = str(item.get("kind") or "effect")
+        key = (
+            item.get(kind)
+            or item.get("effect")
+            or item.get("filter")
+            or item.get("look")
+            or item.get("transition")
+            or "none"
+        )
+        key = str(key or "none")
+        intensity_pct = max(0, min(100, int(item.get("intensity", 80))))
+        intensity = intensity_pct / 100.0
+
+        # Filter shelf looks → colour grade presets (Film Noir, Cinematic, …).
+        if kind == "filter" or key in FILTER_PRESETS:
+            look = key if key not in ("none", "") else str(item.get("look") or "clean")
+            if look in ("none", "clean", ""):
+                continue
+            _label, preset = FILTER_PRESETS.get(look, ("", {}))
+            if not preset:
+                # Legacy: treat unknown noir-like keys as mono.
+                if look in ("grayscale", "mono"):
+                    preset = FILTER_PRESETS["mono"][1]
+                else:
+                    continue
+            out = grade_rgb(out, scaled_adjust(preset, intensity_pct))
+            continue
 
         if key in ("none", ""):
             continue
-        elif key in ("grayscale", "noir"):
+        if key in ("grayscale", "noir", "mono"):
             gray = (out[:, :, 0] * 0.299 + out[:, :, 1] * 0.587 + out[:, :, 2] * 0.114).astype(np.uint8)
             for ch in range(3):
                 out[:, :, ch] = (out[:, :, ch] * (1.0 - intensity) + gray * intensity).astype(np.uint8)

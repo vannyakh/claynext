@@ -291,8 +291,9 @@ QComboBox#claynext_select::down-arrow, QComboBox#transcript_speaker_filter::down
     width: 10px;
     height: 10px;
 }}
-/* Script toolbar select — no chevron; whole control opens the menu */
-QComboBox#script_character_filter {{
+/* Script toolbar selects — no chevron; whole control opens the menu */
+QComboBox#script_character_filter,
+QComboBox#script_view_filter {{
     background: {COLOR_BG_INPUT};
     border: 1px solid {COLOR_BORDER};
     border-radius: 6px;
@@ -300,14 +301,17 @@ QComboBox#script_character_filter {{
     color: {COLOR_TEXT_MAIN};
     font-size: 11px;
 }}
-QComboBox#script_character_filter:hover {{
+QComboBox#script_character_filter:hover,
+QComboBox#script_view_filter:hover {{
     border-color: {COLOR_BORDER_FOCUS};
 }}
-QComboBox#script_character_filter::drop-down {{
+QComboBox#script_character_filter::drop-down,
+QComboBox#script_view_filter::drop-down {{
     width: 0;
     border: none;
 }}
-QComboBox#script_character_filter::down-arrow {{
+QComboBox#script_character_filter::down-arrow,
+QComboBox#script_view_filter::down-arrow {{
     image: none;
     width: 0;
     height: 0;
@@ -337,22 +341,47 @@ QComboBox#script_character_filter::down-arrow {{
 #transcript_empty_title {{
     color: {COLOR_TEXT_MAIN};
     font-size: 14px;
-    font-weight: 800;
+    font-weight: 700;
     background: transparent;
     border: none;
+    padding: 0 8px;
 }}
 #transcript_empty_title[error="true"] {{
     color: #f87171;
 }}
 #transcript_empty_hint {{
     color: {COLOR_TEXT_MUTED};
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 11.5px;
+    font-weight: 500;
     background: transparent;
     border: none;
+    padding: 0 12px;
 }}
 #transcript_empty_hint[error="true"] {{
     color: #fca5a5;
+}}
+QPushButton#transcript_empty_btn,
+QPushButton#transcript_empty_btn_primary {{
+    background: transparent;
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 6px;
+    color: {COLOR_TEXT_MAIN};
+    font-size: 11px;
+    font-weight: 600;
+    padding: 0 10px;
+    min-height: 24px;
+    max-height: 24px;
+}}
+QPushButton#transcript_empty_btn:hover {{
+    border-color: {COLOR_BORDER_FOCUS};
+    background: rgba(255, 255, 255, 0.04);
+}}
+QPushButton#transcript_empty_btn_primary {{
+    background: {wash};
+    border-color: {accent}66;
+}}
+QPushButton#transcript_empty_btn_primary:hover {{
+    border-color: {accent};
 }}
 #transcript_table {{
     background-color: {COLOR_BG_CARD};

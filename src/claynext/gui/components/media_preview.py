@@ -1595,7 +1595,7 @@ class MediaPreviewWidget(QWidget):
         if self._path and not getattr(self, "_proxy_recovering", False):
             self._proxy_recovering = True
             # pyrefly: ignore [missing-import]
-            from claynext.models.media_service import ensure_proxy_render
+            from claynext.adapters.media import ensure_proxy_render
             gen = self._load_gen
             worker = Worker(ensure_proxy_render, self._path)
             worker.signals.result.connect(lambda proxy_path, g=gen: self._on_proxy_recovered(g, proxy_path))
