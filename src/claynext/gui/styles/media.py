@@ -283,6 +283,14 @@ QSlider#media_seek::handle:horizontal:hover {{
     color: {COLOR_TEXT_MUTED};
     border: 1px solid {COLOR_BORDER};
 }}
+#media_lib_footer_progress {{
+    color: {COLOR_TEXT_MUTED};
+    font-size: 10.5px;
+    font-weight: 500;
+    background: transparent;
+    border: none;
+    padding: 0 2px;
+}}
 #media_lib_footer_btn {{
     background: transparent;
     border: 1px solid {COLOR_BORDER};

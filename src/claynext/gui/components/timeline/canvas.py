@@ -14,7 +14,8 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QWidget, QToolTip
 
 from claynext.constants.timeline_constants import (
-    BG_TL, CLIP_TEAL, FX_KINDS, OVERLAY_KINDS, PLAYHEAD, PRESET, TRACK_DIVIDER, TRACK_MAX_H, TRACK_MIN_H,
+    BG_TL, CLIP_TEAL, DUB_FOCUS_KINDS, FX_KINDS, OVERLAY_KINDS, PLAYHEAD, PRESET,
+    TRACK_DIVIDER, TRACK_MAX_H, TRACK_MIN_H,
 )
 from claynext.constants.theme_constants import COLOR_ACCENT_ROSE, COLOR_TEXT_MAIN
 from claynext.models.dubbing_service import timestamp_to_sec
@@ -121,6 +122,18 @@ class TimelineCanvas(QWidget):
         self.rec_ms = 0
         self.tool_mode = "select"
         self.show_waveforms = True
+        self.dub_focus = True  # Cover + Voice only (movie dub workflow)
+
+    def lane_visible(self, track: TimelineTrack | None) -> bool:
+        if track is None:
+            return False
+        if self.dub_focus and track.kind not in DUB_FOCUS_KINDS:
+            return False
+        return True
+
+    def set_dub_focus(self, on: bool):
+        self.dub_focus = bool(on)
+        self._relayout(notify=False)
 
     def track_by_id(self, tid: str) -> TimelineTrack | None:
         return next((t for t in self.tracks if t.id == tid), None)
@@ -393,6 +406,8 @@ class TimelineCanvas(QWidget):
     def track_top(self, tid: str) -> int:
         y = 0
         for t in self.tracks:
+            if not self.lane_visible(t):
+                continue
             if t.id == tid:
                 return y
             y += t.height
@@ -401,13 +416,15 @@ class TimelineCanvas(QWidget):
     def track_at_y(self, y: int) -> TimelineTrack | None:
         cur = 0
         for t in self.tracks:
+            if not self.lane_visible(t):
+                continue
             if cur <= y < cur + t.height:
                 return t
             cur += t.height
         return None
 
     def total_height(self) -> int:
-        tracks_h = sum(t.height for t in self.tracks)
+        tracks_h = sum(t.height for t in self.tracks if self.lane_visible(t))
         return max(48, tracks_h, int(self._fill_h or 0))
 
     def content_width(self) -> int:
@@ -1077,11 +1094,14 @@ class TimelineCanvas(QWidget):
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         p.fillRect(self.rect(), QColor(BG_TL))
         y = 0
-        for i, track in enumerate(self.tracks):
+        lane_i = 0
+        for track in self.tracks:
+            if not self.lane_visible(track):
+                continue
             if track.hidden:
                 bg = QColor("#070b10")
             else:
-                bg = QColor("#0b1016") if i % 2 == 0 else QColor("#0d1320")
+                bg = QColor("#0b1016") if lane_i % 2 == 0 else QColor("#0d1320")
             p.fillRect(0, y, self.width(), track.height, bg)
             if track.locked:
                 p.fillRect(0, y, self.width(), track.height, QColor(0, 0, 0, 50))
@@ -1092,15 +1112,20 @@ class TimelineCanvas(QWidget):
             p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             self._paint_sound_bed(p, track, y)
             y += track.height
+            lane_i += 1
         if y < self.height():
             p.fillRect(0, y, self.width(), self.height() - y, QColor(BG_TL))
         if not self.media_path:
             self._paint_empty(p)
         for clip in self.clips:
+            if not self.lane_visible(self.track_by_id(clip.track_id)):
+                continue
             self._paint_clip(p, clip)
             self._paint_trim_grips(p, clip)
         self._paint_split_seams(p)
         for clip in self.clips:
+            if not self.lane_visible(self.track_by_id(clip.track_id)):
+                continue
             self._paint_volume_line(p, clip)
         self._paint_recording(p)
         if self._marquee:
@@ -1218,8 +1243,14 @@ class TimelineCanvas(QWidget):
             p.restore()
             return
         source = self._wave_source(clip) if clip.kind in {"video", "voice", "audio"} else None
+        muted = bool(track.muted)
+        wave_box = rect.adjusted(2, 2, -2, -2)
         if source:
-            self._paint_wave(p, rect.adjusted(2, 2, -2, -2), *source, "#e0f2fe")
+            if muted:
+                p.setOpacity(self._view_opacity(track) * 0.28)
+            self._paint_wave(p, wave_box, *source, "#e0f2fe")
+            if muted:
+                p.setOpacity(self._view_opacity(track))
         p.setPen(QColor("#0b1016") if clip.kind in {"text", "shape", "caption"} else QColor("#f8fafc"))
         font = QFont()
         font.setPixelSize(10)
@@ -1238,6 +1269,8 @@ class TimelineCanvas(QWidget):
                 lock_pix = icon("lock", color="#f59e0b", size=10).pixmap(10, 10)
                 p.drawPixmap(int(rect.right() - 13), int(rect.top() + 3), lock_pix)
         p.restore()
+        if muted and clip.kind in {"voice", "audio"} and source:
+            self._paint_mute_badge(p, wave_box)
 
     def _paint_text_clip(self, p: QPainter, clip: TimelineClip, rect: QRectF):
         """Text, shape and effect clips: kind glyph, a label, and lighter bands where the in / out animations run."""
@@ -1276,8 +1309,11 @@ class TimelineCanvas(QWidget):
         p.setPen(ink)
         words = " ".join(str(overlay.get("text") or clip.label or "").split()) or clip.label
         if clip.kind in FX_KINDS:
-            fx = clean_fx(clip.kind, clip.extra.get("fx"))
-            words = f"{fx_label(clip.kind, fx)} · {fx['intensity']}%"
+            fx = clean_fx(clip.kind, clip.extra.get("fx") or {})
+            try:
+                words = f"{fx_label(clip.kind, fx)} · {int(fx.get('intensity', 0))}%"
+            except Exception:
+                words = clip.label or "FX"
         elif clip.kind == "shape":
             words = SHAPE_LABELS.get(str(overlay.get("shape")), clip.label)
         if clip.kind == "caption" and overlay.get("auto_caption"):
@@ -1289,6 +1325,27 @@ class TimelineCanvas(QWidget):
                    p.fontMetrics().elidedText(words, Qt.TextElideMode.ElideRight, int(max(0, rect.right() - x - 4))))
         p.restore()
 
+    def _paint_mute_badge(self, p: QPainter, band: QRectF):
+        """Floating mute glyph on the audio band only (video filmstrip stays full opacity)."""
+        if band.width() < 22 or band.height() < 14:
+            return
+        size = 14 if band.height() >= 28 else 12
+        pix = icon("volume-off", color="#f87171", size=size).pixmap(size, size)
+        if pix.isNull():
+            return
+        pad = 6
+        x = int(band.left() + pad)
+        y = int(band.center().y() - size / 2)
+        # Soft chip behind the icon so it reads on dense waveforms
+        chip = QRectF(x - 3, y - 2, size + 6, size + 4)
+        p.save()
+        p.setOpacity(1.0)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(8, 12, 18, 170))
+        p.drawRoundedRect(chip, 4, 4)
+        p.drawPixmap(x, y, pix)
+        p.restore()
+
     def _paint_filmstrip(self, p: QPainter, clip: TimelineClip, rect: QRectF, selected: bool):
         wave_h = max(32, int(rect.height() * 0.42)) if rect.height() >= 52 else 0
         film = QRectF(rect.x(), rect.y(), rect.width(), max(8.0, rect.height() - wave_h))
@@ -1297,11 +1354,12 @@ class TimelineCanvas(QWidget):
         n_cells = max(1, int(rect.width() / cw) + 1)
         n_frames = len(self._frames)
         track = self.track_by_id(clip.track_id)
+        muted = bool(track and track.muted)
         p.save()
         p.setClipRect(film)
-        mute_fade = 0.4 if track and track.muted else 1.0
+        # Mute must not dim video tiles — only the audio band below
         view_fade = self._view_opacity(track)
-        p.setOpacity(mute_fade * view_fade * max(0.35, (track.opacity if track else 100) / 100.0))
+        p.setOpacity(view_fade * max(0.35, (track.opacity if track else 100) / 100.0))
         for i in range(n_cells):
             fi = min(n_frames - 1, int(i / max(1, n_cells - 1) * (n_frames - 1))) if n_cells > 1 else 0
             tile = self._cover_tile(self._frames[fi], cw, ch)
@@ -1313,7 +1371,7 @@ class TimelineCanvas(QWidget):
         if wave_h:
             band = QRectF(rect.x(), rect.bottom() - wave_h, rect.width(), wave_h)
             p.save()
-            p.setOpacity(view_fade)
+            p.setOpacity(view_fade * (0.28 if muted else 1.0))
             source = self._wave_source(clip)
             if source:
                 self._paint_wave(p, band, *source, "#7dd3fc")
@@ -1322,6 +1380,8 @@ class TimelineCanvas(QWidget):
                 p.setPen(QColor("#334155"))
                 p.drawLine(int(band.left()), int(band.center().y()), int(band.right()), int(band.center().y()))
             p.restore()
+            if muted:
+                self._paint_mute_badge(p, band)
         p.save()
         p.setOpacity(view_fade)
         border = QColor(CLIP_TEAL)
@@ -2216,8 +2276,11 @@ class TimelineCanvas(QWidget):
             if track is not None and (track.kind != kind or track.locked or busy):
                 track = None
             if kind in FX_KINDS:
-                label = fx_label(kind, style)
-                extra = {"fx": style}
+                try:
+                    label = fx_label(kind, style if isinstance(style, dict) else {})
+                except Exception:
+                    label = str(kind).title()
+                extra = {"fx": style if isinstance(style, dict) else {}}
             else:
                 label = str(style.get("text") or style.get("name") or kind)
                 extra = {"overlay": style}

@@ -36,8 +36,9 @@ class StartLocalizeDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Start Localization")
         self.setObjectName("startLocalizeDialog")
-        self.setMinimumWidth(560)
-        self.setMinimumHeight(580)
+        self.setMinimumWidth(520)
+        self.setMinimumHeight(420)
+        self.resize(540, 460)
         self.setModal(True)
         self._sources = [p for p in (sources or []) if p and os.path.isfile(p)]
         defaults = dict(defaults or {})
@@ -51,7 +52,7 @@ class StartLocalizeDialog(QDialog):
         chrome.setObjectName("start_dub_chrome")
         chrome.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         chrome_l = QVBoxLayout(chrome)
-        chrome_l.setContentsMargins(12, 8, 12, 8)
+        chrome_l.setContentsMargins(10, 6, 10, 6)
         chrome_l.setSpacing(0)
         self.tabs = SegmentTabs(
             _TAB_LABELS,
@@ -67,8 +68,8 @@ class StartLocalizeDialog(QDialog):
         body = QWidget()
         body.setObjectName("start_dub_body")
         body_l = QVBoxLayout(body)
-        body_l.setContentsMargins(16, 12, 16, 16)
-        body_l.setSpacing(12)
+        body_l.setContentsMargins(14, 10, 14, 12)
+        body_l.setSpacing(8)
 
         self.stack = QStackedWidget()
         self.stack.addWidget(self._build_cast_page(defaults))
@@ -84,22 +85,22 @@ class StartLocalizeDialog(QDialog):
             body_l.addWidget(self._build_batch_box(defaults, n))
 
         actions = QHBoxLayout()
-        actions.setContentsMargins(0, 4, 0, 0)
-        actions.setSpacing(10)
+        actions.setContentsMargins(0, 2, 0, 0)
+        actions.setSpacing(8)
         actions.addStretch(1)
         cancel = QPushButton("Cancel")
         cancel.setObjectName("start_localize_btn")
         cancel.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel.setFixedHeight(34)
-        cancel.setMinimumWidth(96)
+        cancel.setFixedHeight(28)
+        cancel.setMinimumWidth(84)
         cancel.clicked.connect(self.reject)
         self.btn_start = QPushButton(
             "Start Localization" if n <= 1 else f"Start Localization · {n}"
         )
         self.btn_start.setObjectName("start_localize_btn_primary")
         self.btn_start.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_start.setFixedHeight(34)
-        self.btn_start.setMinimumWidth(148)
+        self.btn_start.setFixedHeight(28)
+        self.btn_start.setMinimumWidth(132)
         self.btn_start.setDefault(True)
         self.btn_start.setEnabled(n > 0)
         self.btn_start.clicked.connect(self._accept_if_ready)
@@ -178,34 +179,40 @@ class StartLocalizeDialog(QDialog):
         page = QWidget()
         page.setObjectName("start_dub_tab_page")
         lay = QVBoxLayout(page)
-        lay.setContentsMargins(2, 8, 2, 4)
-        lay.setSpacing(10)
+        lay.setContentsMargins(2, 4, 2, 2)
+        lay.setSpacing(8)
         return page, lay
 
     def _grid(self, parent_lay: QVBoxLayout) -> QGridLayout:
         box = QFrame()
         box.setObjectName("dub_config_section")
         grid = QGridLayout(box)
-        grid.setContentsMargins(0, 2, 0, 2)
-        grid.setHorizontalSpacing(12)
-        grid.setVerticalSpacing(8)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(6)
         grid.setColumnStretch(1, 1)
         parent_lay.addWidget(box)
         return grid
 
     def _combo(self) -> QComboBox:
-        """Compact dropdown matched to ScrubSpinBox height (30px)."""
+        """Settings-sized dropdown (28px)."""
         combo = QComboBox()
         combo.setObjectName("start_localize_combo")
-        combo.setFixedHeight(30)
+        combo.setFixedHeight(28)
         return combo
+
+    def _spin(self) -> ScrubSpinBox:
+        """Settings-sized scrub spin (28px)."""
+        spin = ScrubSpinBox()
+        spin.setFixedHeight(28)
+        return spin
 
     def _section_divider(self, title: str) -> QWidget:
         """Labeled divider between config sessions (fields → options)."""
         wrap = QWidget()
         wrap.setObjectName("start_localize_divider")
         lay = QHBoxLayout(wrap)
-        lay.setContentsMargins(0, 6, 0, 2)
+        lay.setContentsMargins(0, 4, 0, 2)
         lay.setSpacing(8)
         label = QLabel(title.upper())
         label.setObjectName("start_localize_divider_label")
@@ -272,7 +279,7 @@ class StartLocalizeDialog(QDialog):
 
         lay.addWidget(self._section_divider("Layout"))
         grid = self._grid(lay)
-        self.spin_caption_y = ScrubSpinBox()
+        self.spin_caption_y = self._spin()
         self.spin_caption_y.setRange(60, 95)
         self.spin_caption_y.setSuffix("%")
         try:
@@ -405,7 +412,7 @@ class StartLocalizeDialog(QDialog):
         duck_row.setSpacing(10)
         duck_lbl = QLabel("Dialogue ducking")
         duck_lbl.setObjectName("asr_field_label")
-        self.spin_duck = ScrubSpinBox()
+        self.spin_duck = self._spin()
         self.spin_duck.setRange(5, 50)
         self.spin_duck.setSuffix("%")
         try:
@@ -457,7 +464,7 @@ class StartLocalizeDialog(QDialog):
 
         self.edit_ollama = QLineEdit()
         self.edit_ollama.setObjectName("start_localize_field")
-        self.edit_ollama.setFixedHeight(30)
+        self.edit_ollama.setFixedHeight(28)
         self.edit_ollama.setPlaceholderText("qwen2.5:7b")
         self.edit_ollama.setText(str(defaults.get("ollama_model") or "qwen2.5:7b"))
         grid.addWidget(self._label("Ollama"), 2, 0)
@@ -488,7 +495,7 @@ class StartLocalizeDialog(QDialog):
     def _spin_row(self, grid: QGridLayout, row: int, title: str, low: int, high: int, suffix: str, value) -> ScrubSpinBox:
         lbl = QLabel(title)
         lbl.setObjectName("asr_field_label")
-        spin = ScrubSpinBox()
+        spin = self._spin()
         spin.setRange(low, high)
         spin.setSuffix(suffix)
         try:

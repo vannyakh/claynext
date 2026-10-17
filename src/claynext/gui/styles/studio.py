@@ -395,11 +395,15 @@ QPushButton#text_cat_pill:checked {{
 }}
 #timeline_track_grip {{
     color: {COLOR_TEXT_MUTED};
+    opacity: 0.55;
+}}
+#timeline_track_header:hover #timeline_track_grip {{
+    opacity: 1;
 }}
 #timeline_track_name {{
     color: {COLOR_TEXT_MAIN};
     font-size: 11px;
-    font-weight: 500;
+    font-weight: 600;
 }}
 #timeline_track_name_edit {{
     background: {COLOR_BG_INPUT};
@@ -416,46 +420,46 @@ QPushButton#text_cat_pill:checked {{
     color: {COLOR_TEXT_MUTED};
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.07);
-    border-radius: 2px;
-    padding: 0 3px;
+    border-radius: 3px;
+    padding: 0 4px;
+}}
+#timeline_track_controls {{
+    background: transparent;
 }}
 #timeline_lane_btn, #timeline_btn_lock, #timeline_btn_mute, #timeline_btn_eye, #timeline_btn_del {{
     background: transparent;
     border: none;
-    border-radius: 3px;
+    border-radius: 4px;
     padding: 0;
 }}
 #timeline_lane_btn:hover, #timeline_btn_lock:hover, #timeline_btn_mute:hover, #timeline_btn_eye:hover {{
     background: {COLOR_BG_CARD_HOVER};
 }}
 #timeline_btn_del:hover {{
-    background: rgba(248, 113, 113, 0.2);
+    background: rgba(248, 113, 113, 0.22);
 }}
 #timeline_btn_lock:checked {{
     background: rgba(245, 158, 11, 0.22);
-    border-radius: 3px;
 }}
 #timeline_btn_mute:checked {{
     background: rgba(239, 68, 68, 0.24);
-    border-radius: 3px;
 }}
 #timeline_btn_eye:checked {{
     background: rgba(100, 116, 139, 0.22);
-    border-radius: 3px;
 }}
 #timeline_btn_solo {{
     background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
     color: {COLOR_TEXT_MUTED};
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 800;
     padding: 0;
 }}
 #timeline_btn_solo:hover {{
     background: {COLOR_BG_CARD_HOVER};
     color: {COLOR_TEXT_MAIN};
-    border-color: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.18);
 }}
 #timeline_btn_solo:checked {{
     background: rgba(245, 158, 11, 0.28);
@@ -479,6 +483,27 @@ QPushButton#text_cat_pill:checked {{
     image: none;
     width: 0;
 }}
+QCheckBox#timeline_dub_focus {{
+    background: transparent;
+    spacing: 0;
+    padding: 0;
+}}
+QCheckBox#timeline_dub_focus::indicator {{
+    width: 14px;
+    height: 14px;
+    background-color: {COLOR_BG_DARK};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 4px;
+}}
+QCheckBox#timeline_dub_focus::indicator:hover {{
+    border-color: {COLOR_PRIMARY};
+    background-color: {COLOR_BG_CARD_HOVER};
+}}
+QCheckBox#timeline_dub_focus::indicator:checked {{
+    background-color: {COLOR_PRIMARY};
+    border-color: {COLOR_PRIMARY};
+    image: url({_CHECK_ICON});
+}}
 QToolButton#timeline_add_track_card {{
     background-color: rgba(18, 26, 38, 0.45);
     border: 1px dashed #334155;
@@ -486,8 +511,8 @@ QToolButton#timeline_add_track_card {{
     color: #94a3b8;
     font-size: 11px;
     font-weight: 500;
-    padding: 5px 12px;
-    margin: 8px 8px 4px 8px;
+    padding: 4px 10px;
+    margin: 6px 8px 4px 8px;
     min-height: 22px;
 }}
 QToolButton#timeline_add_track_card:hover {{
@@ -500,20 +525,20 @@ QToolButton#timeline_add_track_card::menu-indicator {{
     width: 0;
 }}
 #timeline_track_slider {{
-    max-height: 12px;
+    max-height: 14px;
 }}
 #timeline_track_slider::groove:horizontal {{
     height: 3px;
     background: #1e293b;
-    border-radius: 1px;
+    border-radius: 2px;
 }}
 #timeline_track_slider::sub-page:horizontal {{
     background: {COLOR_PRIMARY};
-    border-radius: 1px;
+    border-radius: 2px;
 }}
 #timeline_track_slider::handle:horizontal {{
-    width: 8px;
-    height: 8px;
+    width: 9px;
+    height: 9px;
     margin: -3px 0;
     border-radius: 4px;
     background: #e2e8f0;
@@ -1329,42 +1354,46 @@ QPushButton#dub_props_ghost_btn:pressed {{
 #start_dub_body {{
     background-color: {COLOR_BG_CARD};
 }}
-/* Compact menus — same 30px height as ScrubSpinBox */
+/* Match Settings field size (28px) */
 #startLocalizeDialog QComboBox#start_localize_combo {{
     background-color: {COLOR_BG_DARK};
     color: {COLOR_TEXT_MAIN};
     border: 1px solid {COLOR_BORDER};
-    border-radius: 8px;
-    padding: 2px 8px;
-    min-height: 30px;
-    max-height: 30px;
-    font-size: 12px;
+    border-radius: 6px;
+    padding: 0 8px;
+    min-height: 28px;
+    max-height: 28px;
+    font-size: 11px;
 }}
 #startLocalizeDialog QComboBox#start_localize_combo:hover {{
-    border-color: {COLOR_BORDER};
+    border-color: {accent};
 }}
 #startLocalizeDialog QComboBox#start_localize_combo:focus {{
     border-color: {accent};
 }}
 #startLocalizeDialog QComboBox#start_localize_combo::drop-down {{
     border: none;
-    width: 20px;
+    width: 18px;
 }}
 #startLocalizeDialog QLineEdit#start_localize_field {{
     background-color: {COLOR_BG_DARK};
     color: {COLOR_TEXT_MAIN};
     border: 1px solid {COLOR_BORDER};
-    border-radius: 8px;
-    padding: 2px 8px;
-    min-height: 30px;
-    max-height: 30px;
-    font-size: 12px;
+    border-radius: 6px;
+    padding: 0 8px;
+    min-height: 28px;
+    max-height: 28px;
+    font-size: 11px;
 }}
 #startLocalizeDialog QLineEdit#start_localize_field:focus {{
     border-color: {accent};
 }}
 #startLocalizeDialog QLineEdit#start_localize_field:disabled {{
     color: {COLOR_TEXT_MUTED};
+}}
+#startLocalizeDialog #scrub_spin {{
+    min-height: 28px;
+    max-height: 28px;
 }}
 #startLocalizeDialog #start_localize_divider {{
     background: transparent;
@@ -1385,23 +1414,24 @@ QPushButton#dub_props_ghost_btn:pressed {{
     max-height: 1px;
 }}
 #startLocalizeDialog #dub_switch {{
-    spacing: 10px;
-    padding: 2px 0;
+    spacing: 8px;
+    padding: 1px 0;
+    font-size: 11px;
 }}
 #startLocalizeDialog #dub_switch_hint {{
-    padding-left: 24px;
-    padding-bottom: 2px;
+    padding-left: 22px;
+    padding-bottom: 0;
 }}
 #startLocalizeDialog QPushButton#start_localize_btn {{
     background-color: transparent;
     color: {COLOR_TEXT_SUB};
     border: 1px solid {COLOR_BORDER};
-    border-radius: 8px;
-    padding: 0 16px;
-    font-size: 12px;
+    border-radius: 6px;
+    padding: 0 14px;
+    font-size: 11.5px;
     font-weight: 600;
-    min-height: 34px;
-    max-height: 34px;
+    min-height: 28px;
+    max-height: 28px;
 }}
 #startLocalizeDialog QPushButton#start_localize_btn:hover {{
     background-color: {COLOR_BG_CARD_HOVER};
@@ -1415,12 +1445,12 @@ QPushButton#dub_props_ghost_btn:pressed {{
     background-color: {COLOR_PRIMARY};
     color: #ffffff;
     border: none;
-    border-radius: 8px;
-    padding: 0 18px;
-    font-size: 12px;
-    font-weight: 700;
-    min-height: 34px;
-    max-height: 34px;
+    border-radius: 6px;
+    padding: 0 14px;
+    font-size: 11.5px;
+    font-weight: 600;
+    min-height: 28px;
+    max-height: 28px;
 }}
 #startLocalizeDialog QPushButton#start_localize_btn_primary:hover {{
     background-color: {COLOR_PRIMARY_HOVER};

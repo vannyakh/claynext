@@ -234,3 +234,69 @@ def save_feature_defaults() -> None:
     for key in FEATURE_SETTING_KEYS:
         set_feature_setting(key, str(DEFAULT_CONFIG.get(key, "")))
 
+
+def install_uv_extra(extra: str, progress_callback=None) -> dict[str, Any]:
+    """
+    Run ``uv sync --extra <extra>`` from the project root (background-safe).
+
+    ``progress_callback(percent: int, message: str)`` is optional.
+    """
+    import os
+    import re
+    import shutil
+    import subprocess
+
+    from claynext.utils.paths import BASE_DIR
+
+    extra = (extra or "").strip()
+    if not extra:
+        raise ValueError("Missing uv extra name")
+
+    uv = shutil.which("uv")
+    if not uv:
+        raise RuntimeError("uv was not found on PATH. Install uv, then try again.")
+
+    def _progress(pct: int, msg: str) -> None:
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(max(0, min(100, int(pct))), str(msg or ""))
+        except Exception:
+            pass
+
+    _progress(2, f"Starting {extra}…")
+    cmd = [uv, "sync", "--extra", extra]
+    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(BASE_DIR),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=creationflags,
+    )
+    assert proc.stdout is not None
+    lines = 0
+    last_msg = f"Installing {extra}…"
+    ansi = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+    pct_re = re.compile(r"(\d{1,3})\s*%")
+    for raw in proc.stdout:
+        line = ansi.sub("", raw).strip()
+        if not line:
+            continue
+        lines += 1
+        last_msg = line[:120]
+        pct = min(92, 4 + lines * 3)
+        m = pct_re.search(line)
+        if m:
+            pct = max(pct, min(95, int(m.group(1))))
+        _progress(pct, last_msg)
+
+    code = proc.wait()
+    if code != 0:
+        raise RuntimeError(f"uv sync --extra {extra} failed (exit {code}): {last_msg}")
+    _progress(100, "Installed")
+    return {"extra": extra, "ok": True}
+

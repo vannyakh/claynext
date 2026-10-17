@@ -52,19 +52,19 @@ class TrackHeader(QWidget):
 
     def _init_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(8, 2, 4, 2)
-        root.setSpacing(1)
+        root.setContentsMargins(8, 3, 6, 3)
+        root.setSpacing(2)
 
-        # ─── Top Row: Drag Handle, Icon, Name, Type Badge, Lock, Delete ───
+        # ─── Top Row: Icon, Name, Kind, Lock ───
         self.row_top = QHBoxLayout()
         self.row_top.setContentsMargins(0, 0, 0, 0)
-        self.row_top.setSpacing(3)
+        self.row_top.setSpacing(4)
 
         self.grip = QLabel()
         self.grip.setObjectName("timeline_track_grip")
-        self.grip.setFixedSize(12, 14)
-        self.grip.setPixmap(icon("grab", color="#4b5563", size=10).pixmap(12, 14))
-        self.grip.setToolTip("Drag vertically to reorder track")
+        self.grip.setFixedSize(10, 14)
+        self.grip.setPixmap(icon("grab", color="#4b5563", size=9).pixmap(10, 14))
+        self.grip.setToolTip("Drag to reorder track")
         self.grip.setCursor(Qt.CursorShape.SizeAllCursor)
 
         self.ico = QLabel()
@@ -76,7 +76,7 @@ class TrackHeader(QWidget):
         self.name = QLabel(self.track.name)
         self.name.setObjectName("timeline_track_name")
         self.name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        self.name.setToolTip("Double-click to rename")
+        self.name.setToolTip("Double-click to rename · right-click for track menu")
 
         self.name_edit = QLineEdit(self.track.name)
         self.name_edit.setObjectName("timeline_track_name_edit")
@@ -86,10 +86,17 @@ class TrackHeader(QWidget):
 
         self.badge_kind = QLabel(self.track.kind.upper())
         self.badge_kind.setObjectName("timeline_badge_kind")
-        self.badge_kind.setFixedHeight(13)
+        self.badge_kind.setFixedHeight(14)
         self.badge_kind.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Tint badge with track accent
+        col = QColor(self.track.color)
+        self.badge_kind.setStyleSheet(
+            f"color: {col.name()};"
+            f"background: rgba({col.red()}, {col.green()}, {col.blue()}, 0.14);"
+            f"border: 1px solid rgba({col.red()}, {col.green()}, {col.blue()}, 0.35);"
+            "border-radius: 3px; padding: 0 4px; font-size: 8px; font-weight: 700;"
+        )
 
-        # Lock button
         self.btn_lock = QToolButton()
         self.btn_lock.setObjectName("timeline_btn_lock")
         self.btn_lock.setCheckable(True)
@@ -104,7 +111,7 @@ class TrackHeader(QWidget):
         self.btn_lock.setToolTip("Unlock track" if self.track.locked else "Lock track (prevent edits/moves)")
         self.btn_lock.toggled.connect(self._on_lock)
 
-        # Delete button
+        # Delete stays in context menu — keep a compact affordance on hover only
         self.btn_del = QToolButton()
         self.btn_del.setObjectName("timeline_btn_del")
         self.btn_del.setFixedSize(18, 18)
@@ -112,6 +119,7 @@ class TrackHeader(QWidget):
         self.btn_del.setIcon(icon("trash", color="#94a3b8", size=11))
         self.btn_del.setToolTip("Delete track")
         self.btn_del.clicked.connect(lambda: self.delete_requested.emit(self.track.id))
+        self.btn_del.hide()
 
         self.row_top.addWidget(self.grip)
         self.row_top.addWidget(self.ico)
@@ -168,9 +176,10 @@ class TrackHeader(QWidget):
 
         # ─── Bottom Row Widget (for tall mode: height >= 52) ───
         self.row_bottom_widget = QWidget()
+        self.row_bottom_widget.setObjectName("timeline_track_controls")
         self.row_bottom = QHBoxLayout(self.row_bottom_widget)
-        self.row_bottom.setContentsMargins(14, 0, 0, 0)
-        self.row_bottom.setSpacing(3)
+        self.row_bottom.setContentsMargins(18, 0, 0, 0)
+        self.row_bottom.setSpacing(4)
 
         if self.btn_mute is not None:
             self.row_bottom.addWidget(self.btn_mute)
@@ -182,33 +191,28 @@ class TrackHeader(QWidget):
         self.opacity_slider = None
         self.vol_label = None
 
-        if self.track.kind in _SOUND_KINDS:
-            self.vol_slider = QSlider(Qt.Orientation.Horizontal)
-            self.vol_slider.setObjectName("timeline_track_slider")
-            self.vol_slider.setRange(0, 200)
-            self.vol_slider.setValue(self.track.volume)
-            self.vol_slider.setFixedHeight(12)
-            self.vol_slider.setToolTip(f"Volume: {self.track.volume}% (Double-click to reset 100%)")
-            self.vol_slider.valueChanged.connect(self._on_volume_changed)
-
-            self.vol_label = QLabel(f"{self.track.volume}%")
-            self.vol_label.setObjectName("timeline_track_level_lbl")
-            self.vol_label.setFixedWidth(28)
-            self.row_bottom.addWidget(self.vol_slider)
-            self.row_bottom.addWidget(self.vol_label)
-        elif self.track.kind in _VISUAL_KINDS and self.track.kind != "video":
+        # Volume is mix-level only (no header slider) — mute shows on the clip wave.
+        # Overlay tracks keep a compact opacity scrubber.
+        if self.track.kind in _VISUAL_KINDS and self.track.kind != "video":
             self.opacity_slider = QSlider(Qt.Orientation.Horizontal)
             self.opacity_slider.setObjectName("timeline_track_slider")
             self.opacity_slider.setRange(0, 100)
             self.opacity_slider.setValue(self.track.opacity)
             self.opacity_slider.setFixedHeight(12)
-            self.opacity_slider.setToolTip(f"Opacity: {self.track.opacity}% (Double-click to reset 100%)")
+            self.opacity_slider.setMinimumWidth(48)
+            self.opacity_slider.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+            )
+            self.opacity_slider.setToolTip(f"Opacity: {self.track.opacity}% · double-click resets 100%")
             self.opacity_slider.valueChanged.connect(self._on_opacity_changed)
 
             self.vol_label = QLabel(f"{self.track.opacity}%")
             self.vol_label.setObjectName("timeline_track_level_lbl")
             self.vol_label.setFixedWidth(28)
-            self.row_bottom.addWidget(self.opacity_slider)
+            self.vol_label.setAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
+            self.row_bottom.addWidget(self.opacity_slider, 1)
             self.row_bottom.addWidget(self.vol_label)
 
         self.row_bottom.addStretch(1)
@@ -290,12 +294,6 @@ class TrackHeader(QWidget):
         )
         self.hidden_toggled.emit(self.track.id, on)
 
-    def _on_volume_changed(self, val: int):
-        self.track.volume = val
-        if self.vol_label is not None:
-            self.vol_label.setText(f"{val}%")
-        self.volume_changed.emit(self.track.id, val)
-
     def _on_opacity_changed(self, val: int):
         self.track.opacity = val
         if self.vol_label is not None:
@@ -328,10 +326,6 @@ class TrackHeader(QWidget):
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and not self._near_resize(event.position().y()):
-            if self.vol_slider is not None and self.vol_slider.geometry().contains(event.position().toPoint()):
-                self.vol_slider.setValue(100)
-                event.accept()
-                return
             if self.opacity_slider is not None and self.opacity_slider.geometry().contains(event.position().toPoint()):
                 self.opacity_slider.setValue(100)
                 event.accept()
@@ -445,13 +439,6 @@ class TrackHeader(QWidget):
         )
         self.btn_eye.blockSignals(False)
 
-        if self.vol_slider is not None:
-            self.vol_slider.blockSignals(True)
-            self.vol_slider.setValue(self.track.volume)
-            self.vol_slider.blockSignals(False)
-            if self.vol_label is not None:
-                self.vol_label.setText(f"{self.track.volume}%")
-
         if self.opacity_slider is not None:
             self.opacity_slider.blockSignals(True)
             self.opacity_slider.setValue(self.track.opacity)
@@ -485,5 +472,15 @@ class TrackHeader(QWidget):
     def apply_compact(self, compact: bool):
         self._compact = compact
         self.name.setVisible(not compact)
+        self.grip.setVisible(not compact)
         self._update_tier()
+
+    def enterEvent(self, event):
+        if not self._compact:
+            self.btn_del.show()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.btn_del.hide()
+        super().leaveEvent(event)
 

@@ -32,3 +32,5 @@ TRACK_PRESETS = (
 PRESET = {k: (name, h, color, icn) for k, name, h, color, icn in TRACK_PRESETS}
 OVERLAY_KINDS = frozenset({"text", "caption", "image", "logo", "shape"})
 FX_KINDS = frozenset({"effect", "filter"})
+# Dubbing focus — Cover (source video) + Voice (TTS) only
+DUB_FOCUS_KINDS = frozenset({"video", "voice"})

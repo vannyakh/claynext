@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, QObject, QEvent, QSize, QThreadPool, QTimer, Sign
 from PySide6.QtGui import (
     QAction, QActionGroup, QColor, QIcon, QKeySequence, QPainter, QPainterPath,
     QFont, QPen, QBrush, QPixmap, QDesktopServices, QDragEnterEvent,
-    QDragMoveEvent, QDropEvent, QKeyEvent,
+    QDragMoveEvent, QDropEvent, QKeyEvent, QConicalGradient,
 )
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QCheckBox,
@@ -69,8 +69,10 @@ _THUMB_SIZE = 32
 _ROW_H = 50
 _CHECK_W = 22
 _INDEX_W = 18
-_STATUS_W = 72
-
+_STATUS_W = 108
+# Extra roles on STATUS column items
+_ROLE_PROGRESS = Qt.ItemDataRole.UserRole + 1
+_ROLE_STAGE = Qt.ItemDataRole.UserRole + 2
 
 
 class LiveBridge(QObject):
@@ -201,7 +203,27 @@ class TaskNameDelegate(QStyledItemDelegate):
 
 
 class StatusBadgeDelegate(QStyledItemDelegate):
-    """Paints polished status capsule badges."""
+    """Status capsule — active rows also show a spinner + progress bar."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._angle = 0
+        self._timer = QTimer(self)
+        self._timer.setInterval(33)
+        self._timer.timeout.connect(self._tick)
+
+    def _tick(self):
+        self._angle = (self._angle + 14) % 360
+        view = self.parent()
+        if view is not None:
+            view.viewport().update()
+
+    def set_animating(self, on: bool):
+        if on:
+            if not self._timer.isActive():
+                self._timer.start()
+        elif self._timer.isActive():
+            self._timer.stop()
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex):
         opt = QStyleOptionViewItem(option)
@@ -219,10 +241,12 @@ class StatusBadgeDelegate(QStyledItemDelegate):
             painter.fillRect(rect, QColor(255, 255, 255, 8))
 
         status = index.data(Qt.ItemDataRole.UserRole) or "done"
-        bw, bh = 50, 20
-        bx = rect.x() + (rect.width() - bw) // 2
-        by = rect.y() + (rect.height() - bh) // 2
-        pill_rect = QRectF(bx, by, bw, bh)
+        try:
+            progress = int(index.data(_ROLE_PROGRESS) or 0)
+        except (TypeError, ValueError):
+            progress = 0
+        progress = max(0, min(100, progress))
+        active = status in _ACTIVE
 
         styles = {
             "done": (QColor(16, 185, 129, 25), QColor(16, 185, 129, 75), "#10b981", "Ready"),
@@ -234,16 +258,72 @@ class StatusBadgeDelegate(QStyledItemDelegate):
         }
         bg, border, text_col, text_label = styles.get(status, styles["queued"])
 
-        painter.setBrush(bg)
-        painter.setPen(QPen(border, 1))
-        painter.drawRoundedRect(pill_rect, 10, 10)
+        if active:
+            # Layout: [spinner] [pill %] stacked over a thin progress track
+            spin = 14
+            gap = 5
+            bw, bh = 44, 18
+            total_w = spin + gap + bw
+            left = rect.x() + (rect.width() - total_w) // 2
+            cy = rect.y() + rect.height() // 2 - 2
 
-        f = painter.font()
-        f.setPixelSize(9)
-        f.setWeight(QFont.Weight.DemiBold)
-        painter.setFont(f)
-        painter.setPen(QColor(text_col))
-        painter.drawText(pill_rect, Qt.AlignmentFlag.AlignCenter, text_label)
+            # Spinner
+            sx = left
+            sy = cy - spin // 2
+            spin_rect = QRectF(sx + 1.5, sy + 1.5, spin - 3, spin - 3)
+            accent = QColor("#f59e0b" if status == "paused" else "#06b6d4")
+            grad = QConicalGradient(spin_rect.center(), -self._angle)
+            grad.setColorAt(0.0, accent)
+            grad.setColorAt(0.75, QColor(accent.red(), accent.green(), accent.blue(), 0))
+            pen = QPen(QBrush(grad), 2.0)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawArc(spin_rect, 0, 360 * 16)
+
+            # Percent / status pill
+            pill_rect = QRectF(left + spin + gap, cy - bh / 2, bw, bh)
+            painter.setBrush(bg)
+            painter.setPen(QPen(border, 1))
+            painter.drawRoundedRect(pill_rect, 9, 9)
+            f = painter.font()
+            f.setPixelSize(9)
+            f.setWeight(QFont.Weight.DemiBold)
+            painter.setFont(f)
+            painter.setPen(QColor(text_col))
+            label = f"{progress}%" if status == "running" else text_label
+            painter.drawText(pill_rect, Qt.AlignmentFlag.AlignCenter, label)
+
+            # Progress track under the controls
+            bar_w = total_w
+            bar_h = 3
+            bar_x = left
+            bar_y = cy + bh / 2 + 4
+            track = QRectF(bar_x, bar_y, bar_w, bar_h)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(255, 255, 255, 18))
+            painter.drawRoundedRect(track, 1.5, 1.5)
+            fill_w = bar_w * (progress / 100.0)
+            if fill_w > 0.5:
+                fill = QRectF(bar_x, bar_y, fill_w, bar_h)
+                painter.setBrush(accent)
+                painter.drawRoundedRect(fill, 1.5, 1.5)
+        else:
+            bw, bh = 50, 20
+            bx = rect.x() + (rect.width() - bw) // 2
+            by = rect.y() + (rect.height() - bh) // 2
+            pill_rect = QRectF(bx, by, bw, bh)
+
+            painter.setBrush(bg)
+            painter.setPen(QPen(border, 1))
+            painter.drawRoundedRect(pill_rect, 10, 10)
+
+            f = painter.font()
+            f.setPixelSize(9)
+            f.setWeight(QFont.Weight.DemiBold)
+            painter.setFont(f)
+            painter.setPen(QColor(text_col))
+            painter.drawText(pill_rect, Qt.AlignmentFlag.AlignCenter, text_label)
 
         painter.restore()
 
@@ -739,6 +819,7 @@ class TaskTools:
             "status": status,
             "stages": [100 if status == "done" else -1 for _stage in STAGES],
             "stage": len(STAGES) if status == "done" else -1,
+            "progress": 100 if status == "done" else 0,
             "message": "",
             "comp": comp,
         }
@@ -764,6 +845,7 @@ class TaskTools:
         task["status"] = "running"
         task["stages"] = [-1 for _stage in STAGES]
         task["stage"] = 0
+        task["progress"] = 0
         task["message"] = "Starting…"
         task["live"] = []
         self._active_task = task["id"]
@@ -786,7 +868,12 @@ class TaskTools:
         done = int((value - start) * 100 / max(1, end - start))
         task["stages"][index] = max(task["stages"][index], min(100, max(0, done)))
         task["stage"] = index
+        task["progress"] = value
         task["message"] = message
+        # Prefer a light status-cell update while running (avoid full table rebuild)
+        if hasattr(self, "task_table") and self._patch_status_progress(task):
+            self._sync_task_hint()
+            return
         self._refresh_tasks()
 
     def _link_task(self, comp_index: int, source: str):
@@ -796,6 +883,7 @@ class TaskTools:
             task["status"] = "done"
             task["stages"] = [100 for _stage in STAGES]
             task["stage"] = len(STAGES)
+            task["progress"] = 100
             task["message"] = ""
             task.pop("live", None)
             task.pop("control", None)
@@ -1330,15 +1418,53 @@ class TaskTools:
         self._sync_task_hint()
         self._sync_timeline_button()
         self._place_header_check()
+        # Animate STATUS spinner while any visible task is running/paused
+        delegate = self.task_table.itemDelegateForColumn(_STATUS_COL)
+        if isinstance(delegate, StatusBadgeDelegate):
+            has_active = any(t.get("status") in _ACTIVE for t in visible)
+            delegate.set_animating(has_active)
 
     def _sync_status_cell(self, row: int, task: dict):
         table = self.task_table
         status = task["status"]
+        try:
+            progress = int(task.get("progress") or 0)
+        except (TypeError, ValueError):
+            progress = 0
+        if status == "done":
+            progress = 100
+        stage = ""
+        if 0 <= int(task.get("stage", -1)) < len(STAGES):
+            stage = STAGES[int(task["stage"])][0]
         label = QTableWidgetItem(_STATUS_LABELS.get(status, status))
         label.setData(Qt.ItemDataRole.UserRole, status)
+        label.setData(_ROLE_PROGRESS, progress)
+        label.setData(_ROLE_STAGE, stage)
         msg = task.get("message", "")
-        label.setToolTip(f"Status: {_STATUS_LABELS.get(status, status)}" + (f"\n{msg}" if msg else ""))
+        tip = f"Status: {_STATUS_LABELS.get(status, status)}"
+        if status in _ACTIVE:
+            tip += f"\nProgress: {progress}%"
+            if stage:
+                tip += f" · {stage}"
+        if msg:
+            tip += f"\n{msg}"
+        label.setToolTip(tip)
         table.setItem(row, _STATUS_COL, label)
+
+    def _patch_status_progress(self, task: dict) -> bool:
+        """Update STATUS cell data in-place for the given task. Returns True if found."""
+        table = getattr(self, "task_table", None)
+        if table is None:
+            return False
+        tid = task.get("id")
+        for row in range(table.rowCount()):
+            name_item = table.item(row, _NAME_COL)
+            if name_item is None or name_item.data(Qt.ItemDataRole.UserRole) != tid:
+                continue
+            self._sync_status_cell(row, task)
+            table.viewport().update()
+            return True
+        return False
 
     def _sync_task_hint(self):
         if not hasattr(self, "task_hint"):
@@ -1348,12 +1474,14 @@ class TaskTools:
             return
         active = self._task_by_id(self._active_task)
         if active and active["status"] == "paused":
-            self.task_hint.setText(f"Paused · {active['name']}")
+            pct = int(active.get("progress") or 0)
+            self.task_hint.setText(f"Paused · {pct}% · {active['name']}")
             return
         if active and active["status"] == "running":
+            pct = int(active.get("progress") or 0)
             stage = STAGES[active["stage"]][0] if 0 <= active["stage"] < len(STAGES) else "…"
             msg = active["message"] or stage
-            self.task_hint.setText(f"Dubbing · {active['name']} · {msg}")
+            self.task_hint.setText(f"Dubbing · {pct}% · {active['name']} · {msg}")
             return
         ready = sum(1 for t in self._tasks if t["status"] == "done")
         queued = sum(1 for t in self._tasks if t["status"] == "queued")

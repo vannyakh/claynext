@@ -57,6 +57,22 @@ def _format_script_error(hint: str) -> str:
     return text
 
 
+class _ScriptLoadBridge:
+    """Compatibility shim — table_spinner.start/stop drive the centered loader."""
+
+    def __init__(self, host: "ScriptTools"):
+        self._host = host
+
+    def start(self):
+        self._host._set_script_loading(True)
+
+    def stop(self):
+        self._host._set_script_loading(False)
+
+    def is_spinning(self) -> bool:
+        return bool(getattr(self._host, "_script_loading", False))
+
+
 def _line_snapshot(seg: dict) -> dict:
     original = str(seg.get("original_text") or seg.get("text") or "")
     voice = str(seg.get("voice_id") or seg.get("tts_voice_hint") or "")
@@ -542,7 +558,6 @@ class ScriptTools:
         self.btn_script_actions.setMenu(actions_menu)
         actions_menu.aboutToShow.connect(self._fill_script_actions_menu)
 
-        self.table_spinner = Spinner(size=16)
         self.script_header = make_shelf_header(
             "Script",
             self.lbl_script_count,
@@ -550,7 +565,6 @@ class ScriptTools:
             self.btn_script_export,
             self.btn_script_regen,
             self.btn_script_actions,
-            self.table_spinner,
         )
         return self.script_header
 
@@ -655,7 +669,34 @@ class ScriptTools:
         empty_actions.addStretch(1)
         empty_lay.addLayout(empty_actions)
         empty_lay.addStretch(2)
+        self.script_empty_page = empty
         self.script_stack.addWidget(empty)
+
+        # Centered loading page (large spinner — replaces header spinner)
+        loading = QWidget()
+        loading.setObjectName("transcript_loading")
+        load_lay = QVBoxLayout(loading)
+        load_lay.setContentsMargins(24, 24, 24, 24)
+        load_lay.setSpacing(12)
+        load_lay.addStretch(1)
+        self.script_load_spinner = Spinner(size=44, color="#a855f7")
+        load_lay.addWidget(self.script_load_spinner, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.load_title = QLabel("Dubbing…")
+        self.load_title.setObjectName("transcript_empty_title")
+        self.load_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        load_lay.addWidget(self.load_title)
+        self.load_hint = QLabel("Please wait")
+        self.load_hint.setObjectName("transcript_empty_hint")
+        self.load_hint.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+        self.load_hint.setWordWrap(True)
+        load_lay.addWidget(self.load_hint, 0, Qt.AlignmentFlag.AlignHCenter)
+        load_lay.addStretch(2)
+        self.script_loading_page = loading
+        self.script_stack.addWidget(loading)
+        self._script_loading = False
+        # Bridge so existing table_spinner.start/stop calls drive the center loader
+        self.table_spinner = _ScriptLoadBridge(self)
+
         self._script_compact = None
         panel.installEventFilter(self)
 
@@ -1176,6 +1217,14 @@ class ScriptTools:
                 self.lbl_script_count.setText(f"{visible} of {n}")
             else:
                 self.lbl_script_count.setText(f"{n} line{'s' if n != 1 else ''}")
+        if self._script_loading:
+            self.script_stack.setCurrentWidget(self.script_loading_page)
+            self._set_script_actions_enabled(False)
+            return
+        if hasattr(self, "btn_script_import"):
+            self.btn_script_import.setEnabled(True)
+        if hasattr(self, "btn_empty_import"):
+            self.btn_empty_import.setEnabled(True)
         if hasattr(self, "btn_script_export"):
             self.btn_script_export.setEnabled(n > 0)
         has_source = bool(
@@ -1201,13 +1250,57 @@ class ScriptTools:
         err = bool(getattr(self, "_error", ""))
         if hasattr(self, "btn_empty_retry"):
             self.btn_empty_retry.setVisible(err and can_retry)
-        self.script_stack.setCurrentIndex(1 if n else 0)
-        spinning = self.table_spinner.is_spinning()
-        if n == 0 and not spinning and not err:
-            self.empty_title.setText("No dubbed script")
-            self.empty_hint.setText("Dub a movie from Tasks, or")
-            if hasattr(self, "btn_empty_retry"):
-                self.btn_empty_retry.setVisible(False)
+            self.btn_empty_retry.setEnabled(err and can_retry)
+        if n > 0:
+            self.script_stack.setCurrentWidget(self.table)
+        else:
+            self.script_stack.setCurrentWidget(self.script_empty_page)
+            if not err:
+                self.empty_title.setText("No dubbed script")
+                self.empty_hint.setText("Dub a movie from Tasks, or")
+                if hasattr(self, "btn_empty_retry"):
+                    self.btn_empty_retry.setVisible(False)
+
+    def _set_script_loading(self, on: bool, title: str = "Dubbing…", hint: str = ""):
+        """Show a large centered spinner and lock script actions while a job runs."""
+        self._script_loading = bool(on)
+        if on:
+            if hasattr(self, "load_title"):
+                self.load_title.setText(title or "Dubbing…")
+            if hasattr(self, "load_hint"):
+                self.load_hint.setText(hint or "Please wait")
+            if hasattr(self, "script_load_spinner"):
+                self.script_load_spinner.start()
+            if hasattr(self, "script_loading_page"):
+                self.script_stack.setCurrentWidget(self.script_loading_page)
+            self._set_script_actions_enabled(False)
+            if hasattr(self, "workspace"):
+                self._focus_script_shelf()
+            return
+        if hasattr(self, "script_load_spinner"):
+            self.script_load_spinner.stop()
+        self._update_script_meta()
+
+    def _set_script_loading_hint(self, hint: str):
+        if hasattr(self, "load_hint") and self._script_loading:
+            self.load_hint.setText(str(hint or "Please wait"))
+
+    def _set_script_actions_enabled(self, enabled: bool):
+        for name in (
+            "btn_script_import",
+            "btn_script_export",
+            "btn_script_regen",
+            "btn_script_actions",
+            "btn_script_pending",
+            "btn_empty_import",
+            "btn_empty_retry",
+            "script_search",
+            "script_character_filter",
+            "script_view_filter",
+        ):
+            w = getattr(self, name, None)
+            if w is not None:
+                w.setEnabled(bool(enabled))
 
     def _fit_script_columns(self):
         """Keep meta columns compact; Source / Dub share the remaining width."""
@@ -2129,11 +2222,14 @@ class ScriptTools:
 
     def _show_error(self, title: str, hint: str):
         self._error = hint
+        self._script_loading = False
+        if hasattr(self, "script_load_spinner"):
+            self.script_load_spinner.stop()
         self._fill_table([])
         self.empty_title.setText(title or "Dubbing failed")
         self.empty_hint.setText(_format_script_error(hint))
         self._set_error_style(True)
-        self.script_stack.setCurrentIndex(0)
+        self.script_stack.setCurrentWidget(self.script_empty_page)
         self._update_script_meta()
         self._focus_script_shelf()
 

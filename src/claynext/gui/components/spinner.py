@@ -36,14 +36,14 @@ class Spinner(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         side = min(self.width(), self.height())
-        pad = 1.5
+        pad = max(1.5, side * 0.08)
         rect = QRectF(pad, pad, side - pad * 2, side - pad * 2)
         grad = QConicalGradient(rect.center(), -self._angle)
         c = self._color
         grad.setColorAt(0.0, c)
         grad.setColorAt(0.7, QColor(c.red(), c.green(), c.blue(), 0))
         pen = QPen()
-        pen.setWidthF(2.2)
+        pen.setWidthF(max(2.0, side * 0.09))
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         pen.setBrush(QBrush(grad))
         painter.setPen(pen)

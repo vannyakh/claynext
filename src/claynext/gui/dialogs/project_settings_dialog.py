@@ -1,19 +1,22 @@
-"""CapCut-style project details inspector + Modify dialog."""
+"""Project details inspector + Modify dialog (Settings-style cards)."""
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
     QPushButton, QRadioButton, QButtonGroup, QCheckBox, QFrame, QTabWidget,
-    QFileDialog, QScrollArea,
+    QFileDialog, QScrollArea, QSizePolicy,
 )
 from PySide6.QtCore import Qt, Signal
 
 from claynext.models.dub_project import PROJECT_DIR
+from claynext.gui.icons import icon
 
 ASPECT_CHOICES = ["Original", "16:9", "9:16", "1:1", "4:3", "4:5"]
 RESOLUTION_CHOICES = ["Adapted", "2160p", "1080p", "720p"]
 FPS_CHOICES = ["Original", "24.00 fps", "25.00 fps", "30.00 fps", "60.00 fps"]
 COLOR_SPACES = ["Rec. 709 SDR", "Rec. 2020 HLG", "Rec. 2020 PQ"]
+
+_FIELD_H = 28
 
 
 def default_project_settings(*, name: str = "", media: str = "") -> dict:
@@ -49,18 +52,6 @@ def _kv(key: str) -> tuple[QWidget, QLabel]:
     lay.addWidget(k, 0, Qt.AlignmentFlag.AlignTop)
     lay.addWidget(v, 1)
     return row, v
-
-
-def _field(label: str, widget: QWidget) -> QWidget:
-    wrap = QWidget()
-    lay = QVBoxLayout(wrap)
-    lay.setContentsMargins(0, 0, 0, 0)
-    lay.setSpacing(4)
-    lbl = QLabel(label)
-    lbl.setObjectName("asr_field_label")
-    lay.addWidget(lbl)
-    lay.addWidget(widget)
-    return wrap
 
 
 class ProjectInfoPage(QWidget):
@@ -145,12 +136,14 @@ class ProjectInfoPage(QWidget):
 
 
 class ProjectSettingsDialog(QDialog):
+    """Project settings — card sections, clean tabs, 28px fields."""
+
     def __init__(self, settings: dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Project settings")
         self.setModal(True)
-        self.setMinimumSize(420, 520)
-        self.resize(460, 560)
+        self.setMinimumSize(480, 540)
+        self.resize(520, 580)
         self.setObjectName("project_settings_dialog")
         self._data = dict(settings or default_project_settings())
         self._init_ui()
@@ -158,145 +151,184 @@ class ProjectSettingsDialog(QDialog):
 
     def _init_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 16, 16, 16)
-        root.setSpacing(12)
-        title = QLabel("Project settings")
-        title.setObjectName("transcript_panel_title")
-        root.addWidget(title)
+        root.setContentsMargins(14, 12, 14, 12)
+        root.setSpacing(10)
 
         self.tabs = QTabWidget()
-        self.tabs.setObjectName("project_settings_tabs")
-        self.tabs.addTab(self._details_tab(), "Details")
-        self.tabs.addTab(self._performance_tab(), "Performance")
+        self.tabs.setObjectName("settingsTabs")
+        self.tabs.addTab(self._details_tab(), icon("folder", size=13), "Details")
+        self.tabs.addTab(self._performance_tab(), icon("activity", size=13), "Performance")
         root.addWidget(self.tabs, 1)
 
         btns = QHBoxLayout()
         btns.setSpacing(8)
-        self.btn_save = QPushButton("Save")
-        self.btn_save.setObjectName("btn_primary")
-        self.btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_save.clicked.connect(self.accept)
+        btns.addStretch(1)
         self.btn_cancel = QPushButton("Cancel")
         self.btn_cancel.setObjectName("btn_secondary")
         self.btn_cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_cancel.setFixedHeight(_FIELD_H)
         self.btn_cancel.clicked.connect(self.reject)
-        btns.addWidget(self.btn_save, 1)
-        btns.addWidget(self.btn_cancel, 1)
+        self.btn_save = QPushButton("Save")
+        self.btn_save.setObjectName("btn_primary")
+        self.btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_save.setFixedHeight(_FIELD_H)
+        self.btn_save.setMinimumWidth(88)
+        self.btn_save.setDefault(True)
+        self.btn_save.clicked.connect(self.accept)
+        btns.addWidget(self.btn_cancel)
+        btns.addWidget(self.btn_save)
         root.addLayout(btns)
 
-    def _details_tab(self) -> QWidget:
+    # ── helpers ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _field_label(text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setObjectName("settings_field_label")
+        return lbl
+
+    @staticmethod
+    def _scroll_page() -> tuple[QWidget, QVBoxLayout]:
         page = QWidget()
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(0, 0, 0, 0)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        body = QWidget()
-        lay = QVBoxLayout(body)
-        lay.setContentsMargins(4, 8, 4, 8)
-        lay.setSpacing(10)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        host = QWidget()
+        lay = QVBoxLayout(host)
+        lay.setContentsMargins(14, 12, 14, 14)
+        lay.setSpacing(12)
+        scroll.setWidget(host)
+        outer.addWidget(scroll)
+        return page, lay
 
-        sec = QLabel("Details")
-        sec.setObjectName("asr_field_label")
-        lay.addWidget(sec)
+    @staticmethod
+    def _card(title: str, hint: str = "") -> tuple[QFrame, QVBoxLayout]:
+        card = QFrame()
+        card.setObjectName("project_settings_card")
+        card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(8)
+        hdr = QLabel(title)
+        hdr.setObjectName("settings_section_title")
+        lay.addWidget(hdr)
+        if hint:
+            note = QLabel(hint)
+            note.setObjectName("settings_section_hint")
+            note.setWordWrap(True)
+            lay.addWidget(note)
+        return card, lay
 
+    def _labeled(self, label: str, widget: QWidget) -> QWidget:
+        wrap = QWidget()
+        lay = QVBoxLayout(wrap)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+        lay.addWidget(self._field_label(label))
+        lay.addWidget(widget)
+        return wrap
+
+    # ── tabs ─────────────────────────────────────────────────────────
+
+    def _details_tab(self) -> QWidget:
+        page, lay = self._scroll_page()
+
+        # Project
+        card, cl = self._card("Project", "Name and where this project is saved.")
         self.edit_name = QLineEdit()
-        self.edit_name.setObjectName("transcript_search")
-        lay.addWidget(_field("Name", self.edit_name))
+        self.edit_name.setFixedHeight(_FIELD_H)
+        self.edit_name.setPlaceholderText("Project name")
+        cl.addWidget(self._labeled("Name", self.edit_name))
 
-        save_row = QWidget()
-        s_l = QVBoxLayout(save_row)
-        s_l.setContentsMargins(0, 0, 0, 0)
-        s_l.setSpacing(4)
-        s_l.addWidget(QLabel("Save to"))
-        path_row = QHBoxLayout()
-        self.lbl_save = QLabel(str(PROJECT_DIR))
-        self.lbl_save.setObjectName("prop_val")
-        self.lbl_save.setWordWrap(True)
+        path_row = QWidget()
+        pr = QHBoxLayout(path_row)
+        pr.setContentsMargins(0, 0, 0, 0)
+        pr.setSpacing(6)
+        self.edit_save = QLineEdit()
+        self.edit_save.setFixedHeight(_FIELD_H)
+        self.edit_save.setPlaceholderText(str(PROJECT_DIR))
         btn_browse = QPushButton("…")
-        btn_browse.setFixedWidth(32)
-        btn_browse.setObjectName("asr_export_btn")
+        btn_browse.setObjectName("project_settings_browse")
+        btn_browse.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_browse.setFixedSize(_FIELD_H, _FIELD_H)
+        btn_browse.setToolTip("Browse folder")
         btn_browse.clicked.connect(self._browse_save)
-        path_row.addWidget(self.lbl_save, 1)
-        path_row.addWidget(btn_browse, 0)
-        s_l.addLayout(path_row)
-        lay.addWidget(save_row)
+        pr.addWidget(self.edit_save, 1)
+        pr.addWidget(btn_browse, 0)
+        cl.addWidget(self._labeled("Save to", path_row))
+        lay.addWidget(card)
 
-        imp = QLabel("Imported media")
-        imp.setObjectName("asr_field_label")
-        lay.addWidget(imp)
+        # Media
+        card, cl = self._card("Media", "How imported files are stored and colored.")
         self.radio_copy = QRadioButton("Copy media to project")
         self.radio_keep = QRadioButton("Stay in original location")
         self.radio_keep.setChecked(True)
         group = QButtonGroup(self)
         group.addButton(self.radio_copy)
         group.addButton(self.radio_keep)
-        lay.addWidget(self.radio_copy)
-        lay.addWidget(self.radio_keep)
+        cl.addWidget(self._field_label("Imported media"))
+        cl.addWidget(self.radio_copy)
+        cl.addWidget(self.radio_keep)
 
         self.combo_color = QComboBox()
-        self.combo_color.setObjectName("asr_option_combo")
+        self.combo_color.setFixedHeight(_FIELD_H)
         self.combo_color.addItems(COLOR_SPACES)
-        lay.addWidget(_field("Color space", self.combo_color))
+        cl.addWidget(self._labeled("Color space", self.combo_color))
 
         self.chk_layers = QCheckBox("Arrange layers")
         self.chk_layers.setChecked(True)
         self.chk_layers.toggled.connect(self._on_layers)
-        lay.addWidget(self.chk_layers)
-        self.lbl_layers_note = QLabel("Cannot be turned off after turned on")
-        self.lbl_layers_note.setObjectName("prop_warn")
+        cl.addWidget(self.chk_layers)
+        self.lbl_layers_note = QLabel("Cannot be turned off after turned on.")
+        self.lbl_layers_note.setObjectName("project_settings_warn")
+        self.lbl_layers_note.setWordWrap(True)
         self.lbl_layers_note.setVisible(False)
-        lay.addWidget(self.lbl_layers_note)
+        cl.addWidget(self.lbl_layers_note)
+        lay.addWidget(card)
 
-        line = QFrame()
-        line.setObjectName("prop_divider")
-        line.setFrameShape(QFrame.Shape.HLine)
-        lay.addWidget(line)
-
-        tl = QLabel("Timeline settings")
-        tl.setObjectName("asr_field_label")
-        lay.addWidget(tl)
-        self.lbl_apply = QLabel("Timeline 01")
-        self.lbl_apply.setObjectName("prop_val")
-        lay.addWidget(_field("Apply to", self.lbl_apply))
+        # Timeline
+        card, cl = self._card("Timeline", "Canvas format for the active timeline.")
+        self.lbl_apply = QLineEdit()
+        self.lbl_apply.setFixedHeight(_FIELD_H)
+        self.lbl_apply.setReadOnly(True)
+        self.lbl_apply.setObjectName("project_settings_readonly")
+        cl.addWidget(self._labeled("Apply to", self.lbl_apply))
 
         self.combo_aspect = QComboBox()
-        self.combo_aspect.setObjectName("asr_option_combo")
+        self.combo_aspect.setFixedHeight(_FIELD_H)
         self.combo_aspect.addItems(ASPECT_CHOICES)
-        lay.addWidget(_field("Aspect ratio", self.combo_aspect))
+        cl.addWidget(self._labeled("Aspect ratio", self.combo_aspect))
 
         self.combo_res = QComboBox()
-        self.combo_res.setObjectName("asr_option_combo")
+        self.combo_res.setFixedHeight(_FIELD_H)
         self.combo_res.addItems(RESOLUTION_CHOICES)
-        lay.addWidget(_field("Resolution", self.combo_res))
+        cl.addWidget(self._labeled("Resolution", self.combo_res))
 
         self.combo_fps = QComboBox()
-        self.combo_fps.setObjectName("asr_option_combo")
+        self.combo_fps.setFixedHeight(_FIELD_H)
         self.combo_fps.addItems(FPS_CHOICES)
-        lay.addWidget(_field("Frame rate", self.combo_fps))
+        cl.addWidget(self._labeled("Frame rate", self.combo_fps))
+        lay.addWidget(card)
+
         lay.addStretch(1)
-        scroll.setWidget(body)
-        wrap = QVBoxLayout(page)
-        wrap.setContentsMargins(0, 0, 0, 0)
-        wrap.addWidget(scroll)
         return page
 
     def _performance_tab(self) -> QWidget:
-        page = QWidget()
-        lay = QVBoxLayout(page)
-        lay.setContentsMargins(12, 12, 12, 12)
-        lay.setSpacing(10)
-        hint = QLabel("Playback performance for this project")
-        hint.setObjectName("transcript_count")
-        hint.setWordWrap(True)
-        lay.addWidget(hint)
+        page, lay = self._scroll_page()
+        card, cl = self._card(
+            "Playback",
+            "Proxy keeps the original file and plays a lighter copy.",
+        )
         self.chk_proxy = QCheckBox("Use proxy media")
         self.chk_hw = QCheckBox("Hardware decode")
         self.chk_hw.setChecked(True)
-        lay.addWidget(self.chk_proxy)
-        lay.addWidget(self.chk_hw)
-        note = QLabel("Proxy keeps the original file and plays a lighter copy.")
-        note.setObjectName("transcript_count")
-        note.setWordWrap(True)
-        lay.addWidget(note)
+        cl.addWidget(self.chk_proxy)
+        cl.addWidget(self.chk_hw)
+        lay.addWidget(card)
         lay.addStretch(1)
         return page
 
@@ -304,13 +336,15 @@ class ProjectSettingsDialog(QDialog):
         self.lbl_layers_note.setVisible(bool(on))
 
     def _browse_save(self):
-        path = QFileDialog.getExistingDirectory(self, "Save project to", self.lbl_save.text())
+        path = QFileDialog.getExistingDirectory(
+            self, "Save project to", self.edit_save.text() or str(PROJECT_DIR)
+        )
         if path:
-            self.lbl_save.setText(path)
+            self.edit_save.setText(path)
 
     def _load(self, data: dict):
         self.edit_name.setText(str(data.get("name") or "Untitled"))
-        self.lbl_save.setText(str(data.get("save_to") or PROJECT_DIR))
+        self.edit_save.setText(str(data.get("save_to") or PROJECT_DIR))
         if data.get("import_mode") == "copy":
             self.radio_copy.setChecked(True)
         else:
@@ -340,7 +374,7 @@ class ProjectSettingsDialog(QDialog):
         out = dict(self._data)
         out.update({
             "name": self.edit_name.text().strip() or "Untitled",
-            "save_to": self.lbl_save.text().strip(),
+            "save_to": self.edit_save.text().strip() or str(PROJECT_DIR),
             "import_mode": "copy" if self.radio_copy.isChecked() else "original",
             "color_space": self.combo_color.currentText(),
             "arrange_layers": self.chk_layers.isChecked(),
@@ -352,4 +386,3 @@ class ProjectSettingsDialog(QDialog):
             "hw_decode": self.chk_hw.isChecked(),
         })
         return out
-

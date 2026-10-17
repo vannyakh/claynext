@@ -181,21 +181,28 @@ class TimelinePanel(QWidget):
         left_box.addWidget(self.btn_rec)
         left_box.addWidget(self._tool_sep())
 
-        # Dubbing pipeline tools (icon-only; replaces former bottom footer)
-        for name, tip, action in (
-            ("volume", "Vocal isolation · extract BGM bed", "vocal"),
-            ("globe", "AI translate subtitles", "translate"),
-            ("chat", "Scan characters & assign voices", "scan"),
-            ("sparkles", "Generate all dialogue audio", "generate"),
-            ("folder", "Import SRT / VTT / JSON", "import_srt"),
-            ("download", "Export SRT subtitles", "export_srt"),
-            ("activity", "Load background music", "bgm"),
-            ("video", "Export video", "export_video"),
+        # Dubbing feature tools — one menu keeps the bar lean
+        self.btn_studio = self._tool_btn(
+            "sparkles", "Studio tools · isolate, translate, voices, export"
+        )
+        self.btn_studio.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        studio_menu = QMenu(self.btn_studio)
+        studio_menu.setObjectName("media_lib_menu")
+        for tip, action, icn in (
+            ("Vocal isolation · extract BGM bed", "vocal", "volume"),
+            ("AI translate subtitles", "translate", "globe"),
+            ("Scan characters & assign voices", "scan", "chat"),
+            ("Generate all dialogue audio", "generate", "sparkles"),
+            ("Import SRT / VTT / JSON", "import_srt", "folder"),
+            ("Export SRT subtitles", "export_srt", "download"),
+            ("Load background music", "bgm", "activity"),
+            ("Export video", "export_video", "video"),
         ):
-            btn = self._tool_btn(name, tip)
-            btn.clicked.connect(lambda _=False, a=action: self.studio_action.emit(a))
-            left_box.addWidget(btn)
-            setattr(self, f"btn_studio_{action}", btn)
+            act = studio_menu.addAction(icon(icn, color="#cdd8e5", size=13), tip)
+            act.triggered.connect(lambda _=False, a=action: self.studio_action.emit(a))
+            setattr(self, f"act_studio_{action}", act)
+        self.btn_studio.setMenu(studio_menu)
+        left_box.addWidget(self.btn_studio)
 
         row.addLayout(left_box)
         row.addStretch(1)
@@ -285,6 +292,7 @@ class TimelinePanel(QWidget):
 
         self.rail = LaneRail()
         self.rail.add_track.connect(self._add_track)
+        self.rail.dub_focus_toggled.connect(self._on_dub_focus)
         self.rail.mute_toggled.connect(self._mute_track)
         self.rail.solo_toggled.connect(self._solo_track)
         self.rail.locked_toggled.connect(self._lock_track)
@@ -492,6 +500,11 @@ class TimelinePanel(QWidget):
             self.canvas.set_track_height(t.id, h)
         self.rail.sync_heights(self.canvas.tracks)
         self.canvas._relayout(notify=False)
+
+    def _on_dub_focus(self, on: bool):
+        """Show only Cover (video) + Voice (TTS) lanes for movie dubbing."""
+        self.canvas.set_dub_focus(on)
+        self.rail.sync_heights(self.canvas.tracks)
 
     def zoom_to_fit(self):
         dur_sec = max(1.0, self.canvas.duration_ms / 1000.0)

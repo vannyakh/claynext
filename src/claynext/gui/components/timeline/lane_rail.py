@@ -4,12 +4,12 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal, QPoint
 from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QMenu, QScrollArea, QToolButton,
+    QCheckBox, QFrame, QHBoxLayout, QLabel, QMenu, QScrollArea, QToolButton,
     QVBoxLayout, QWidget,
 )
 
 from claynext.constants.timeline_constants import (
-    LANE_MAX_W, LANE_MIN_W, RULER_H, TRACK_PRESETS,
+    DUB_FOCUS_KINDS, LANE_MAX_W, LANE_MIN_W, RULER_H, TRACK_PRESETS,
 )
 from claynext.gui.icons import icon
 from claynext.gui.components.text_styles_panel import parse_text_style
@@ -35,6 +35,7 @@ class LaneRail(QWidget):
     files_dropped = Signal(list)
     style_dropped = Signal(dict)
     hide_requested = Signal()
+    dub_focus_toggled = Signal(bool)
     # track_id, global cursor pos — panel owns the real menu + handlers
     context_menu_requested = Signal(str, QPoint)
 
@@ -46,6 +47,7 @@ class LaneRail(QWidget):
         self._rows: list[TrackHeader] = []
         self._compact = False
         self._card_add = None
+        self._dub_focus = True
         self._init_ui()
 
     def _build_add_menu(self, parent_widget) -> QMenu:
@@ -79,18 +81,20 @@ class LaneRail(QWidget):
         self.title = QLabel("Tracks")
         self.title.setObjectName("timeline_lane_title_text")
 
-        self.btn_add = QToolButton()
-        self.btn_add.setObjectName("timeline_plus_btn")
-        self.btn_add.setIcon(icon("plus", color="#ffffff", size=11))
-        self.btn_add.setFixedSize(22, 20)
-        self.btn_add.setToolTip("Add timeline track")
-        self.btn_add.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_add.setMenu(self._build_add_menu(self.btn_add))
+        # Dub focus: Cover (video) + Voice (TTS) only — not a pro NLE track mixer
+        self.chk_dub_focus = QCheckBox()
+        self.chk_dub_focus.setObjectName("timeline_dub_focus")
+        self.chk_dub_focus.setChecked(True)
+        self.chk_dub_focus.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.chk_dub_focus.setToolTip(
+            "Dub focus · show only Cover (video) and Voice (TTS)\n"
+            "Uncheck to reveal Filter, Audio, Text, and other lanes"
+        )
+        self.chk_dub_focus.toggled.connect(self._on_dub_focus)
 
         hl.addWidget(hide)
         hl.addWidget(self.title, 1)
-        hl.addWidget(self.btn_add)
+        hl.addWidget(self.chk_dub_focus)
         root.addWidget(head)
 
         self.scroll = QScrollArea()
@@ -123,8 +127,10 @@ class LaneRail(QWidget):
                 w.deleteLater()
         self._rows.clear()
 
-        # Update track count
-        self.title.setText(f"Tracks ({len(tracks)})")
+        visible_n = sum(1 for t in tracks if self._lane_shown(t.kind))
+        self.title.setText(
+            f"Tracks ({visible_n})" if self._dub_focus else f"Tracks ({len(tracks)})"
+        )
 
         for track in tracks:
             row = TrackHeader(track)
@@ -141,44 +147,47 @@ class LaneRail(QWidget):
             row.renamed.connect(self.renamed)
             row.reorder_dragged.connect(self._on_row_reorder)
             row.context_menu_requested.connect(self.context_menu_requested)
+            row.setVisible(self._lane_shown(track.kind))
             self.stack_lay.insertWidget(self.stack_lay.count() - 1, row)
             self._rows.append(row)
 
-        # Bottom Quick Add Track Card
+        # Bottom Quick Add Track Card (hidden in dub focus — translate workflow)
         self._card_add = QToolButton()
         self._card_add.setObjectName("timeline_add_track_card")
         self._card_add.setIcon(icon("plus", color="#818cf8", size=11))
-        self._card_add.setText(" Add Track")
+        self._card_add.setText("Add track")
         self._card_add.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self._card_add.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self._card_add.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._card_add.setFixedHeight(28)
-        self._card_add.setStyleSheet("""
-            QToolButton#timeline_add_track_card {
-                background-color: rgba(18, 26, 38, 0.6);
-                border: 1px dashed #2a3a50;
-                border-radius: 6px;
-                color: #94a3b8;
-                font-size: 11px;
-                font-weight: 500;
-                padding: 4px 10px;
-                margin: 8px 8px 4px 8px;
-            }
-            QToolButton#timeline_add_track_card:hover {
-                background-color: rgba(99, 102, 241, 0.14);
-                border: 1px dashed #6366f1;
-                color: #ffffff;
-            }
-            QToolButton#timeline_add_track_card::menu-indicator {
-                image: none;
-                width: 0;
-            }
-        """)
-        self._card_add.setToolTip("Click to add a track or drag media files here")
+        self._card_add.setFixedHeight(26)
+        self._card_add.setToolTip("Add a track · or drop media here")
         self._card_add.setMenu(self._build_add_menu(self._card_add))
         self.stack_lay.insertWidget(self.stack_lay.count() - 1, self._card_add)
 
         self.apply_compact(self._compact)
+        self._apply_dub_focus_ui()
+
+    def _lane_shown(self, kind: str) -> bool:
+        return (not self._dub_focus) or kind in DUB_FOCUS_KINDS
+
+    def _on_dub_focus(self, on: bool):
+        self._dub_focus = bool(on)
+        self._apply_dub_focus_ui()
+        self.dub_focus_toggled.emit(self._dub_focus)
+
+    def _apply_dub_focus_ui(self):
+        shown = 0
+        for row in self._rows:
+            vis = self._lane_shown(row.track.kind)
+            row.setVisible(vis)
+            if vis:
+                shown += 1
+        if self._card_add is not None:
+            self._card_add.setVisible((not self._dub_focus) and (not self._compact))
+        total = len(self._rows)
+        self.title.setText(
+            f"Tracks ({shown})" if self._dub_focus else f"Tracks ({total})"
+        )
 
     def _on_row_reorder(self, track_id: str, delta_y: int):
         from_idx = next((i for i, row in enumerate(self._rows) if row.track.id == track_id), -1)
@@ -191,10 +200,9 @@ class LaneRail(QWidget):
     def apply_compact(self, compact: bool):
         self._compact = compact
         self.title.setVisible(not compact)
-        if self._card_add is not None:
-            self._card_add.setVisible(not compact)
         for row in self._rows:
             row.apply_compact(compact)
+        self._apply_dub_focus_ui()
 
     def refresh_flags(self):
         for row in self._rows:

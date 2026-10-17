@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QCheckBox,
     QLineEdit, QPushButton, QFileDialog, QTabWidget, QWidget, QSpinBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QProgressBar, QMessageBox,
-    QScrollArea, QFrame, QSizePolicy, QApplication, QAbstractItemView,
+    QScrollArea, QFrame, QSizePolicy, QAbstractItemView,
 )
 from PySide6.QtCore import Qt, QThreadPool
 from PySide6.QtGui import QColor
@@ -16,6 +16,7 @@ from claynext.models.features import (
     DEMUCS_MODELS,
     FEATURE_SETTING_KEYS,
     get_feature_setting,
+    install_uv_extra,
     list_features,
     set_feature_setting,
 )
@@ -33,6 +34,8 @@ class SettingsDialog(QDialog):
         self.setModal(True)
         self.thread_pool = QThreadPool.globalInstance()
         self._feature_cards: list[QFrame] = []
+        self._feature_controls: dict[str, dict] = {}
+        self._feature_installing: str | None = None
         self.init_ui()
         self._load_from_store()
 
@@ -336,9 +339,6 @@ class SettingsDialog(QDialog):
         page, lay = self._scroll_page()
 
         lay.addWidget(self._field_label("Tool backends"))
-        self.lbl_feature_summary = QLabel()
-        self.lbl_feature_summary.setObjectName("settings_section_hint")
-        lay.addWidget(self.lbl_feature_summary)
 
         cards_host = QWidget()
         cards_host.setObjectName("settings_feature_list")
@@ -399,15 +399,16 @@ class SettingsDialog(QDialog):
                 w.setParent(None)
                 w.deleteLater()
         self._feature_cards.clear()
+        self._feature_controls.clear()
 
         rows = list_features()
-        ready = sum(1 for r in rows if r["status"] == "Ready")
-        self.lbl_feature_summary.setText(
-            f"{ready} of {len(rows)} ready · Install copies the uv sync command"
-        )
         for i, item in enumerate(rows):
             card = self._make_feature_card(item, last=(i == len(rows) - 1))
             self._features_lay.addWidget(card)
+
+        # Restore in-progress install chrome after a rebuild
+        if self._feature_installing:
+            self._set_feature_row_progress(self._feature_installing, None, busy=True)
 
     def _make_feature_card(self, item: dict, *, last: bool = False) -> QFrame:
         row = QFrame()
@@ -420,20 +421,25 @@ class SettingsDialog(QDialog):
         lay.setContentsMargins(12, 0, 10, 0)
         lay.setSpacing(10)
 
+        fid = str(item.get("id") or "")
         title = QLabel(item["label"])
         title.setObjectName("settings_feature_title")
+        tip = (item.get("hint") or "").split(". uv sync")[0].strip()
+        if tip:
+            title.setToolTip(tip)
         lay.addWidget(title, 0, Qt.AlignmentFlag.AlignVCenter)
 
         cat = QLabel(str(item.get("category", "")).upper())
         cat.setObjectName("settings_cat_pill")
         lay.addWidget(cat, 0, Qt.AlignmentFlag.AlignVCenter)
+        lay.addStretch(1)
 
-        raw_hint = item.get("hint") or ""
-        short_hint = raw_hint.split(". uv sync")[0].strip()
-        meta = QLabel(short_hint)
-        meta.setObjectName("settings_feature_meta")
-        meta.setToolTip(raw_hint)
-        lay.addWidget(meta, 1, Qt.AlignmentFlag.AlignVCenter)
+        pct = QLabel("")
+        pct.setObjectName("settings_feature_pct")
+        pct.setFixedWidth(40)
+        pct.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        pct.hide()
+        lay.addWidget(pct, 0, Qt.AlignmentFlag.AlignVCenter)
 
         status = str(item.get("status") or "Not installed")
         pill = QLabel(status)
@@ -448,27 +454,96 @@ class SettingsDialog(QDialog):
         pill.style().polish(pill)
         lay.addWidget(pill, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        cmd = f"uv sync --extra {item['extra']}" if item.get("extra") else ""
-        if cmd and status != "Ready":
-            copy = QPushButton("Install")
-            copy.setObjectName("settings_copy_btn")
-            copy.setCursor(Qt.CursorShape.PointingHandCursor)
-            copy.setToolTip(cmd)
-            copy.clicked.connect(lambda _=False, c=cmd: self._copy_install(c))
-            lay.addWidget(copy, 0, Qt.AlignmentFlag.AlignVCenter)
+        action: QWidget | None = None
+        extra = str(item.get("extra") or "")
+        if extra and status != "Ready" and status != "Unsupported":
+            btn = QPushButton("Install")
+            btn.setObjectName("settings_copy_btn")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setToolTip(f"uv sync --extra {extra}")
+            btn.clicked.connect(
+                lambda _=False, i=fid, e=extra, n=item["label"]: self._install_feature(i, e, n)
+            )
+            lay.addWidget(btn, 0, Qt.AlignmentFlag.AlignVCenter)
+            action = btn
         elif status == "Ready":
             ok = QLabel("Active")
             ok.setObjectName("settings_feature_active")
             lay.addWidget(ok, 0, Qt.AlignmentFlag.AlignVCenter)
+            action = ok
 
         row.style().unpolish(row)
         row.style().polish(row)
         self._feature_cards.append(row)
+        self._feature_controls[fid] = {
+            "pct": pct,
+            "pill": pill,
+            "action": action,
+            "label": item["label"],
+            "extra": extra,
+        }
         return row
 
-    def _copy_install(self, cmd: str):
-        QApplication.clipboard().setText(cmd)
-        self.lbl_feature_summary.setText(f"Copied · {cmd}")
+    def _install_feature(self, feature_id: str, extra: str, label: str):
+        if self._feature_installing:
+            return
+        self._feature_installing = feature_id
+        self._set_feature_row_progress(feature_id, 0, busy=True)
+
+        def _task(progress_callback=None):
+            return install_uv_extra(extra, progress_callback=progress_callback)
+
+        worker = Worker(_task)
+        worker.signals.progress.connect(
+            lambda v, _m, fid=feature_id: self._set_feature_row_progress(fid, v, busy=True)
+        )
+        worker.signals.result.connect(
+            lambda _r, fid=feature_id, n=label: self._on_feature_install_done(fid, n)
+        )
+        worker.signals.error.connect(
+            lambda err, _tb, fid=feature_id: self._on_feature_install_error(fid, err)
+        )
+        self.thread_pool.start(worker)
+
+    def _set_feature_row_progress(self, feature_id: str, percent: int | None, *, busy: bool):
+        ctrl = self._feature_controls.get(feature_id)
+        if not ctrl:
+            return
+        pct_lbl: QLabel = ctrl["pct"]
+        pill: QLabel = ctrl["pill"]
+        action = ctrl.get("action")
+        if busy:
+            val = 0 if percent is None else max(0, min(100, int(percent)))
+            pct_lbl.setText(f"{val}%")
+            pct_lbl.show()
+            pill.setText("Installing")
+            pill.setProperty("tone", "missing")
+            pill.style().unpolish(pill)
+            pill.style().polish(pill)
+            if isinstance(action, QPushButton):
+                action.setEnabled(False)
+                action.setText("…")
+            # Disable other Install buttons while one job runs
+            for fid, other in self._feature_controls.items():
+                if fid == feature_id:
+                    continue
+                btn = other.get("action")
+                if isinstance(btn, QPushButton):
+                    btn.setEnabled(False)
+        else:
+            pct_lbl.hide()
+            pct_lbl.setText("")
+
+    def _on_feature_install_done(self, feature_id: str, label: str):
+        self._feature_installing = None
+        self._populate_features_cards()
+        self._refresh_stem_status_label()
+        QMessageBox.information(self, "Installed", f"{label} is ready.")
+
+    def _on_feature_install_error(self, feature_id: str, err_msg: str):
+        self._feature_installing = None
+        self._populate_features_cards()
+        QMessageBox.critical(self, "Install failed", str(err_msg or "uv sync failed."))
 
     def _refresh_stem_status_label(self, *_args):
         mode = self.combo_stem_mode.currentData() or "auto"

@@ -107,11 +107,9 @@ class PipelineTools:
         dest = str(OUTPUTS_DIR / f"merged_episodes_{int(time.time())}.mp4")
         self._clear_error()
         self._set_busy(True)
+        if hasattr(self, "_set_script_loading"):
+            self._set_script_loading(True, "Merging…", "Joining episodes into one movie")
         self.log.info(f"Merging {len(ordered)} episodes → one movie before dub")
-        if hasattr(self, "empty_hint"):
-            self.empty_hint.setText("Merging episodes…")
-        if hasattr(self, "table_spinner") and not self.table_spinner.is_spinning():
-            self.table_spinner.start()
 
         worker = Worker(concat_videos, ordered, dest)
         worker.signals.progress.connect(self._on_progress)
@@ -121,8 +119,6 @@ class PipelineTools:
         self.thread_pool.start(worker)
 
     def _on_episode_merge_ready(self, path: str):
-        if hasattr(self, "table_spinner") and self.table_spinner.is_spinning():
-            self.table_spinner.stop()
         if not path or not os.path.isfile(path):
             self._set_busy(False)
             self._show_error("Merge failed", "Merged movie was not created.")
@@ -133,8 +129,6 @@ class PipelineTools:
         self._begin_dub_jobs([path])
 
     def _on_episode_merge_error(self, message: str, _tb: str = ""):
-        if hasattr(self, "table_spinner") and self.table_spinner.is_spinning():
-            self.table_spinner.stop()
         self._set_busy(False)
         self._show_error("Merge failed", message or "Could not merge episodes.")
         self.log.error(f"Episode merge failed · {message}")
@@ -355,8 +349,11 @@ class PipelineTools:
     def _on_progress(self, val: int, msg: str):
         self.log.debug(f"{val}% · {msg}")
         self._task_progress(val, msg)
-        if hasattr(self, "empty_hint") and self.table_spinner.is_spinning():
-            self.empty_hint.setText(msg)
+        text = str(msg or "")
+        if hasattr(self, "_set_script_loading_hint"):
+            self._set_script_loading_hint(text or f"{int(val)}%")
+        self._set_footer_progress(True, int(val), text)
+        self._set_window_status(f"{int(val)}% · {text}" if text else f"{int(val)}%")
 
     def _on_complete(self, res: dict):
         if not res:
@@ -685,39 +682,55 @@ class PipelineTools:
             self.log.debug(stack.splitlines()[-1])
 
     def _set_busy(self, busy: bool):
-        if busy:
-            self.table_spinner.start()
-            self.empty_title.setText("Dubbing…")
-            if getattr(self, "chk_auto_chain", None) and self.chk_auto_chain.isChecked():
-                self.empty_hint.setText("Character → translate → TTS → voice")
+        # Centered Script loader + locked actions (no header spinner)
+        if hasattr(self, "_set_script_loading"):
+            if busy:
+                hint = (
+                    "Character → translate → TTS → voice"
+                    if getattr(self, "chk_auto_chain", None) and self.chk_auto_chain.isChecked()
+                    else "Transcribe → lead voice → mix"
+                )
+                self._set_script_loading(True, "Dubbing…", hint)
             else:
-                self.empty_hint.setText("Transcribe → lead voice → mix")
-            self.script_stack.setCurrentIndex(0)
-            if hasattr(self, "workspace"):
-                self._focus_script_shelf()
-        else:
-            self.table_spinner.stop()
+                self._set_script_loading(False)
         if self.act_dub:
             self.act_dub.setEnabled(not busy)
             self.act_dub.setText("Working…" if busy else "Start &Dubbing")
         self._dub_busy = busy
-        if hasattr(self, "media_lib") and getattr(self.media_lib, "footer", None):
-            btn = getattr(self.media_lib.footer, "btn_localize", None)
-            if btn is not None:
-                if busy:
-                    btn.setEnabled(False)
-                    btn.setText("Localizing…")
-                else:
-                    self.media_lib._update_detail_footer()
-        self.combo_source_lang.setEnabled(not busy)
-        self.combo_lang.setEnabled(not busy)
-        self.combo_voice.setEnabled(not busy)
-        self.combo_voice_sec.setEnabled(not busy)
-        self.combo_model.setEnabled(not busy)
-        self.slider_duck.setEnabled(not busy)
-        self.combo_translator.setEnabled(not busy)
-        self.edit_ollama.setEnabled(not busy and (self.combo_translator.currentData() or "auto") in {"auto", "ollama"})
-        self._update_script_meta()
+        if busy:
+            self._set_footer_progress(True, 0, "Starting…")
+            self._set_window_status("Localizing…")
+        else:
+            self._set_footer_progress(False)
+            self._set_window_status("Ready")
+            if hasattr(self, "media_lib"):
+                self.media_lib._update_detail_footer()
+        for name in (
+            "combo_source_lang", "combo_lang", "combo_voice", "combo_voice_sec",
+            "combo_model", "slider_duck", "combo_translator",
+        ):
+            w = getattr(self, name, None)
+            if w is not None:
+                w.setEnabled(not busy)
+        if hasattr(self, "edit_ollama") and hasattr(self, "combo_translator"):
+            self.edit_ollama.setEnabled(
+                not busy
+                and (self.combo_translator.currentData() or "auto") in {"auto", "ollama"}
+            )
+        if not busy:
+            self._update_script_meta()
+
+    def _set_footer_progress(self, busy: bool, pct: int = 0, message: str = ""):
+        footer = getattr(getattr(self, "media_lib", None), "footer", None)
+        if footer is None or not hasattr(footer, "set_localize_progress"):
+            return
+        footer.set_localize_progress(busy, pct, message)
+
+    def _set_window_status(self, message: str):
+        win = self.window() if hasattr(self, "window") else None
+        bar = getattr(win, "status_bar", None) if win is not None else None
+        if bar is not None and hasattr(bar, "set_status_message"):
+            bar.set_status_message(str(message or "Ready"))
 
     def open_output(self):
         path = self._output_path

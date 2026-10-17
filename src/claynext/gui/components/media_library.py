@@ -378,6 +378,14 @@ class _MediaDetailFooter(QFrame):
         self.btn_localize.clicked.connect(self.localize_requested.emit)
         lay.addWidget(self.btn_localize)
 
+        self.lbl_progress = QLabel("")
+        self.lbl_progress.setObjectName("media_lib_footer_progress")
+        self.lbl_progress.setVisible(False)
+        self.lbl_progress.setMinimumWidth(72)
+        lay.addWidget(self.lbl_progress)
+
+        self._localize_busy = False
+
         self.btn_reveal = QToolButton()
         self.btn_reveal.setObjectName("media_lib_footer_btn")
         self.btn_reveal.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -440,6 +448,25 @@ class _MediaDetailFooter(QFrame):
         if ev.button() == Qt.MouseButton.LeftButton and self._active_path:
             self.preview_requested.emit(self._active_path)
 
+    def set_localize_progress(self, busy: bool, pct: int = 0, message: str = ""):
+        """Show job progress in the media footer (replaces script-panel loader)."""
+        self._localize_busy = bool(busy)
+        if not busy:
+            self.lbl_progress.clear()
+            self.lbl_progress.setVisible(False)
+            self.btn_localize.setEnabled(True)
+            return
+        self.show()
+        pct = max(0, min(100, int(pct)))
+        tip = str(message or "Localization in progress")
+        self.btn_localize.setEnabled(False)
+        self.btn_localize.setText("Working…" if pct <= 0 else f"{pct}%")
+        self.btn_localize.setToolTip(tip)
+        short = tip if len(tip) <= 42 else tip[:39] + "…"
+        self.lbl_progress.setText(short)
+        self.lbl_progress.setToolTip(tip)
+        self.lbl_progress.setVisible(True)
+
     def update_state(
         self,
         selected_paths: list[str],
@@ -454,13 +481,21 @@ class _MediaDetailFooter(QFrame):
         self._selected_paths = list(selected_paths)
         n_selected = len(selected_paths)
 
-        # Empty selection → hide command card (no overview filler).
-        if n_selected == 0:
+        # Empty selection → hide command card (keep visible while a job runs).
+        if n_selected == 0 and not self._localize_busy:
             self._active_path = ""
             self.hide()
             return
 
         self.show()
+        if n_selected == 0 and self._localize_busy:
+            self.lbl_title.setText("Localizing…")
+            self.chip_dur.hide()
+            self.chip_size.hide()
+            self.chip_res.hide()
+            self.btn_reveal.hide()
+            self.btn_remove.hide()
+            return
 
         if n_selected == 1:
             path = selected_paths[0]
@@ -500,11 +535,13 @@ class _MediaDetailFooter(QFrame):
                 self.chip_res.hide()
 
             is_video = os.path.splitext(path)[1].lower() in VIDEO_EXTS
-            self.btn_localize.setText("Localize")
-            self.btn_localize.setEnabled(is_video)
-            self.btn_localize.setToolTip(
-                "Start localization for this movie" if is_video else "Select a video to localize"
-            )
+            if not self._localize_busy:
+                self.btn_localize.setText("Localize")
+                self.btn_localize.setEnabled(is_video)
+                self.btn_localize.setToolTip(
+                    "Start localization for this movie" if is_video else "Select a video to localize"
+                )
+                self.lbl_progress.setVisible(False)
 
             self.btn_reveal.show()
             self.btn_remove.show()
@@ -538,15 +575,17 @@ class _MediaDetailFooter(QFrame):
             )
             self.chip_res.hide()
 
-            self.btn_localize.setText(
-                f"Localize · {video_count}" if video_count > 1 else "Localize"
-            )
-            self.btn_localize.setEnabled(video_count > 0)
-            self.btn_localize.setToolTip(
-                f"Start localization for {video_count} movie(s)"
-                if video_count
-                else "Select a video to localize"
-            )
+            if not self._localize_busy:
+                self.btn_localize.setText(
+                    f"Localize · {video_count}" if video_count > 1 else "Localize"
+                )
+                self.btn_localize.setEnabled(video_count > 0)
+                self.btn_localize.setToolTip(
+                    f"Start localization for {video_count} movie(s)"
+                    if video_count
+                    else "Select a video to localize"
+                )
+                self.lbl_progress.setVisible(False)
 
             self.btn_reveal.show()
             self.btn_remove.show()

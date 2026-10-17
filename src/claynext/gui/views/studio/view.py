@@ -173,7 +173,7 @@ class StudioView(
         self._bind_space_play()
 
     def _on_studio_action(self, action: str):
-        """Route timeline toolbar dubbing icons (kept from streamlined UI)."""
+        """Route timeline Studio tools menu actions."""
         key = str(action or "").strip().lower()
         handlers = {
             "vocal": self._on_vocal_isolation,

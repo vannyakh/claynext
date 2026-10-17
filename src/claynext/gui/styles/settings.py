@@ -212,6 +212,12 @@ QLabel#settings_feature_meta {{
     color: {COLOR_TEXT_MUTED};
     font-size: 10.5px;
 }}
+QLabel#settings_feature_pct {{
+    color: {primary};
+    font-size: 11px;
+    font-weight: 700;
+    background: transparent;
+}}
 QLabel#settings_feature_active {{
     color: {COLOR_ACCENT_EMERALD};
     font-size: 10.5px;
@@ -328,6 +334,40 @@ QTableWidget#settings_models_table QScrollBar::sub-line:vertical,
 QTableWidget#settings_api_keys_table QScrollBar::add-line:vertical,
 QTableWidget#settings_api_keys_table QScrollBar::sub-line:vertical {{
     height: 0px;
+}}
+
+/* ─── Project settings (card layout) ─────────────────────────────── */
+QDialog#project_settings_dialog {{
+    background: {COLOR_BG_DARK};
+}}
+QFrame#project_settings_card {{
+    background: {COLOR_BG_CARD};
+    border: 1px solid {COLOR_BORDER}66;
+    border-radius: 10px;
+}}
+QPushButton#project_settings_browse {{
+    background: {COLOR_BG_INPUT};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 6px;
+    color: {COLOR_TEXT_SUB};
+    font-size: 14px;
+    font-weight: 700;
+    padding: 0;
+}}
+QPushButton#project_settings_browse:hover {{
+    border-color: {primary};
+    color: {COLOR_TEXT_MAIN};
+    background: {COLOR_BG_CARD_HOVER};
+}}
+QLineEdit#project_settings_readonly {{
+    background: {COLOR_BG_INPUT};
+    color: {COLOR_TEXT_MUTED};
+}}
+QLabel#project_settings_warn {{
+    color: #f59e0b;
+    font-size: 10.5px;
+    font-weight: 500;
+    padding: 0 0 0 22px;
 }}
 """
 
