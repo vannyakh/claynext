@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import Qt, Signal, QSize, QThreadPool, QPoint
+from PySide6.QtCore import Qt, Signal, QSize, QThreadPool, QPoint, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider, QComboBox,
@@ -1638,8 +1638,9 @@ class TimelinePanel(QWidget):
         self._refresh_meta()
         self.ruler.update()
         if path:
-            self._load_strip(path)
+            # Wave first (cheap); defer filmstrip so preview playback can grab the pool.
             self._load_wave(path)
+            QTimer.singleShot(400, lambda p=path: self._load_strip(p))
         self.clips_changed.emit()
 
     def set_voice_audio(self, path: str):
@@ -1860,10 +1861,23 @@ class TimelinePanel(QWidget):
             self._on_files_dropped(paths, "")
 
     def _load_strip(self, path: str):
-        worker = Worker(extract_filmstrip, path, count=48, height=64)
+        if not path or path != self.canvas.media_path:
+            return
+        # Adaptive tile count — long movies stay light so preview can play
+        dur_ms = int(self.canvas.duration_ms or 0)
+        if dur_ms >= 3_600_000:
+            count = 12
+        elif dur_ms >= 1_200_000:
+            count = 16
+        elif dur_ms >= 300_000:
+            count = 24
+        else:
+            count = 32
+        worker = Worker(extract_filmstrip, path, count=count, height=48)
         worker.signals.result.connect(self._on_strip)
         self._strip_worker = worker
-        self._pool.start(worker)
+        # Low priority so preview play / wave workers run first
+        self._pool.start(worker, -1)
 
     def _on_strip(self, frames):
         if isinstance(frames, list):

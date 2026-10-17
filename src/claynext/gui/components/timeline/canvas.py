@@ -2136,10 +2136,11 @@ class TimelineCanvas(QWidget):
         cid = clip.id if clip else ""
         tid = track.id if track else (clip.track_id if clip else "")
         x = int(pos.x())
+        # Throttle tip/repaint — every mouse pixel was starving preview paint
         if (
             self._hover_tip_active
-            and self._hover_guide_x == x
-            and getattr(self, "_hover_tip_ms", -1) == ms
+            and abs(self._hover_guide_x - x) < 4
+            and abs(getattr(self, "_hover_tip_ms", -1) - ms) < 250
             and getattr(self, "_hover_tip_cid", "") == cid
         ):
             return

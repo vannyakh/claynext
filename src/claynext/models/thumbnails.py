@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import os
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 from pathlib import Path
 
@@ -112,62 +113,108 @@ def pixmap_for(media_path: str, size: QSize | None = None) -> QPixmap:
     return pix
 
 
+def _strip_count_for_duration(dur_sec: float, requested: int) -> int:
+    """Fewer tiles on long movies so filmstrip stays cheap."""
+    n = max(4, min(48, int(requested or 24)))
+    if dur_sec >= 3600:
+        return min(n, 12)
+    if dur_sec >= 1200:
+        return min(n, 16)
+    if dur_sec >= 300:
+        return min(n, 24)
+    return n
+
+
+def _extract_one_frame(
+    ffmpeg: str,
+    abs_path: str,
+    out_path: Path,
+    ss: float,
+    height: int,
+) -> str | None:
+    """Seek-before-decode single frame (fast on long files)."""
+    if out_path.is_file() and out_path.stat().st_size > 0:
+        return str(out_path)
+    cmd = [
+        ffmpeg,
+        "-hide_banner",
+        "-loglevel", "error",
+        "-ss", f"{max(0.0, ss):.3f}",
+        "-i", abs_path,
+        "-frames:v", "1",
+        "-vf", f"scale=-2:{int(height)}:force_original_aspect_ratio=decrease",
+        "-q:v", "6",
+        "-y",
+        str(out_path),
+    ]
+    try:
+        subprocess.run(cmd, check=True, timeout=20, capture_output=True)
+    except Exception:
+        return None
+    if out_path.is_file() and out_path.stat().st_size > 0:
+        return str(out_path)
+    return None
+
+
 def extract_filmstrip(
     media_path: str,
     count: int = 24,
     height: int = 40,
     progress_callback=None,
 ) -> list[str]:
-    """Extract evenly spaced JPEG frames for a timeline filmstrip."""
+    """
+    Extract evenly spaced JPEG frames for a timeline filmstrip.
+    Uses per-frame seeks (not full-file fps decode) so long movies stay responsive.
+    """
     if not media_path or not os.path.isfile(media_path):
         return []
     ext = os.path.splitext(media_path)[1].lower()
     if ext not in VIDEO_EXTS:
         return []
-    n = max(4, min(48, int(count or 24)))
     abs_path = os.path.abspath(media_path)
     mtime = os.path.getmtime(abs_path)
-    key = hashlib.sha1(f"{abs_path}|strip|{n}|{height}|{mtime}".encode()).hexdigest()[:16]
+    dur = float(probe_duration(abs_path) or 10.0)
+    n = _strip_count_for_duration(dur, count)
+    key = hashlib.sha1(f"{abs_path}|strip-seek|{n}|{height}|{mtime}".encode()).hexdigest()[:16]
     out_dir = THUMB_DIR / "strips" / key
     out_dir.mkdir(parents=True, exist_ok=True)
     frames = sorted(str(p) for p in out_dir.glob("f_*.jpg") if p.stat().st_size > 0)
     if len(frames) >= max(3, n // 2):
-        return frames
+        return frames[:n]
     if progress_callback:
-        progress_callback(10, "Extracting timeline footage…")
-    dur = probe_duration(abs_path) or 10.0
-    interval = max(0.25, dur / n)
-    pattern = str(out_dir / "f_%03d.jpg")
-    cmd = [
-        _ffmpeg_exe(),
-        "-hide_banner",
-        "-loglevel", "error",
-        "-i", abs_path,
-        "-vf", f"fps=1/{interval:.3f},scale=-2:{int(height)}:force_original_aspect_ratio=decrease",
-        "-frames:v", str(n),
-        "-q:v", "5",
-        "-y",
-        pattern,
-    ]
-    try:
-        subprocess.run(cmd, check=True, timeout=90, capture_output=True)
-    except Exception:
-        cmd = [
-            _ffmpeg_exe(),
-            "-hide_banner",
-            "-loglevel", "error",
-            "-i", abs_path,
-            "-vf", f"fps=0.5,scale=-2:{int(height)}",
-            "-frames:v", str(n),
-            "-q:v", "5",
-            "-y",
-            pattern,
-        ]
-        try:
-            subprocess.run(cmd, check=True, timeout=90, capture_output=True)
-        except Exception:
-            return frames
-    frames = sorted(str(p) for p in out_dir.glob("f_*.jpg") if p.stat().st_size > 0)
+        progress_callback(8, "Extracting timeline tiles…")
+
+    ffmpeg = _ffmpeg_exe()
+    # Sample across the timeline; skip exact EOF
+    stamps = [dur * (i + 0.5) / n for i in range(n)]
+    jobs: list[tuple[int, Path, float]] = []
+    for i, ss in enumerate(stamps):
+        out = out_dir / f"f_{i:03d}.jpg"
+        jobs.append((i, out, ss))
+
+    got: dict[int, str] = {}
+    # Parallel seeks — keep pool small so preview playback stays snappy
+    workers = 3 if dur < 600 else 2
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = {
+            pool.submit(_extract_one_frame, ffmpeg, abs_path, out, ss, height): i
+            for i, out, ss in jobs
+        }
+        done = 0
+        for fut in as_completed(futs):
+            i = futs[fut]
+            done += 1
+            try:
+                path = fut.result()
+            except Exception:
+                path = None
+            if path:
+                got[i] = path
+            if progress_callback and done % 2 == 0:
+                pct = 10 + int(80 * done / max(1, n))
+                progress_callback(pct, f"Filmstrip {done}/{n}")
+
+    frames = [got[i] for i in range(n) if i in got]
     if progress_callback:
         progress_callback(100, f"{len(frames)} footage frames")
     return frames
@@ -196,4 +243,3 @@ def icon_for(media_path: str, size: int = 64) -> QIcon:
     painter.fillRect(0, size - 14, size, 14, QBrush(QColor(0, 0, 0, 90)))
     painter.end()
     return QIcon(canvas)
-

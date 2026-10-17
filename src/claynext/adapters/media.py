@@ -15,7 +15,9 @@ from claynext.utils.paths import PLAYBACK_DIR, PROXY_DIR, THUMB_DIR
 
 logger = logging.getLogger("claynext.adapters.media")
 
-_SAFE_EXTS = {".mp3", ".wav", ".flac", ".ogg"}
+_SAFE_AUDIO_EXTS = {".mp3", ".wav", ".flac", ".ogg"}
+# Most Qt Multimedia builds play these without a full re-encode — prefer instant preview.
+_DIRECT_VIDEO_EXTS = {".mp4", ".m4v", ".mov", ".webm", ".mkv"}
 
 
 def _cache_path(media_path: str, suffix: str = "aaclc-v3") -> Path:
@@ -29,21 +31,27 @@ def _cache_path(media_path: str, suffix: str = "aaclc-v3") -> Path:
 
 
 def ready_playback_path(media_path: str) -> str | None:
-    """Return a Qt-safe path if one is already available."""
+    """Return a path Qt can play immediately (cache, audio, or common video containers)."""
     if not media_path or not os.path.isfile(media_path):
         return None
     abs_path = os.path.abspath(media_path)
     ext = os.path.splitext(abs_path)[1].lower()
-    if ext in _SAFE_EXTS:
+    if ext in _SAFE_AUDIO_EXTS:
         return abs_path
     cached = _cache_path(abs_path)
     if cached.is_file() and cached.stat().st_size > 0:
         return str(cached)
+    # Prefer original for typical containers so preview is not blocked by a full transcode.
+    if ext in _DIRECT_VIDEO_EXTS:
+        return abs_path
     return None
 
 
 def ensure_playback_file(media_path: str, progress_callback=None) -> str:
-    """Ensure media file is in a safe format for fluid playback via Rust transcode."""
+    """
+    Return a playable path quickly.
+    Uses original MP4/MOV/etc. when possible; only transcodes exotic formats or on demand.
+    """
     ready = ready_playback_path(media_path)
     if ready:
         return ready
@@ -52,16 +60,23 @@ def ensure_playback_file(media_path: str, progress_callback=None) -> str:
     cached = _cache_path(abs_path)
     PLAYBACK_DIR.mkdir(parents=True, exist_ok=True)
 
+    if progress_callback:
+        progress_callback(5, "Converting for preview…")
+
     success = RustFfmpegAdapter.transcode_video(
         input_path=abs_path,
         output_path=cached,
         video_codec="libx264",
         crf=23,
-        preset="veryfast",
+        preset="ultrafast",
         progress_callback=progress_callback,
     )
     if success and cached.is_file() and cached.stat().st_size > 0:
         return str(cached)
+    # Last resort: try original so Studio can still open the file
+    if os.path.isfile(abs_path):
+        logger.warning("Playback convert failed; trying original file %s", abs_path)
+        return abs_path
     raise RuntimeError("Playback convert failed — could not create Qt-safe H.264/AAC file")
 
 

@@ -17,7 +17,7 @@ from claynext.constants.theme_constants import (
 from claynext.models.adjust import clean_adjust, grade_rgb
 from claynext.models.fx import TIMED_EFFECTS, apply_fx
 from claynext.gui.icons import icon
-from claynext.models.thumbnails import pixmap_for, VIDEO_EXTS
+from claynext.models.thumbnails import ensure_thumbnail, pixmap_for, VIDEO_EXTS
 from claynext.adapters.media import ensure_playback_file, ready_playback_path
 from claynext.models.canvas import (
     DEFAULT_CANVAS, PREVIEW_BLUR_DIV, clean_canvas, covers_canvas, ratio_value, video_box,
@@ -1394,11 +1394,11 @@ class MediaPreviewWidget(QWidget):
         self._update_stage_bounds()
 
         if self._is_video:
-            w, h = self._probe_video_size(path)
-            if w > 0 and h > 0:
-                self._video_natural_ratio = float(w) / float(h)
-                self._update_stage_bounds()
-            self._show_poster(path)
+            # Placeholder first — poster/probe run async so Play is not blocked
+            self.poster.clear()
+            self.poster.setText(self._title)
+            self.stage.setCurrentWidget(self.poster)
+            self._queue_poster(path, gen)
         else:
             self.placeholder.setText(self._title)
             self.stage.setCurrentWidget(self.placeholder)
@@ -1406,12 +1406,14 @@ class MediaPreviewWidget(QWidget):
         self.media_changed.emit(path)
 
         abs_path = os.path.abspath(path)
+        # Instant path: cached convert OR original MP4/MOV (no blocking re-encode)
         cached = ready_playback_path(abs_path)
         if cached:
             self.loading_changed.emit(False)
             self._apply_play_source(gen, cached)
             return True
 
+        # Exotic formats only — convert in background; allow pending play when ready
         self.loading_changed.emit(True)
         worker = Worker(ensure_playback_file, abs_path)
         worker.signals.result.connect(lambda play_path, g=gen: self._apply_play_source(g, play_path))
@@ -1419,6 +1421,50 @@ class MediaPreviewWidget(QWidget):
         self._compat_worker = worker
         QThreadPool.globalInstance().start(worker)
         return True
+
+    def _queue_poster(self, path: str, gen: int):
+        """Probe size + cache poster thumb off the UI thread (QPixmap stays on UI)."""
+
+        def _job(media_path: str, progress_callback=None):
+            w, h = MediaPreviewWidget._probe_video_size(media_path)
+            thumb = ensure_thumbnail(media_path, width=480)
+            return w, h, thumb or ""
+
+        worker = Worker(_job, path)
+        worker.signals.result.connect(lambda res, g=gen: self._on_poster_ready(g, res))
+        QThreadPool.globalInstance().start(worker)
+
+    def _on_poster_ready(self, gen: int, res):
+        if gen != self._load_gen or not self._is_video:
+            return
+        try:
+            w, h, thumb = res
+        except Exception:
+            return
+        if w > 0 and h > 0:
+            self._video_natural_ratio = float(w) / float(h)
+            self._update_stage_bounds()
+        # Don't clobber live video while playing
+        if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            return
+        pix = pixmap_for(self._path, QSize(480, 270)) if self._path else QPixmap()
+        if pix.isNull() and thumb and os.path.isfile(thumb):
+            pix = QPixmap(thumb)
+        if pix.isNull():
+            return
+        if pix.width() > 0 and pix.height() > 0:
+            new_ratio = float(pix.width()) / float(pix.height())
+            if (
+                self._video_natural_ratio is None
+                or abs(self._video_natural_ratio - new_ratio) > 0.001
+            ):
+                self._video_natural_ratio = new_ratio
+                self._update_stage_bounds()
+        self._paint_poster(pix)
+        if self.stage.currentWidget() is not self.video:
+            self.stage.setCurrentWidget(self.poster)
+        if self._canvas["bg"] == "blur":
+            self._set_blur_source(pix.toImage())
 
     def _on_compat_fail(self, gen: int, err):
         if gen != self._load_gen:
