@@ -267,15 +267,22 @@ class DubbingEngine:
                 except Exception:
                     pass
 
-        ping(3, "Demuxing movie audio (48 kHz stereo)…")
+        ping(2, "Demuxing movie audio (48 kHz stereo)…")
         full_wav = str(job / "source_48k.wav")
         demux_wav(video_path, full_wav, rate=48000, channels=2)
+        ping(7, "Probing media duration…")
         duration = probe_duration(video_path) or probe_duration(full_wav)
         if duration <= 0:
             raise RuntimeError("Could not read media duration.")
 
-        bgm_separated, vocals_path = _try_demucs(full_wav, job, ping)
+        ping(9, "Separating music / vocals (when available)…")
+        bgm_separated, vocals_path = _try_demucs(
+            full_wav,
+            job,
+            lambda p, m: ping(9 + int(max(0, min(100, int(p))) * 0.06), m),
+        )
         asr_source = vocals_path or full_wav
+        ping(15, "Vocal stem ready…" if vocals_path else "Using full mix for ASR…")
 
         # Step 1: Speech Recognition
         token = resolve_hf_token(hf_token)
@@ -293,6 +300,7 @@ class DubbingEngine:
                 batch_chunk_size=15,
                 progress_callback=lambda p, m: ping(16 + int(p * 0.22), m),
             )
+            ping(37, "Saving dubbing plan…")
             save_plan(plan, str(job / "dubbing_plan.json"))
             segments = plan_to_segments(plan)
             if not segments:
@@ -307,9 +315,10 @@ class DubbingEngine:
                 progress_callback=lambda p, m: ping(16 + int(p * 0.22), m),
             )
 
+        ping(38, f"Transcript ready · {len(segments)} line(s)")
         share("transcript", [dict(seg) for seg in segments])
         if auto_chain:
-            ping(38, "Analyzing character dialogue turns and duration quotas…")
+            ping(39, "Analyzing character dialogue turns and duration quotas…")
             segments = analyze_movie_characters(
                 segments,
                 primary_voice=voice_id,
@@ -317,7 +326,7 @@ class DubbingEngine:
                 target_lang=target_lang,
                 audio_path=asr_source,
                 work_dir=job,
-                progress_callback=ping,
+                progress_callback=lambda p, m: ping(max(39, min(41, int(p))), m),
             )
             ping(42, f"Batch translating {len(segments)} line(s) from {source_lang} → {target_lang}…")
             translated = TranslateEngine.translate_subtitles(
@@ -327,11 +336,12 @@ class DubbingEngine:
                 gemini_key=gemini_key,
                 translator=translator,
                 ollama_model=ollama_model,
-                progress_callback=lambda p, m: ping(42 + int(p * 0.16), m),
+                progress_callback=lambda p, m: ping(42 + int(p * 0.14), m),
             )
             from claynext.models.gender_voices import assign_gender_and_voices
 
             # Refine gender from source + dub text, then lock TTS voices per character.
+            ping(56, "Locking TTS voices per character…")
             assign_gender_and_voices(
                 translated,
                 primary_voice=voice_id,
@@ -339,9 +349,12 @@ class DubbingEngine:
                 lang=target_lang,
                 force_redetect=False,
             )
+            ping(57, f"Cast ready · {len(translated)} line(s)")
         else:
             ping(38, "Speaking the original lines with the lead voice…")
-            for seg in segments:
+            for i, seg in enumerate(segments):
+                if i % 8 == 0:
+                    ping(38 + int((i / max(1, len(segments))) * 18), f"Preparing line {i + 1}/{len(segments)}…")
                 seg["speaker"] = seg.get("speaker") or "Character 1"
                 seg["tts_voice_hint"] = voice_id
                 if not str(seg.get("translated_text") or "").strip():
@@ -352,14 +365,19 @@ class DubbingEngine:
         # Step 4: TTS Speech Synthesis & Character Duration Fitting
         ping(58, "Synthesizing dialogue & fitting character durations…")
         placed: list[tuple[str, int]] = []
-        total = len(translated)
+        total = max(1, len(translated))
         for idx, item in enumerate(translated):
             voice = item.get("tts_voice_hint") or voice_id
             raw_mp3 = str(job / f"seg_{idx + 1:04d}.mp3")
             text_to_speak = item.get("translated_text") or item.get("text") or ""
             if not text_to_speak.strip():
                 continue
+            speaker_label = item.get("speaker") or f"Line {idx + 1}"
+            # Checkpoint before long TTS / FFmpeg so Stop/Pause can land between lines
+            base = 58 + int((idx / total) * 24)
+            ping(base, f"TTS {idx + 1}/{total} ({speaker_label})…")
             TTSEngine.synthesize(text_to_speak, voice, raw_mp3)
+            ping(base + 1, f"Fitting {idx + 1}/{total} ({speaker_label})…")
 
             start = float(item.get("start_sec") or timestamp_to_sec(item.get("start", "")))
             end = float(item.get("end_sec") or timestamp_to_sec(item.get("end", "")))
@@ -373,6 +391,7 @@ class DubbingEngine:
                 min_t, max_t = 0.65, 1.85
             fit_duration(raw_mp3, fitted, slot, min_tempo=min_t, max_tempo=max_t, pad_or_trim=True)
             if not render and vocal_master:
+                ping(base + 2, f"Mastering {idx + 1}/{total}…")
                 fitted = master_voiceover_track(
                     fitted, str(job / f"seg_{idx + 1:04d}_master.wav"), volume_boost=voiceover_boost,
                 )
@@ -382,9 +401,8 @@ class DubbingEngine:
             item["voice_id"] = voice
             item["duration"] = f"{slot:.1f}s"
             item["duration_sec"] = round(slot, 2)
-            speaker_label = item.get("speaker") or f"Line {idx + 1}"
             share("clip", {"index": idx, "segment": dict(item)})
-            ping(58 + int(((idx + 1) / total) * 24), f"Dubbing {idx + 1}/{total} ({speaker_label})")
+            ping(58 + int(((idx + 1) / total) * 24), f"Dubbed {idx + 1}/{total} ({speaker_label})")
 
         if not render:
             ping(96, "Building the speech-free music and effects bed…")
@@ -393,6 +411,7 @@ class DubbingEngine:
             else:
                 # Demucs already attempted above; fall back to the FFmpeg mid-side bed.
                 bed = ensure_speech_bed(video_path, use_demucs=False)
+            ping(99, "Assembling timeline clips…")
             ping(100, f"Voice track ready ({len(placed)} clips)")
             return {
                 "output_path": "",
@@ -410,11 +429,13 @@ class DubbingEngine:
         ping(83, "Compositing dialogue timeline track…")
         raw_dialogue = str(job / "dialogue_raw.wav")
         overlay_clips(placed, duration, raw_dialogue, work_dir=str(job))
+        ping(85, "Dialogue track laid out…")
 
         if vocal_master:
             ping(86, "Mastering voiceover track (presence EQ, dynamic limiter & clarity)…")
             mastered_dialogue = str(job / "dialogue_mastered.wav")
             dialogue = master_voiceover_track(raw_dialogue, mastered_dialogue, volume_boost=voiceover_boost)
+            ping(88, "Voiceover master ready…")
         else:
             dialogue = raw_dialogue
 
@@ -424,6 +445,7 @@ class DubbingEngine:
         ping(89, "Applying dynamic ducking (preserving movie sound effects, character expressions & music)…")
         if bgm_separated and os.path.isfile(bgm_separated):
             bgm_bed = bgm_separated
+            ping(91, "Using Demucs music/effects bed…")
         else:
             dialogue_intervals: list[tuple[float, float]] = []
             for item in translated:
@@ -449,11 +471,13 @@ class DubbingEngine:
                 fade_ms=clamped_fade_ms,
                 center_attenuation=max(0.0, min(1.0, float(center_attenuation))),
             )
+            ping(91, "Dynamic duck bed ready…")
 
         # Step 7: Final Audio Mix
         ping(92, "Mixing cinema audio bed + dubbed dialogue…")
         mix_path = str(job / "final_mix.wav")
         mix_wavs([bgm_bed, dialogue], mix_path, weights=[1.0, float(voiceover_boost)])
+        ping(93, "Final mix ready…")
 
         # Step 7: Video Mux
         ping(94, "Muxing dubbed audio into final video…")

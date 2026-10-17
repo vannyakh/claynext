@@ -291,6 +291,10 @@ class PipelineTools:
     def _launch_dub_job(self):
         from claynext.gui.views.studio.tasks import LiveBridge
 
+        # Don't let a script TTS/translate retry race the main dub worker
+        if hasattr(self, "_cancel_script_job"):
+            self._cancel_script_job()
+
         task = self._start_next_task(self.selected_file)
         control = JobControl()
         task["control"] = control

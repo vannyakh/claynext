@@ -937,6 +937,9 @@ class TaskTools:
             if self._active_task == task_id:
                 self._active_task = -1
             self._refresh_tasks()
+        # Also soft-stop any overlapping script segment worker
+        if hasattr(self, "_cancel_script_job"):
+            self._cancel_script_job()
         self.log.info(f"Stopping · {task['name']}")
 
     def _stop_active_job(self):

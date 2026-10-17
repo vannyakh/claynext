@@ -33,6 +33,7 @@ from claynext.gui.components.table_fit import fit_or_scroll
 from claynext.gui.views.studio.helpers import export_segments, import_segments
 from claynext.gui.views.studio.merge import MergeOrderDialog
 from claynext.utils.config import CACHE_DIR, OUTPUTS_DIR
+from claynext.utils.job_control import JobCancelled, JobControl
 
 _SCRIPT_VIEW_FILTERS = (
     ("all", "All lines"),
@@ -736,6 +737,7 @@ class ScriptTools:
         self.table.customContextMenuRequested.connect(self._script_menu)
         self.table.cellDoubleClicked.connect(self._play_row)
         self._script_worker = None
+        self._script_control: JobControl | None = None
         self._regen_rows: list[int] = []
         self.script_stack.addWidget(self.table)
         layout.addWidget(self.script_stack, 1)
@@ -743,6 +745,7 @@ class ScriptTools:
         QShortcut(QKeySequence("Return"), self.table).activated.connect(
             lambda: self._play_row(self.table.currentRow(), 0)
         )
+        QShortcut(QKeySequence("Escape"), panel).activated.connect(self._cancel_script_job)
         QShortcut(QKeySequence("Ctrl+F"), panel).activated.connect(self._focus_script_search)
         QShortcut(QKeySequence("Ctrl+C"), self.table).activated.connect(
             lambda: self._copy_script_lines("dub")
@@ -1563,6 +1566,30 @@ class ScriptTools:
             return
         self.log.warn("Retry all · no movie source for this script")
 
+    def _begin_script_job(self) -> JobControl:
+        """Start a cancellable script worker (TTS retry / regenerate / gender)."""
+        self._cancel_script_job()
+        control = JobControl()
+        self._script_control = control
+        return control
+
+    def _cancel_script_job(self):
+        """Soft-cancel the active script worker (Escape or new dub job)."""
+        control = getattr(self, "_script_control", None)
+        if control is None or control.cancelled:
+            return
+        control.cancel()
+        self.log.info("Stopping script job…")
+
+    def _end_script_job(self):
+        self._script_worker = None
+        self._script_control = None
+
+    @staticmethod
+    def _is_script_cancelled(message: object) -> bool:
+        text = str(message or "")
+        return text == "Dub stopped" or isinstance(message, JobCancelled)
+
     def _resynthesize_rows(self, rows: list[int]):
         """Re-speak selected lines with their TTS voices and refresh the timeline."""
         rows = [row for row in rows if 0 <= row < len(self._segments)]
@@ -1608,8 +1635,9 @@ class ScriptTools:
             self.log.warn("Retry TTS blocked — missing environment")
             return
 
+        control = self._begin_script_job()
         self.table_spinner.start()
-        self.log.info(f"Retry TTS · {len(work)} line(s)")
+        self.log.info(f"Retry TTS · {len(work)} line(s) · Esc to stop")
 
         def _job(items=work, mode=sync_mode, progress_callback=None):
             from claynext.adapters.ffmpeg_service import fit_duration
@@ -1625,6 +1653,7 @@ class ScriptTools:
             out = []
             total = len(items)
             for i, item in enumerate(items):
+                control.checkpoint()
                 if progress_callback:
                     progress_callback(int((i / max(1, total)) * 100), f"TTS {i + 1}/{total}")
                 digest = hashlib.sha1(
@@ -1633,10 +1662,12 @@ class ScriptTools:
                 raw = str(folder / f"row_{item['row']}_{digest}.mp3")
                 fitted = str(folder / f"row_{item['row']}_{digest}_fit.wav")
                 TTSEngine.synthesize(item["text"], item["voice"], raw)
+                control.checkpoint()
                 start = float(item.get("start_sec") or timestamp_to_sec(item.get("start", "")))
                 end = float(item.get("end_sec") or timestamp_to_sec(item.get("end", "")))
                 slot = max(0.15, end - start) if end > start else 2.0
                 fit_duration(raw, fitted, slot, min_tempo=min_t, max_tempo=max_t, pad_or_trim=True)
+                control.checkpoint()
                 out.append({
                     "row": item["row"],
                     "audio_path": fitted,
@@ -1684,11 +1715,14 @@ class ScriptTools:
             self.log.warn("Retry TTS · no audio written")
 
     def _on_resynth_error(self, message: str, _stack: str):
+        if self._is_script_cancelled(message):
+            self.log.info("Retry TTS stopped")
+            return
         self.log.error(f"Retry TTS failed · {message}")
         QMessageBox.warning(self, "Retry TTS", message)
 
     def _on_resynth_finished(self):
-        self._script_worker = None
+        self._end_script_job()
         self.table_spinner.stop()
 
     def _visible_rows(self) -> list[int]:
@@ -2033,17 +2067,28 @@ class ScriptTools:
             if source and os.path.isfile(source):
                 audio = source
 
+        if getattr(self, "_script_worker", None) is not None:
+            return
+        control = self._begin_script_job()
+
         def _job(progress_callback=None):
             from claynext.models.gender_audio import enrich_segments_with_audio_gender, gender_model_available
             from claynext.models.gender_voices import assign_gender_and_voices
 
+            def _ping(pct: int, msg: str):
+                control.checkpoint()
+                if progress_callback:
+                    progress_callback(pct, msg)
+
             segs = list(self._segments)
             used_audio = False
+            control.checkpoint()
             if audio and gender_model_available():
                 enrich_segments_with_audio_gender(
-                    segs, audio, progress_callback=progress_callback,
+                    segs, audio, progress_callback=_ping,
                 )
                 used_audio = True
+            control.checkpoint()
             lead, co_star = self._primary_voices()
             assign_gender_and_voices(
                 segs,
@@ -2054,21 +2099,18 @@ class ScriptTools:
             )
             return {"segments": segs, "audio": used_audio}
 
-        if getattr(self, "_script_worker", None) is not None:
-            return
         self.table_spinner.start()
         worker = Worker(_job)
         worker.signals.result.connect(
             lambda result, focus=(targets[0] if targets else 0): self._on_gender_detect_ready(result, focus)
         )
         worker.signals.error.connect(lambda err, _tb: self._on_gender_detect_error(err))
-        worker.signals.finished.connect(self.table_spinner.stop)
+        worker.signals.finished.connect(self._on_gender_detect_finished)
         self._script_worker = worker
         self.thread_pool.start(worker)
-        self.log.info("Detecting gender from dialogue audio…")
+        self.log.info("Detecting gender from dialogue audio… · Esc to stop")
 
     def _on_gender_detect_ready(self, result, focus: int):
-        self._script_worker = None
         if not isinstance(result, dict):
             return
         self._segments = list(result.get("segments") or self._segments)
@@ -2081,10 +2123,16 @@ class ScriptTools:
             )
 
     def _on_gender_detect_error(self, err):
-        self._script_worker = None
+        if self._is_script_cancelled(err):
+            self.log.info("Gender detect stopped")
+            return
         self.log.info(f"Gender detect fallback · {err}")
         self._reassign_character_voices(force_redetect=True)
         self._refresh_row(0)
+
+    def _on_gender_detect_finished(self):
+        self._end_script_job()
+        self.table_spinner.stop()
 
     def _export_selected_srt(self, rows: list[int]):
         lines = []
@@ -2140,21 +2188,36 @@ class ScriptTools:
                 "speaker": seg.get("speaker") or "",
             })
         self._regen_rows = rows
+        control = self._begin_script_job()
+        target_lang = self.combo_lang.currentText()
+        source_lang = self.combo_source_lang.currentText()
+        translator = self.combo_translator.currentData() or "auto"
+        ollama_model = self.edit_ollama.text().strip() or "qwen2.5:7b"
         self.table_spinner.start()
-        worker = Worker(
-            TranslateEngine.translate_subtitles,
-            lines,
-            self.combo_lang.currentText(),
-            source_lang=self.combo_source_lang.currentText(),
-            translator=self.combo_translator.currentData() or "auto",
-            ollama_model=self.edit_ollama.text().strip() or "qwen2.5:7b",
-        )
+
+        def _job(progress_callback=None):
+            def _ping(pct: int, msg: str):
+                control.checkpoint()
+                if progress_callback:
+                    progress_callback(pct, msg)
+
+            control.checkpoint()
+            return TranslateEngine.translate_subtitles(
+                lines,
+                target_lang,
+                source_lang=source_lang,
+                translator=translator,
+                ollama_model=ollama_model,
+                progress_callback=_ping,
+            )
+
+        worker = Worker(_job)
         worker.signals.result.connect(self._on_regen_ready)
         worker.signals.error.connect(self._on_regen_error)
         worker.signals.finished.connect(self._on_regen_finished)
         self._script_worker = worker
         self.thread_pool.start(worker)
-        self.log.info(f"Regenerating {len(rows)} line(s)")
+        self.log.info(f"Regenerating {len(rows)} line(s) · Esc to stop")
 
     def _on_regen_ready(self, result):
         rows = list(self._regen_rows)
@@ -2176,11 +2239,14 @@ class ScriptTools:
             self.log.info("Regenerate kept the current line")
 
     def _on_regen_error(self, message: str, _stack: str):
+        if self._is_script_cancelled(message):
+            self.log.info("Regenerate stopped")
+            return
         self.log.error(f"Regenerate failed · {message}")
         QMessageBox.warning(self, "Regenerate", message)
 
     def _on_regen_finished(self):
-        self._script_worker = None
+        self._end_script_job()
         self._regen_rows = []
         self.table_spinner.stop()
 

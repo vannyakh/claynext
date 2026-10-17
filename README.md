@@ -6,9 +6,9 @@ Desktop AI movie dubbing & timeline editor (Python 3.12+, PySide6, `uv`).
 
 ```bash
 uv sync
-uv run main.py                 # loader → Studio
-uv run main.py --no-splash     # skip loader (dev)
-uv run main.py --project file.claynext.json --no-splash
+uv run main.py                              # loader → Studio
+uv run main.py --project file.claynext.json
+uv run claynext --help                      # headless tools + gui
 ```
 
 ## Layout

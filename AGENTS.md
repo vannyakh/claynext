@@ -72,11 +72,12 @@ uv sync
 # Launch (loader → Studio)
 uv run main.py
 
-# Skip loader splash (Fast Dev Mode)
-uv run main.py --no-splash
-
 # Open a project file in Studio
-uv run main.py --project path/to/file.claynext.json --no-splash
+uv run main.py --project path/to/file.claynext.json
+
+# CLI tools
+uv run claynext --help
+uv run claynext gui --project path/to/file.claynext.json
 
 # Run headless smoke test (Qt offscreen)
 QT_QPA_PLATFORM=offscreen uv run python -c "from claynext.app import main; print('Ready')"
