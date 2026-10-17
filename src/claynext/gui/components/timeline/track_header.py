@@ -340,6 +340,8 @@ class TrackHeader(QWidget):
         self.context_menu_requested.emit(self.track.id, global_pos)
 
     def contextMenuEvent(self, event):
+        # Use contextMenuEvent only — also handling RMB in mousePress causes
+        # a double exec() on Windows and the menu appears to never show.
         self._open_menu(event.globalPos())
         event.accept()
 
@@ -352,10 +354,6 @@ class TrackHeader(QWidget):
         return y >= self.height() - 5
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.RightButton:
-            self._open_menu(event.globalPosition().toPoint())
-            event.accept()
-            return
         if event.button() == Qt.MouseButton.LeftButton and self._near_resize(event.position().y()):
             self._resize = True
             self._press_y = int(event.globalPosition().y())

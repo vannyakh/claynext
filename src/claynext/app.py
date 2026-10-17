@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
 
 from claynext.constants import NAV_ITEMS
+from claynext.utils.logging import configure_logging, install_exception_logging
 from claynext.utils.stderr_filter import install_ffmpeg_mf_stderr_filter
 
 
@@ -78,6 +79,8 @@ def main(argv: list[str] | None = None):
 
     # Qt Multimedia probes h264_mf / hevc_mf on startup; many PCs lack HEVC MF.
     install_ffmpeg_mf_stderr_filter()
+    configure_logging("claynext")
+    install_exception_logging()
 
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough

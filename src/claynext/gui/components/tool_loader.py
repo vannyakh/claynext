@@ -152,7 +152,8 @@ class ToolLoaderScreen(QWidget):
         self._timer.start()
 
     def _tick(self):
-        self._progress = min(100, self._progress + 3)
+        # Fast mini loader (~220ms) so Home → Studio feels snappy
+        self._progress = min(100, self._progress + 8)
         self.progress_bar.setValue(self._progress)
 
         if self._progress > 70 and self._phase_idx < 2:
@@ -166,9 +167,9 @@ class ToolLoaderScreen(QWidget):
             self._timer.stop()
             self.status_lbl.setText(self._phase_labels[3])
             if self.on_complete:
-                QTimer.singleShot(100, self.on_complete)
-            QTimer.singleShot(150, self.finished.emit)
-            QTimer.singleShot(250, self.close)
+                QTimer.singleShot(40, self.on_complete)
+            QTimer.singleShot(60, self.finished.emit)
+            QTimer.singleShot(100, self.close)
 
     def paintEvent(self, event):
         painter = QPainter(self)

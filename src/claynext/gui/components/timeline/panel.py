@@ -39,6 +39,7 @@ from claynext.gui.components.timeline.lane_rail import LaneRail
 from claynext.gui.components.timeline.models import TimelineClip
 from claynext.gui.components.timeline.recorder import VoiceRecorder
 from claynext.gui.components.timeline.ruler import TimelineRuler
+from claynext.gui.components.timeline.scrub_tip import TimelineScrubTip
 from claynext.gui.components.timeline.track_menu import TrackMenuHandlers, open_track_menu
 
 _VO_TRACK = "Voice-over"
@@ -70,6 +71,7 @@ class TimelinePanel(QWidget):
         self.speech_source = ""
         self._strip_worker = None
         self._wave_worker = None
+        self._scrub_tip: TimelineScrubTip | None = None
         self._init_ui()
 
     def _init_ui(self):
@@ -333,6 +335,8 @@ class TimelinePanel(QWidget):
         self.rail.scroll.verticalScrollBar().valueChanged.connect(self._sync_v_from_rail)
         self.canvas.context_menu_requested.connect(self._open_canvas_context_menu)
         self.rail.context_menu_requested.connect(self._open_header_context_menu)
+        self.canvas.hover_scrub_changed.connect(self._on_hover_scrub)
+        self._scrub_tip = TimelineScrubTip(self)
         seq_l.addWidget(self.scroll, 1)
 
         self.split.addWidget(self.rail)
@@ -825,6 +829,41 @@ class TimelinePanel(QWidget):
     def _refresh_meta(self):
         self._update_timecode_display()
 
+    def _on_hover_scrub(self, ms: int, clip_id: str, track_id: str, local_x: int):
+        """Show CapCut-style tip (name + time) above the scrub guide line."""
+        tip = self._scrub_tip
+        if tip is None:
+            return
+        if ms < 0 or local_x < 0:
+            tip.hide()
+            return
+        clip = next((c for c in self.canvas.clips if c.id == clip_id), None) if clip_id else None
+        track = self.canvas.track_by_id(track_id)
+        if clip is not None:
+            name = str(clip.label or (track.name if track else "Clip"))
+            icn = track.icon if track else "video"
+            accent = track.color if track else "#94a3b8"
+        elif track is not None:
+            name = track.name
+            icn = track.icon
+            accent = track.color
+        else:
+            name = self.canvas.media_name or "Timeline"
+            icn = "video"
+            accent = "#94a3b8"
+        tip.set_content(name=name, ms=ms, icon_name=icn, accent=accent)
+        # Anchor just above the hovered track (CapCut-style)
+        ty = self.canvas.track_top(track_id) if track_id else 0
+        global_pt = self.canvas.mapToGlobal(QPoint(local_x, max(0, ty)))
+        tip.show_at(global_pt)
+
+    def _show_context_scrub_tip(self, *, name: str, ms: int, icon_name: str, accent: str, global_pos: QPoint):
+        tip = self._scrub_tip
+        if tip is None:
+            return
+        tip.set_content(name=name, ms=ms, icon_name=icon_name, accent=accent)
+        tip.show_at(global_pos)
+
     def _open_header_context_menu(self, track_id: str, global_pos: QPoint):
         track = self.canvas.track_by_id(track_id)
         if track is None:
@@ -832,12 +871,21 @@ class TimelinePanel(QWidget):
         for t in self.canvas.tracks:
             t.selected = t.id == track_id
         self.rail.refresh_flags()
+        self._show_context_scrub_tip(
+            name=track.name,
+            ms=self.canvas.playhead_ms,
+            icon_name=track.icon,
+            accent=track.color,
+            global_pos=global_pos,
+        )
         open_track_menu(
             self,
             track,
             self._track_menu_handlers(track),
             global_pos,
         )
+        if self._scrub_tip:
+            self._scrub_tip.hide()
 
     def _open_canvas_context_menu(self, track_id: str, clip_id: str, global_pos: QPoint):
         track = self.canvas.track_by_id(track_id)
@@ -847,6 +895,18 @@ class TimelinePanel(QWidget):
         # Remember click time for "Split Here" (map from global → canvas local).
         local = self.canvas.mapFromGlobal(global_pos)
         click_ms = self.canvas.ms_at(local.x())
+        name = (clip.label if clip else None) or track.name
+        self._show_context_scrub_tip(
+            name=str(name),
+            ms=click_ms,
+            icon_name=track.icon,
+            accent=track.color,
+            global_pos=global_pos,
+        )
+        # Guide line at context click
+        self.canvas._hover_tip_active = True
+        self.canvas._hover_guide_x = local.x()
+        self.canvas.update()
         open_track_menu(
             self,
             track,
@@ -854,6 +914,9 @@ class TimelinePanel(QWidget):
             global_pos,
             clip=clip,
         )
+        self.canvas._clear_hover_scrub()
+        if self._scrub_tip:
+            self._scrub_tip.hide()
 
     def _track_menu_handlers(
         self,
@@ -1063,6 +1126,10 @@ class TimelinePanel(QWidget):
             extract_audio_save=(
                 (lambda: self.extract_audio_from_video(to_track=False))
                 if track.kind == "video" else None
+            ),
+            studio_action=(
+                (lambda action: self.studio_action.emit(str(action)))
+                if track.kind in {"video", "voice", "audio"} else None
             ),
         )
 

@@ -115,11 +115,19 @@ class CustomTitleBar(QWidget):
         else:
             super().mouseDoubleClickEvent(event)
 
+    def _is_interactive_child(self, child) -> bool:
+        """True when press is on menu bar / buttons (including nested menu items)."""
+        w = child
+        while w is not None and w is not self:
+            if isinstance(w, (QMenuBar, QToolButton, QPushButton)):
+                return True
+            w = w.parentWidget()
+        return False
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            # Don't start drag from interactive controls
-            child = self.childAt(event.pos())
-            if isinstance(child, (QMenuBar, QToolButton, QPushButton)):
+            # Don't start window-drag from File/Tools/Help or chrome buttons
+            if self._is_interactive_child(self.childAt(event.pos())):
                 super().mousePressEvent(event)
                 return
             win = self.window()

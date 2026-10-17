@@ -1,6 +1,6 @@
 """Path helpers, studio defaults, and CLI logging."""
 from claynext.utils.config import APP_NAME, APP_VERSION, DEFAULT_CONFIG
-from claynext.utils.logging import configure_logging
+from claynext.utils.logging import configure_logging, session_log_path
 from claynext.utils.paths import (
     CACHE_DIR,
     DATA_DIR,
@@ -21,4 +21,5 @@ __all__ = [
     "PLAYBACK_DIR",
     "configure_logging",
     "ensure_data_dirs",
+    "session_log_path",
 ]

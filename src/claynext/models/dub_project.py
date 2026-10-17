@@ -310,6 +310,17 @@ def project_card(path: str | Path) -> dict[str, Any] | None:
         project = data.get("project") if isinstance(data.get("project"), dict) else {}
         if project.get("name"):
             name = str(project["name"])
+        if not media:
+            media = str(project.get("media") or "")
+        # Poster from first footage clip with a path
+        if not media:
+            for clip in data.get("footage") or []:
+                if not isinstance(clip, dict):
+                    continue
+                cand = str(clip.get("path") or clip.get("media") or clip.get("file") or "")
+                if cand:
+                    media = cand
+                    break
     except Exception:
         data = {}
     try:

@@ -196,19 +196,21 @@ class MainWindow(QMainWindow):
 
         act_settings = QAction("&Settings…", self)
         act_settings.setShortcut(QKeySequence("Ctrl+,"))
-        act_settings.setMenuRole(QAction.MenuRole.PreferencesRole)
+        # Keep in-app menus (custom chrome); avoid OS Application menu roles
+        act_settings.setMenuRole(QAction.MenuRole.NoRole)
         act_settings.triggered.connect(self.open_settings_dialog)
         file_menu.addAction(act_settings)
         file_menu.addSeparator()
 
         act_close_tool = QAction("&Close Window", self)
         act_close_tool.setShortcut(QKeySequence("Ctrl+W"))
+        act_close_tool.setMenuRole(QAction.MenuRole.NoRole)
         act_close_tool.triggered.connect(self.close)
         file_menu.addAction(act_close_tool)
 
         act_exit = QAction("&Quit Claynext Studio" if sys.platform != "win32" else "E&xit", self)
         act_exit.setShortcut(QKeySequence("Ctrl+Q"))
-        act_exit.setMenuRole(QAction.MenuRole.QuitRole)
+        act_exit.setMenuRole(QAction.MenuRole.NoRole)
         act_exit.triggered.connect(self.quit_app)
         file_menu.addAction(act_exit)
 
@@ -240,11 +242,30 @@ class MainWindow(QMainWindow):
         help_menu = menu_bar.addMenu("&Help")
         act_docs = QAction("&Documentation", self)
         act_docs.setShortcut(QKeySequence("F1"))
+        act_docs.setMenuRole(QAction.MenuRole.NoRole)
         act_docs.triggered.connect(self.open_documentation)
         help_menu.addAction(act_docs)
+
+        help_menu.addSeparator()
+        act_show_log = QAction("Show &Activity Log", self)
+        act_show_log.setShortcut(QKeySequence("Ctrl+Shift+G"))
+        act_show_log.setMenuRole(QAction.MenuRole.NoRole)
+        act_show_log.triggered.connect(self.show_activity_log)
+        help_menu.addAction(act_show_log)
+
+        act_open_log = QAction("Open &Log File…", self)
+        act_open_log.setMenuRole(QAction.MenuRole.NoRole)
+        act_open_log.triggered.connect(self.open_log_file)
+        help_menu.addAction(act_open_log)
+
+        act_logs_folder = QAction("Open Logs &Folder", self)
+        act_logs_folder.setMenuRole(QAction.MenuRole.NoRole)
+        act_logs_folder.triggered.connect(self.open_logs_folder)
+        help_menu.addAction(act_logs_folder)
+
         help_menu.addSeparator()
         act_about = QAction(f"&About {APP_NAME}", self)
-        act_about.setMenuRole(QAction.MenuRole.AboutRole)
+        act_about.setMenuRole(QAction.MenuRole.NoRole)
         act_about.triggered.connect(self.open_about_dialog)
         help_menu.addAction(act_about)
 
@@ -280,8 +301,58 @@ class MainWindow(QMainWindow):
         from PySide6.QtCore import QUrl
         QDesktopServices.openUrl(QUrl("https://github.com/vannyakh/claynext"))
 
+    def show_activity_log(self):
+        """Reveal the Activity Log dock for on-screen issue tracking."""
+        view = getattr(self, "tool_view", None)
+        workspace = getattr(view, "workspace", None)
+        if workspace is not None and hasattr(workspace, "set_visible"):
+            workspace.set_visible("log", True)
+            actions = getattr(view, "_panel_actions", None) or {}
+            act = actions.get("log")
+            if act is not None:
+                act.blockSignals(True)
+                act.setChecked(True)
+                act.blockSignals(False)
+            return
+        self.open_log_file()
+
+    def open_log_file(self):
+        """Open today's session log in the system editor (for bug reports)."""
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        from claynext.utils.logging import configure_logging, session_log_path
+
+        configure_logging()
+        path = session_log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.is_file():
+            path.write_text(
+                f"# Claynext session log\n# Created {path.name}\n",
+                encoding="utf-8",
+            )
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
+
+    def open_logs_folder(self):
+        """Open data/logs in Explorer / Finder."""
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        from claynext.utils.paths import LOGS_DIR, ensure_data_dirs
+
+        ensure_data_dirs()
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(LOGS_DIR.resolve())))
+
     def open_about_dialog(self):
         from PySide6.QtWidgets import QMessageBox
+
+        from claynext.utils.logging import session_log_path
+
+        log_hint = ""
+        try:
+            log_hint = f"<p>Session log: <code>{session_log_path()}</code></p>"
+        except Exception:
+            pass
         QMessageBox.about(
             self,
             f"About {APP_NAME}",
@@ -289,6 +360,7 @@ class MainWindow(QMainWindow):
             f"<p><b>Tool:</b> {self.tool_data['label']}</p>"
             f"<p>{self.tool_data.get('long_desc', self.tool_data.get('desc', ''))}</p>"
             f"<p>Running on <b>{sys.platform.capitalize()}</b> with PySide6.</p>"
+            f"{log_hint}"
         )
 
     def open_settings_dialog(self, tab: str | None = None):

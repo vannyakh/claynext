@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import logging
 from datetime import datetime
 
 from PySide6.QtWidgets import (
@@ -8,11 +11,19 @@ from PySide6.QtGui import QTextCharFormat, QColor, QTextCursor
 
 from claynext.gui.icons import icon
 
+_FILE_LEVEL = {
+    "info": logging.INFO,
+    "success": logging.INFO,
+    "warn": logging.WARNING,
+    "error": logging.ERROR,
+    "debug": logging.DEBUG,
+}
+
 
 class LogPanel(QWidget):
     """
     Timestamped activity log for tool pipelines.
-    Slim top actions: copy / clear.
+    Slim top actions: copy / clear. Also mirrors lines to data/logs.
     """
     cleared = Signal()
 
@@ -97,6 +108,15 @@ class LogPanel(QWidget):
         if self._auto_scroll:
             self.view.setTextCursor(cursor)
             self.view.ensureCursorVisible()
+
+        # Persist for Help → Open log file / issue tracking
+        try:
+            logging.getLogger("claynext.activity").log(
+                _FILE_LEVEL.get(level, logging.INFO),
+                message,
+            )
+        except Exception:
+            pass
 
     def info(self, message: str):
         self.log(message, "info")

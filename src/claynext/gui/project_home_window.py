@@ -151,6 +151,13 @@ class ProjectHomeWindow(QMainWindow):
         view_menu.addAction(act_grid)
 
         help_menu = menu_bar.addMenu("&Help")
+        act_open_log = QAction("Open &Log File…", self)
+        act_open_log.triggered.connect(self._open_log_file)
+        help_menu.addAction(act_open_log)
+        act_logs_folder = QAction("Open Logs &Folder", self)
+        act_logs_folder.triggered.connect(self._open_logs_folder)
+        help_menu.addAction(act_logs_folder)
+        help_menu.addSeparator()
         act_about = QAction(f"About {APP_NAME}", self)
         act_about.triggered.connect(self._about)
         help_menu.addAction(act_about)
@@ -193,6 +200,7 @@ class ProjectHomeWindow(QMainWindow):
         self._launch_studio(str(dest))
 
     def _launch_studio(self, project_path: str):
+        from claynext.gui.components.tool_loader import ToolLoaderScreen
         from claynext.gui.main_window import ToolWindow
 
         if self._studio is not None:
@@ -202,18 +210,28 @@ class ProjectHomeWindow(QMainWindow):
                 pass
             self._studio = None
 
-        tool_index = NAV_ITEMS[0]["index"] if NAV_ITEMS else 0
-        win = ToolWindow(
-            tool_index=tool_index,
-            home_window=self,
-            project_path=project_path,
-        )
-        self._studio = win
         self.hide()
-        win.show()
-        win.raise_()
-        win.activateWindow()
-        self.project_chosen.emit(project_path)
+        tool_index = NAV_ITEMS[0]["index"] if NAV_ITEMS else 0
+        tool_data = NAV_ITEMS[tool_index] if NAV_ITEMS else {"label": "Studio", "color": "#a855f7"}
+
+        def _open():
+            win = ToolWindow(
+                tool_index=tool_index,
+                home_window=self,
+                project_path=project_path,
+            )
+            self._studio = win
+            win.show()
+            win.raise_()
+            win.activateWindow()
+            self.project_chosen.emit(project_path)
+
+        # Fast mini loader while Studio boots from Project Home
+        loader = ToolLoaderScreen(tool_data=tool_data, parent=None, on_complete=_open)
+        self._project_loader = loader
+        loader.show()
+        loader.raise_()
+        loader.activateWindow()
 
     def show_home(self):
         """Return from studio to the project home screen."""
@@ -227,13 +245,42 @@ class ProjectHomeWindow(QMainWindow):
         from claynext.gui.dialogs.settings_dialog import SettingsDialog
         SettingsDialog(self).exec()
 
+    def _open_log_file(self):
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        from claynext.utils.logging import configure_logging, session_log_path
+
+        configure_logging()
+        path = session_log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.is_file():
+            path.write_text("# Claynext session log\n", encoding="utf-8")
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
+
+    def _open_logs_folder(self):
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        from claynext.utils.paths import LOGS_DIR, ensure_data_dirs
+
+        ensure_data_dirs()
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(LOGS_DIR.resolve())))
+
     def _about(self):
+        from claynext.utils.logging import session_log_path
+
+        try:
+            log_line = f"<p>Session log: <code>{session_log_path()}</code></p>"
+        except Exception:
+            log_line = ""
         QMessageBox.about(
             self,
             f"About {APP_NAME}",
             f"<h3>{APP_NAME} v{APP_VERSION}</h3>"
             f"<p>AI movie dubbing & timeline editor.</p>"
-            f"<p>Create or open a project to enter the studio.</p>",
+            f"<p>Create or open a project to enter the studio.</p>"
+            f"{log_line}",
         )
 
     def _toggle_maximize(self):

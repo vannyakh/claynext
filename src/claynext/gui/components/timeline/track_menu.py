@@ -67,6 +67,8 @@ class TrackMenuHandlers:
     # Extract / split audio from video
     extract_audio_to_track: Callable[[], None] | None = None
     extract_audio_save: Callable[[], None] | None = None
+    # Studio action menu (same as timeline sparkles Tools)
+    studio_action: Callable[[str], None] | None = None
 
 
 def _ico(name: str, color: str = "#e7ecf3"):
@@ -118,6 +120,28 @@ def _fill_extract_audio_menu(menu: QMenu, handlers: TrackMenuHandlers) -> None:
         ex, "Save Audio As…", handlers.extract_audio_save,
         icon_name="download",
     )
+
+
+def _fill_studio_tools_menu(menu: QMenu, handlers: TrackMenuHandlers) -> None:
+    """Dubbing tools popup — same actions as the timeline sparkles menu."""
+    if handlers.studio_action is None:
+        return
+    tools = _sub(menu, "Tools", "sparkles")
+    for tip, action, icn in (
+        ("Vocal isolation · extract BGM bed", "vocal", "volume"),
+        ("AI translate subtitles", "translate", "globe"),
+        ("Scan characters & assign voices", "scan", "chat"),
+        ("Generate all dialogue audio", "generate", "sparkles"),
+        ("Import SRT / VTT / JSON", "import_srt", "folder"),
+        ("Export SRT subtitles", "export_srt", "download"),
+        ("Load background music", "bgm", "activity"),
+        ("Export video", "export_video", "video"),
+    ):
+        _act(
+            tools, tip,
+            (lambda _=False, a=action: handlers.studio_action(a)),
+            icon_name=icn,
+        )
 
 
 def _fill_transcripts_menu(menu: QMenu, handlers: TrackMenuHandlers) -> None:
@@ -203,6 +227,7 @@ def populate_track_menu(
         _act(menu, "Zoom to Fit", handlers.zoom_fit, icon_name="aspect", shortcut="Shift+Z")
         _act(menu, "Clear Keys", handlers.clear_track_keys, icon_name="trash")
         _fill_extract_audio_menu(menu, handlers)
+        _fill_studio_tools_menu(menu, handlers)
         _fill_transcripts_menu(menu, handlers)
     elif kind == "voice":
         _act(
@@ -211,9 +236,11 @@ def populate_track_menu(
         )
         _act(menu, "Auto Mix", handlers.auto_mix, icon_name="duck", shortcut="D")
         _act(menu, "Clear Keys", handlers.clear_track_keys, icon_name="trash")
+        _fill_studio_tools_menu(menu, handlers)
         _fill_transcripts_menu(menu, handlers)
     elif kind == "audio":
         _act(menu, "Clear Keys", handlers.clear_track_keys, icon_name="trash")
+        _fill_studio_tools_menu(menu, handlers)
         _fill_transcripts_menu(menu, handlers)
     elif kind in _ADDABLE_KINDS:
         add_label = {

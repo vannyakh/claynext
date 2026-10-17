@@ -67,6 +67,8 @@ class TimelineCanvas(QWidget):
     transition_selected = Signal(str)  # left_clip_id
     # track_id, clip_id ("" if empty lane), global cursor pos
     context_menu_requested = Signal(str, str, QPoint)
+    # Hover scrub tip: ms, clip_id, track_id, local canvas x (for guide line)
+    hover_scrub_changed = Signal(int, str, str, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -89,6 +91,8 @@ class TimelineCanvas(QWidget):
         self.selected_transition_clip_id: str = ""
         self._hover_seam_clip_id: str = ""
         self._hover_seam_part: str = ""
+        self._hover_guide_x: int = -1
+        self._hover_tip_active = False
         self._transition_trim: tuple[str, str, int, int] | None = None
         self._frames: list[QPixmap] = []
         self._wave = _as_envelope(None)
@@ -1133,6 +1137,11 @@ class TimelineCanvas(QWidget):
             p.setPen(QPen(QColor("#2ec4b6"), 1, Qt.PenStyle.DashLine))
             p.setBrush(QColor(46, 196, 182, 36))
             p.drawRect(self._marquee)
+        # CapCut-style hover guide (white line under scrub tip)
+        if self._hover_tip_active and self._hover_guide_x >= 0:
+            gx = int(self._hover_guide_x)
+            p.setPen(QPen(QColor(255, 255, 255, 200), 1))
+            p.drawLine(gx, 0, gx, self.height())
         hx = int(self.x_at(self.playhead_ms))
         p.setPen(QPen(QColor(PLAYHEAD), 1))
         p.drawLine(hx, 0, hx, self.height())
@@ -2021,6 +2030,7 @@ class TimelineCanvas(QWidget):
     def mouseMoveEvent(self, event):
         pos = event.position().toPoint()
         if self.tool_mode == "razor":
+            self._clear_hover_scrub()
             clip = self.clip_at(pos)
             track = self.track_at_y(pos.y())
             locked = (clip and clip.locked) or (track and track.locked)
@@ -2044,16 +2054,20 @@ class TimelineCanvas(QWidget):
                 self._set_volume_at(clip, pos.y())
             return
         if self._scrub:
+            self._clear_hover_scrub()
             self._scrub_to(pos.x())
             return
         if self._trim:
+            self._clear_hover_scrub()
             self._drag_trim(pos.x())
             return
         if self._resize_tid:
+            self._clear_hover_scrub()
             delta = int(event.globalPosition().y()) - self._resize_y
             self.height_changed.emit(self._resize_tid, self._resize_h + delta)
             return
         if self._drag_ids:
+            self._clear_hover_scrub()
             delta = self.ms_at(pos.x()) - self.ms_at(self._press_x)
             lead_id = self._drag_ids[0]
             lead_start = max(0, self._drag_origin_ms.get(lead_id, 0) + delta)
@@ -2106,12 +2120,52 @@ class TimelineCanvas(QWidget):
         track = self.track_at_y(pos.y())
         locked = (clip and clip.locked) or (track and track.locked)
         self.setCursor(Qt.CursorShape.OpenHandCursor if clip and not locked else Qt.CursorShape.ArrowCursor)
+        self._update_hover_scrub(pos, clip, track)
+
+    def _update_hover_scrub(self, pos, clip, track):
+        """Emit CapCut-style scrub tip data while hovering a clip / lane."""
+        if self._scrub or self._drag_ids or self._trim or self._marquee is not None:
+            self._clear_hover_scrub()
+            return
+        ms = max(0, int(self.ms_at(pos.x())))
+        if self.duration_ms:
+            ms = min(ms, self.duration_ms)
+        if clip is None and track is None:
+            self._clear_hover_scrub()
+            return
+        cid = clip.id if clip else ""
+        tid = track.id if track else (clip.track_id if clip else "")
+        x = int(pos.x())
+        if (
+            self._hover_tip_active
+            and self._hover_guide_x == x
+            and getattr(self, "_hover_tip_ms", -1) == ms
+            and getattr(self, "_hover_tip_cid", "") == cid
+        ):
+            return
+        self._hover_tip_active = True
+        self._hover_guide_x = x
+        self._hover_tip_ms = ms
+        self._hover_tip_cid = cid
+        self.update()
+        self.hover_scrub_changed.emit(ms, cid, tid, x)
+
+    def _clear_hover_scrub(self):
+        if not self._hover_tip_active and self._hover_guide_x < 0:
+            return
+        self._hover_tip_active = False
+        self._hover_guide_x = -1
+        self._hover_tip_ms = -1
+        self._hover_tip_cid = ""
+        self.update()
+        self.hover_scrub_changed.emit(-1, "", "", -1)
 
     def leaveEvent(self, event):
         if self._hover_seam_clip_id:
             self._hover_seam_clip_id = ""
             self._hover_seam_part = ""
             self.update()
+        self._clear_hover_scrub()
         super().leaveEvent(event)
 
     def mouseReleaseEvent(self, event):

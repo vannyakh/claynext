@@ -383,6 +383,30 @@ QPushButton#text_cat_pill:checked {{
     font-weight: 600;
     letter-spacing: 0.3px;
 }}
+/* CapCut-style scrub / context tip */
+QFrame#timeline_scrub_tip {{
+    background-color: {COLOR_BG_CARD};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 8px;
+}}
+QLabel#timeline_scrub_tip_thumb {{
+    background: #1a222e;
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 4px;
+}}
+QLabel#timeline_scrub_tip_title {{
+    color: {COLOR_TEXT_MAIN};
+    font-size: 11px;
+    font-weight: 650;
+    background: transparent;
+}}
+QLabel#timeline_scrub_tip_time {{
+    color: {COLOR_TEXT_MUTED};
+    font-size: 11px;
+    font-weight: 600;
+    font-family: "Cascadia Mono", "Consolas", monospace;
+    background: transparent;
+}}
 #timeline_track_header {{
     background: {COLOR_BG_CARD};
     border-bottom: 1px solid {COLOR_BORDER}55;
@@ -485,7 +509,10 @@ QPushButton#text_cat_pill:checked {{
 }}
 QCheckBox#timeline_dub_focus {{
     background: transparent;
-    spacing: 0;
+    color: {COLOR_TEXT_MUTED};
+    font-size: 10px;
+    font-weight: 600;
+    spacing: 4px;
     padding: 0;
 }}
 QCheckBox#timeline_dub_focus::indicator {{

@@ -139,6 +139,10 @@ QPushButton#home_primary:hover {{
     background: {COLOR_PRIMARY};
 }}
 
+QWidget#home_project_card {{
+    background: transparent;
+    border: none;
+}}
 QLabel#home_card_thumb_list {{
     background: #1a222e;
     border: 1px solid {COLOR_BORDER};
@@ -171,23 +175,6 @@ QLabel#home_card_meta {{
     background: transparent;
 }}
 
-QPushButton#home_card_open {{
-    background: {COLOR_BG_INPUT};
-    color: {COLOR_TEXT_MAIN};
-    border: 1px solid {COLOR_BORDER};
-    border-radius: 7px;
-    padding: 0 12px;
-    font-size: 11px;
-    font-weight: 600;
-    min-height: 28px;
-    max-height: 28px;
-}}
-QPushButton#home_card_open:hover {{
-    background: {accent};
-    color: #ffffff;
-    border-color: {accent};
-}}
-
 QListWidget#home_recent {{
     background: transparent;
     border: none;
@@ -208,14 +195,14 @@ QListWidget#home_recent::item {{
 }}
 QListWidget#home_recent::item:hover {{
     background: {COLOR_BG_CARD_HOVER};
-    border: 1px solid #3d4f66;
+    border: 1px solid {accent};
 }}
 QListWidget#home_recent::item:selected,
 QListWidget#home_recent::item:selected:hover,
 QListWidget#home_recent::item:selected:active,
 QListWidget#home_recent::item:focus {{
     background: {COLOR_BG_CARD_HOVER};
-    border: 1px solid #4b5c73;
+    border: 1px solid {accent};
     outline: none;
 }}
 
