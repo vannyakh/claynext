@@ -50,7 +50,7 @@ Claynext/
 │   │
 │   ├── adapters/              # Infrastructure bridges to Rust binaries & OS
 │   │   ├── __init__.py
-│   │   ├── rust_core_adapter.py # Native Rust CLI bridge with JSON IPC & error wrapping
+│   │   ├── rust_bridge/         # Native Rust CLI bridges (ffmpeg, codecs, cpu, ai, wgpu)
 │   │   ├── ffmpeg_adapter.py  # FFmpeg orchestration adapter
 │   │   ├── hardware_codecs_adapter.py # GPU hardware capability discovery adapter
 │   │   └── sysinfo_adapter.py # System hardware, RAM, CPU & device query adapter

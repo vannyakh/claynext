@@ -30,7 +30,6 @@ from claynext.adapters.ffmpeg_service import (
 )
 from claynext.models.dubbing_plan import (
     build_dubbing_plan,
-    estimate_khmer_syllable_quota,
     hf_token as resolve_hf_token,
     plan_to_segments,
     save_plan,
@@ -141,7 +140,9 @@ def analyze_movie_characters(
             s["start_sec"] = start_sec
             s["end_sec"] = end_sec
             s["duration_sec"] = round(dur, 3)
-            s["recommended_syllables"] = estimate_khmer_syllable_quota(dur)
+            s["recommended_syllables"] = TranslateEngine.estimate_speech_quota(
+                dur, target_lang or "Khmer"
+            )
             s["speed_tolerance"] = {"min_rate": 0.65, "max_rate": 1.85}
     else:
         # No diarization: conversational pause and turn analysis
@@ -164,7 +165,9 @@ def analyze_movie_characters(
             s["start_sec"] = start_sec
             s["end_sec"] = end_sec
             s["duration_sec"] = round(dur, 3)
-            s["recommended_syllables"] = estimate_khmer_syllable_quota(dur)
+            s["recommended_syllables"] = TranslateEngine.estimate_speech_quota(
+                dur, target_lang or "Khmer"
+            )
             s["speed_tolerance"] = {"min_rate": 0.65, "max_rate": 1.85}
             prev_end = end_sec
 
@@ -243,6 +246,9 @@ class DubbingEngine:
         render: bool = True,
         control=None,
         live: Callable | None = None,
+        translate_fit_duration: bool = True,
+        translate_slang: bool = True,
+        translate_expression: bool = True,
     ) -> Dict[str, Any]:
         if not video_path or not os.path.isfile(video_path):
             raise FileNotFoundError("Select a video file first.")
@@ -336,6 +342,9 @@ class DubbingEngine:
                 gemini_key=gemini_key,
                 translator=translator,
                 ollama_model=ollama_model,
+                fit_duration=translate_fit_duration,
+                use_slang=translate_slang,
+                use_expression=translate_expression,
                 progress_callback=lambda p, m: ping(42 + int(p * 0.14), m),
             )
             from claynext.models.gender_voices import assign_gender_and_voices

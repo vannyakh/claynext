@@ -1611,7 +1611,7 @@ class TimelinePanel(QWidget):
 
     def auto_mix(self, source: str = "") -> bool:
         """Detect original speech in the footage, then key those spans plus the voice clips."""
-        from claynext.adapters.rust_core_adapter import RustAiAdapter
+        from claynext.adapters.rust_bridge import RustAiAdapter
         def detect_voice_spans(src, **kw):
             chunks = RustAiAdapter.vad_chunk(src)
             return [(float(c.get("start_sec", 0.0)), float(c.get("end_sec", 0.0))) for c in chunks]

@@ -65,7 +65,7 @@ class OCREngine:
             }
         ]
 
-        from claynext.adapters.rust_core_adapter import RustAiAdapter
+        from claynext.adapters.rust_bridge import RustAiAdapter
 
         rust_filtered = RustAiAdapter.filter_ocr(mock_ocr_boxes, min_confidence=confidence_thresh)
         filtered_results = rust_filtered if rust_filtered else [item for item in mock_ocr_boxes if item["confidence"] >= confidence_thresh]

@@ -2183,8 +2183,14 @@ class ScriptTools:
             lines.append({
                 "id": seg.get("id", row + 1),
                 "text": seg.get("original_text") or seg.get("text") or "",
+                "original_text": seg.get("original_text") or seg.get("text") or "",
                 "start": seg.get("start", ""),
                 "end": seg.get("end", ""),
+                "start_sec": seg.get("start_sec"),
+                "end_sec": seg.get("end_sec"),
+                "duration_sec": seg.get("duration_sec"),
+                "recommended_syllables": seg.get("recommended_syllables") or {},
+                "speed_tolerance": seg.get("speed_tolerance") or {},
                 "speaker": seg.get("speaker") or "",
             })
         self._regen_rows = rows
@@ -2202,12 +2208,21 @@ class ScriptTools:
                     progress_callback(pct, msg)
 
             control.checkpoint()
+            store = getattr(self, "store", None)
+            def _flag(key: str, default: str = "1") -> bool:
+                if store is None:
+                    return default == "1"
+                return store.get_setting("dub", key, default) == "1"
+
             return TranslateEngine.translate_subtitles(
                 lines,
                 target_lang,
                 source_lang=source_lang,
                 translator=translator,
                 ollama_model=ollama_model,
+                fit_duration=_flag("translate_fit_duration"),
+                use_slang=_flag("translate_slang"),
+                use_expression=_flag("translate_expression"),
                 progress_callback=_ping,
             )
 

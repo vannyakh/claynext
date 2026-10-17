@@ -16,11 +16,11 @@ This audit classifies all files in `src/claynext/core/` and `src/claynext/tools/
 
 | File Path | Current Responsibility | Classification | Target Location / Rust Replacement |
 | :--- | :--- | :--- | :--- |
-| `core/ffmpeg_tools.py` | Subprocess FFmpeg probing, frame grabbing, muxing, mixing | **REPLACE & MOVE** | `backends/ffmpeg` (Rust) + `adapters/rust_core_adapter.py` + `services/ffmpeg_service.py` |
+| `core/ffmpeg_tools.py` | Subprocess FFmpeg probing, frame grabbing, muxing, mixing | **REPLACE & MOVE** | `backends/ffmpeg` (Rust) + `adapters/rust_bridge/` + `adapters/ffmpeg_service.py` |
 | `core/media_compat.py` | AAC conversion & proxy generation | **REPLACE & MOVE** | `backends/ffmpeg` (Rust) + `services/media_service.py` |
 | `core/thumbnails.py` | Video frame thumbnails | **REPLACE & MOVE** | `backends/ffmpeg/decoder.rs` (Rust) + `services/media_service.py` |
 | `core/sysinfo.py` | GPU detection & VRAM querying | **REPLACE & MOVE** | `backends/hardware-codecs/detect.rs` (Rust) + `adapters/sysinfo_adapter.py` |
-| `core/rust_backends.py` | Early bridge script | **REPLACE & DELETE** | Consolidated into `adapters/rust_core_adapter.py` |
+| `core/rust_backends.py` | Early bridge script | **REPLACE & DELETE** | Consolidated into `adapters/rust_bridge/` |
 | `core/icons.py` | PySide6 QIcon loading & SVG rasterization | **MOVE** | `gui/icons.py` (UI-specific) |
 | `core/worker.py` | PySide6 QThreadPool worker | **MOVE** | `gui/worker.py` (UI-specific) |
 | `core/store.py` | Reactive central application store | **MOVE** | `controllers/store.py` |

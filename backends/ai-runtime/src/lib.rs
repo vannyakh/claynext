@@ -4,6 +4,7 @@ pub mod llm_pool;
 pub mod model_cache;
 pub mod ocr;
 pub mod stems;
+pub mod timing;
 pub mod translation;
 pub mod tts;
 pub mod tts_expression;
@@ -18,7 +19,12 @@ pub use llm_pool::{
 pub use model_cache::{is_model_cached, resolve_model_path};
 pub use ocr::{filter_ocr_results, OcrBox};
 pub use stems::{calculate_ducked_background_volume, DemucsStemConfig};
-pub use translation::{build_llm_translation_prompt, chunk_subtitles_for_translation, TranslationChunk};
+pub use timing::{align_speech_speed, align_speech_speed_result, AlignSpeedResult};
+pub use translation::{
+    build_dubbing_llm_prompt, build_dubbing_llm_prompt_from_request, build_llm_translation_prompt,
+    chunk_subtitles_for_translation, estimate_speech_quota, expression_chip_tokens, DubPromptRequest,
+    SpeechQuota, TranslateStyle, TranslationChunk,
+};
 pub use tts::TtsVoiceSpec;
 pub use tts_expression::{parse_expression_tags, UtteranceSegment};
 pub use vad::{energy_vad_chunking, VadConfig, VadSegment};

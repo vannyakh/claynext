@@ -36,4 +36,4 @@ This document defines the destination package for every legacy module in `src/cl
 | `src/claynext/core/video_fx.py`    | `src/claynext/services/video_engine.py` | Video FX and filter graphs |
 | `src/claynext/core/video_transitions.py`| `src/claynext/services/video_engine.py`| Transition shaders |
 | `src/claynext/tools/extract_dubbing_batches.py`| `extract_dubbing_batches.py` | Root CLI execution wrapper |
-| `src/claynext/core/rust_backends.py`| `src/claynext/adapters/rust_core_adapter.py`| Native Rust core adapter |
+| `src/claynext/core/rust_backends.py`| `src/claynext/adapters/rust_bridge/`| Native Rust core adapter |

@@ -89,7 +89,7 @@ def parse_expression_text(text: str) -> list[ExprPart]:
     raw = text or ""
     if not raw.strip():
         return []
-    from claynext.adapters.rust_core_adapter import RustAiAdapter
+    from claynext.adapters.rust_bridge import RustAiAdapter
 
     rust_segs = RustAiAdapter.parse_expression_tags(raw)
     if rust_segs:

@@ -54,7 +54,7 @@ def ensure_thumbnail(media_path: str, width: int = 160) -> str | None:
     out.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        from claynext.adapters.rust_core_adapter import RustFfmpegAdapter
+        from claynext.adapters.rust_bridge import RustFfmpegAdapter
 
         if RustFfmpegAdapter.extract_still(
             abs_path, out, timestamp_secs=1.0, max_width=width

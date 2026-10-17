@@ -191,7 +191,7 @@ class VoiceTools:
         lang_menu.setObjectName("media_lib_menu")
         lang_group = QActionGroup(menu)
         lang_group.setExclusive(True)
-        languages = sorted({str(voice.get("lang") or "") for voice in TTSEngine.VOICE_PRESETS if voice.get("lang")})
+        languages = sorted({str(voice.get("lang") or "") for voice in TTSEngine.list_voices() if voice.get("lang")})
         for key, label in [("", "All languages"), *[(name, name) for name in languages]]:
             act = QAction(label, menu)
             act.setCheckable(True)
@@ -217,9 +217,7 @@ class VoiceTools:
         favorites = set(self._favorite_voice_ids())
         chosen_lang = getattr(self, "_voice_lang_filter", "")
         rows = []
-        for voice in TTSEngine.VOICE_PRESETS:
-            if chosen_lang and voice.get("lang") != chosen_lang:
-                continue
+        for voice in TTSEngine.list_voices(chosen_lang or None):
             blob = " ".join(
                 str(voice.get(key) or "")
                 for key in ("name", "lang", "tag", "id")
@@ -282,9 +280,10 @@ class VoiceTools:
 
         text = QVBoxLayout()
         text.setSpacing(0)
-        name = QLabel(voice.get("name") or voice["id"])
+        name = QLabel(TTSEngine.voice_label(voice))
         name.setObjectName("voice_name")
         gender = _voice_gender(voice)
+        # Engine/model stays in meta only — title is the character name
         detail = " · ".join(part for part in (voice.get("lang", ""), gender, voice.get("tag", "")) if part)
         meta = QLabel(detail)
         meta.setObjectName("voice_meta")

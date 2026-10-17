@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any, Callable
 
-from claynext.adapters.rust_core_adapter import get_rust_core
+from claynext.adapters.rust_bridge import get_rust_core
 from claynext.adapters.hardware_codecs_adapter import get_hardware_codecs
 
 logger = logging.getLogger("claynext.adapters.rendering")

@@ -16,7 +16,7 @@ from claynext.adapters.media import (
     ready_playback_path,
 )
 from claynext.adapters.rendering import RenderingAdapter, get_rendering_adapter
-from claynext.adapters.rust_core_adapter import (
+from claynext.adapters.rust_bridge import (
     RustAiAdapter,
     RustCoreAdapter,
     RustCpuAdapter,

@@ -88,4 +88,5 @@ class DecodedAudioChunk:
     channels: int
     pts: float
     samples: list[float]  # Float32 normalized [-1.0, 1.0]
+    raw_pcm: bytes = b""  # packed little-endian f32 (optional; used by Rust bridge)
 

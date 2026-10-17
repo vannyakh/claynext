@@ -24,6 +24,9 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
         help="Output path. Default: <input>.<lang>.srt (or same suffix)",
     )
     p.add_argument("--format", choices=["srt", "vtt", "json"], help="Force export format")
+    p.add_argument("--no-fit", action="store_true", help="Disable TTS duration fit in LLM prompt")
+    p.add_argument("--no-slang", action="store_true", help="Disable slang/idiom guidance")
+    p.add_argument("--no-expression", action="store_true", help="Disable [laugh]/[sigh] expression tags")
     p.add_argument("-q", "--quiet", action="store_true", help="Hide progress")
     p.set_defaults(func=run)
 
@@ -40,6 +43,9 @@ def run(args: argparse.Namespace) -> int:
             source_lang=args.source_lang,
             translator=args.translator,
             ollama_model=args.ollama_model,
+            fit_duration=not args.no_fit,
+            use_slang=not args.no_slang,
+            use_expression=not args.no_expression,
             progress_callback=progress,
         )
     except Exception as exc:

@@ -40,6 +40,21 @@ def _ensure_edge_tts_endpoint() -> None:
         _edge_endpoint_ready = True
 
 
+def voice_display_fallback(voice_id: str) -> str:
+    """Derive a short label from a raw voice id when not in the catalog."""
+    if not voice_id:
+        return "Voice"
+    stem = voice_id.split("/")[-1].replace("Neural", "")
+    skip = {
+        "edge", "kitten", "voxcpm", "en", "us", "km", "kh", "vi", "vn",
+        "ja", "jp", "ko", "kr", "zh", "cn", "female", "male",
+    }
+    for part in reversed(stem.replace("_", "-").split("-")):
+        if part.isalpha() and len(part) >= 3 and part.lower() not in skip:
+            return part[:1].upper() + part[1:]
+    return stem or "Voice"
+
+
 class TTSEngine:
     """
     Text-to-Speech engine: KittenTTS (CPU ONNX), Edge TTS (online), and VoxCPM (local neural).
@@ -64,22 +79,25 @@ class TTSEngine:
     ]
     VOXCPM_DEFAULT_MODEL = "openbmb/VoxCPM2"
 
+    # ``name`` / ``alias`` = short character label only (no engine/model prefix).
+    # Engine lives in ``tag``; language / gender stay as separate fields.
     KITTEN_VOICES = [
-        {"id": "kitten-Bella", "name": "Kitten - Bella (Female)", "lang": "English", "tag": "KittenTTS", "gender": "Female", "alias": "Bella"},
-        {"id": "kitten-Jasper", "name": "Kitten - Jasper (Male)", "lang": "English", "tag": "KittenTTS", "gender": "Male", "alias": "Jasper"},
-        {"id": "kitten-Luna", "name": "Kitten - Luna (Female)", "lang": "English", "tag": "KittenTTS", "gender": "Female", "alias": "Luna"},
-        {"id": "kitten-Bruno", "name": "Kitten - Bruno (Male)", "lang": "English", "tag": "KittenTTS", "gender": "Male", "alias": "Bruno"},
-        {"id": "kitten-Rosie", "name": "Kitten - Rosie (Female)", "lang": "English", "tag": "KittenTTS", "gender": "Female", "alias": "Rosie"},
-        {"id": "kitten-Hugo", "name": "Kitten - Hugo (Male)", "lang": "English", "tag": "KittenTTS", "gender": "Male", "alias": "Hugo"},
-        {"id": "kitten-Kiki", "name": "Kitten - Kiki (Female)", "lang": "English", "tag": "KittenTTS", "gender": "Female", "alias": "Kiki"},
-        {"id": "kitten-Leo", "name": "Kitten - Leo (Male)", "lang": "English", "tag": "KittenTTS", "gender": "Male", "alias": "Leo"},
+        {"id": "kitten-Bella", "name": "Bella", "lang": "English", "tag": "KittenTTS", "gender": "Female", "alias": "Bella"},
+        {"id": "kitten-Jasper", "name": "Jasper", "lang": "English", "tag": "KittenTTS", "gender": "Male", "alias": "Jasper"},
+        {"id": "kitten-Luna", "name": "Luna", "lang": "English", "tag": "KittenTTS", "gender": "Female", "alias": "Luna"},
+        {"id": "kitten-Bruno", "name": "Bruno", "lang": "English", "tag": "KittenTTS", "gender": "Male", "alias": "Bruno"},
+        {"id": "kitten-Rosie", "name": "Rosie", "lang": "English", "tag": "KittenTTS", "gender": "Female", "alias": "Rosie"},
+        {"id": "kitten-Hugo", "name": "Hugo", "lang": "English", "tag": "KittenTTS", "gender": "Male", "alias": "Hugo"},
+        {"id": "kitten-Kiki", "name": "Kiki", "lang": "English", "tag": "KittenTTS", "gender": "Female", "alias": "Kiki"},
+        {"id": "kitten-Leo", "name": "Leo", "lang": "English", "tag": "KittenTTS", "gender": "Male", "alias": "Leo"},
     ]
 
     # Voice Design prompts — VoxCPM synthesizes from the parenthetical description.
     VOXCPM_VOICES = [
         {
             "id": "voxcpm-khmer-female",
-            "name": "VoxCPM - Sreynich (Female, Khmer)",
+            "name": "Sreynich",
+            "alias": "Sreynich",
             "lang": "Khmer",
             "tag": "VoxCPM",
             "gender": "Female",
@@ -87,7 +105,8 @@ class TTSEngine:
         },
         {
             "id": "voxcpm-khmer-male",
-            "name": "VoxCPM - Vichea (Male, Khmer)",
+            "name": "Vichea",
+            "alias": "Vichea",
             "lang": "Khmer",
             "tag": "VoxCPM",
             "gender": "Male",
@@ -95,7 +114,8 @@ class TTSEngine:
         },
         {
             "id": "voxcpm-en-female",
-            "name": "VoxCPM - Ava (Female, English)",
+            "name": "Ava",
+            "alias": "Ava",
             "lang": "English",
             "tag": "VoxCPM",
             "gender": "Female",
@@ -103,7 +123,8 @@ class TTSEngine:
         },
         {
             "id": "voxcpm-en-male",
-            "name": "VoxCPM - Noah (Male, English)",
+            "name": "Noah",
+            "alias": "Noah",
             "lang": "English",
             "tag": "VoxCPM",
             "gender": "Male",
@@ -111,7 +132,8 @@ class TTSEngine:
         },
         {
             "id": "voxcpm-vi-female",
-            "name": "VoxCPM - Linh (Female, Vietnamese)",
+            "name": "Linh",
+            "alias": "Linh",
             "lang": "Vietnamese",
             "tag": "VoxCPM",
             "gender": "Female",
@@ -119,7 +141,8 @@ class TTSEngine:
         },
         {
             "id": "voxcpm-vi-male",
-            "name": "VoxCPM - Minh (Male, Vietnamese)",
+            "name": "Minh",
+            "alias": "Minh",
             "lang": "Vietnamese",
             "tag": "VoxCPM",
             "gender": "Male",
@@ -127,7 +150,8 @@ class TTSEngine:
         },
         {
             "id": "voxcpm-zh-female",
-            "name": "VoxCPM - Xiaoxuan (Female, Chinese)",
+            "name": "Xiaoxuan",
+            "alias": "Xiaoxuan",
             "lang": "Chinese",
             "tag": "VoxCPM",
             "gender": "Female",
@@ -135,7 +159,8 @@ class TTSEngine:
         },
         {
             "id": "voxcpm-ja-female",
-            "name": "VoxCPM - Hana (Female, Japanese)",
+            "name": "Hana",
+            "alias": "Hana",
             "lang": "Japanese",
             "tag": "VoxCPM",
             "gender": "Female",
@@ -144,15 +169,15 @@ class TTSEngine:
     ]
 
     EDGE_VOICES = [
-        {"id": "km-KH-SreymomNeural", "name": "Edge - Sreymom (Female, Khmer)", "lang": "Khmer", "tag": "Neural", "gender": "Female"},
-        {"id": "km-KH-PisethNeural", "name": "Edge - Piseth (Male, Khmer)", "lang": "Khmer", "tag": "Neural", "gender": "Male"},
-        {"id": "en-US-AvaNeural", "name": "Edge - Ava (Female, US English)", "lang": "English", "tag": "Neural", "gender": "Female"},
-        {"id": "en-US-AndrewNeural", "name": "Edge - Andrew (Male, US English)", "lang": "English", "tag": "Neural", "gender": "Male"},
-        {"id": "vi-VN-HoaiMyNeural", "name": "Edge - Hoài My (Female, Vietnamese)", "lang": "Vietnamese", "tag": "Neural", "gender": "Female"},
-        {"id": "vi-VN-NamMinhNeural", "name": "Edge - Nam Minh (Male, Vietnamese)", "lang": "Vietnamese", "tag": "Neural", "gender": "Male"},
-        {"id": "ja-JP-NanamiNeural", "name": "Edge - Nanami (Female, Japanese)", "lang": "Japanese", "tag": "Anime/Neural", "gender": "Female"},
-        {"id": "ko-KR-SunHiNeural", "name": "Edge - Sun-Hi (Female, Korean)", "lang": "Korean", "tag": "K-Drama", "gender": "Female"},
-        {"id": "zh-CN-XiaoxiaoNeural", "name": "Edge - Xiaoxiao (Female, Chinese)", "lang": "Chinese", "tag": "Neural", "gender": "Female"},
+        {"id": "km-KH-SreymomNeural", "name": "Sreymom", "alias": "Sreymom", "lang": "Khmer", "tag": "Neural", "gender": "Female"},
+        {"id": "km-KH-PisethNeural", "name": "Piseth", "alias": "Piseth", "lang": "Khmer", "tag": "Neural", "gender": "Male"},
+        {"id": "en-US-AvaNeural", "name": "Ava", "alias": "Ava", "lang": "English", "tag": "Neural", "gender": "Female"},
+        {"id": "en-US-AndrewNeural", "name": "Andrew", "alias": "Andrew", "lang": "English", "tag": "Neural", "gender": "Male"},
+        {"id": "vi-VN-HoaiMyNeural", "name": "Hoài My", "alias": "Hoài My", "lang": "Vietnamese", "tag": "Neural", "gender": "Female"},
+        {"id": "vi-VN-NamMinhNeural", "name": "Nam Minh", "alias": "Nam Minh", "lang": "Vietnamese", "tag": "Neural", "gender": "Male"},
+        {"id": "ja-JP-NanamiNeural", "name": "Nanami", "alias": "Nanami", "lang": "Japanese", "tag": "Anime/Neural", "gender": "Female"},
+        {"id": "ko-KR-SunHiNeural", "name": "Sun-Hi", "alias": "Sun-Hi", "lang": "Korean", "tag": "K-Drama", "gender": "Female"},
+        {"id": "zh-CN-XiaoxiaoNeural", "name": "Xiaoxiao", "alias": "Xiaoxiao", "lang": "Chinese", "tag": "Neural", "gender": "Female"},
     ]
 
     VOICE_PRESETS = KITTEN_VOICES + VOXCPM_VOICES + EDGE_VOICES
@@ -190,6 +215,60 @@ class TTSEngine:
     @staticmethod
     def edge_voices() -> List[Dict[str, Any]]:
         return list(TTSEngine.EDGE_VOICES)
+
+    @staticmethod
+    def voice_label(voice: dict[str, Any] | str) -> str:
+        """Short character name only (no engine / model prefix)."""
+        if isinstance(voice, str):
+            for item in TTSEngine.VOICE_PRESETS:
+                if item.get("id") == voice:
+                    return TTSEngine.voice_label(item)
+            return voice_display_fallback(voice)
+        alias = str(voice.get("alias") or "").strip()
+        if alias:
+            return alias
+        name = str(voice.get("name") or "").strip()
+        if name:
+            # Strip legacy "Engine - Name (…)" if any old cached rows appear
+            if " - " in name:
+                name = name.split(" - ", 1)[1]
+            if "(" in name:
+                name = name.split("(", 1)[0]
+            name = name.strip()
+            if name:
+                return name
+        return voice_display_fallback(str(voice.get("id") or "Voice"))
+
+    @staticmethod
+    def list_voices(lang: str | None = None) -> List[Dict[str, Any]]:
+        """
+        Core voice catalog for UI / cast / CLI.
+
+        Each row: ``id``, ``name`` (short label), ``lang``, ``tag`` (engine),
+        ``gender``. Optional ``lang`` filters by language (Chinese* → Chinese).
+        """
+        want = ""
+        if lang:
+            want = "Chinese" if str(lang).startswith("Chinese") else str(lang)
+        rows: list[dict[str, Any]] = []
+        for voice in TTSEngine.VOICE_PRESETS:
+            if want and str(voice.get("lang") or "") != want:
+                continue
+            vid = str(voice.get("id") or "")
+            if not vid:
+                continue
+            rows.append({
+                "id": vid,
+                "name": TTSEngine.voice_label(voice),
+                "lang": str(voice.get("lang") or ""),
+                "tag": str(voice.get("tag") or ""),
+                "gender": str(voice.get("gender") or ""),
+                "alias": str(voice.get("alias") or TTSEngine.voice_label(voice)),
+                "design": voice.get("design") or "",
+            })
+        if want and not rows:
+            return TTSEngine.list_voices(None)
+        return rows
 
     @staticmethod
     def voxcpm_available() -> bool:

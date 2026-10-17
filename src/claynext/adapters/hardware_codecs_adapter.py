@@ -6,7 +6,7 @@ Leverages native Rust GPU detection and optimal hardware codec flag selection.
 from __future__ import annotations
 
 from typing import Any
-from claynext.adapters.rust_core_adapter import RustHardwareCodecsAdapter
+from claynext.adapters.rust_bridge import RustHardwareCodecsAdapter
 from claynext.models.hardware import CodecProfile, GpuCapability
 
 

@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from claynext.adapters.rust_core_adapter import RustCpuAdapter, RustFfmpegAdapter, get_rust_core
+from claynext.adapters.rust_bridge import RustCpuAdapter, RustFfmpegAdapter, get_rust_core
 from claynext.models.media import MediaMetadata
 from claynext.utils.paths import PLAYBACK_DIR, PROXY_DIR, THUMB_DIR
 

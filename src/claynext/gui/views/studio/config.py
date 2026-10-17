@@ -53,6 +53,10 @@ class ConfigTools:
         self.chk_auto_captions = self._hidden_switch(host, "auto_captions", True)
         self.chk_auto_mix = self._hidden_switch(host, "auto_mix", True)
         self.chk_vocal_master = self._hidden_switch(host, "vocal_master", True)
+        # LLM translate style (Gemini / Ollama) — duration fit, slang, expression tags
+        self.chk_translate_fit = self._hidden_switch(host, "translate_fit_duration", True)
+        self.chk_translate_slang = self._hidden_switch(host, "translate_slang", True)
+        self.chk_translate_expression = self._hidden_switch(host, "translate_expression", True)
 
         self.slider_duck = ScrubSpinBox(host)
         self.slider_duck.setRange(5, 50)
@@ -160,16 +164,15 @@ class ConfigTools:
         self.combo_voice.clear()
         self.combo_voice_sec.clear()
 
-        voices = [v for v in TTSEngine.VOICE_PRESETS if v.get("lang") == voice_lang]
-        if not voices:
-            voices = TTSEngine.VOICE_PRESETS
+        voices = TTSEngine.list_voices(voice_lang)
 
         pick_prim = 0
         pick_sec = min(1, len(voices) - 1) if len(voices) > 1 else 0
 
         for i, v in enumerate(voices):
-            self.combo_voice.addItem(v["name"], v["id"])
-            self.combo_voice_sec.addItem(v["name"], v["id"])
+            label = v["name"]
+            self.combo_voice.addItem(label, v["id"])
+            self.combo_voice_sec.addItem(label, v["id"])
             if v["id"] == saved_prim:
                 pick_prim = i
             if v["id"] == saved_sec:
@@ -177,9 +180,9 @@ class ConfigTools:
 
         if lang == "Khmer":
             for i, v in enumerate(voices):
-                if "Sreymom" in v["name"] and not saved_prim:
+                if v["name"] == "Sreymom" and not saved_prim:
                     pick_prim = i
-                elif "Piseth" in v["name"] and not saved_sec:
+                elif v["name"] == "Piseth" and not saved_sec:
                     pick_sec = i
 
         self.combo_voice.setCurrentIndex(pick_prim)

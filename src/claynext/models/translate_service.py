@@ -92,6 +92,46 @@ class TranslateEngine:
         ("nllb", "NLLB-200 · Hugging Face (Offline NMT)"),
     ]
 
+    # Approximate speaking units / second for TTS duration budgeting in LLM prompts.
+    _PACE_RATES = {
+        "Khmer": 3.5,
+        "Chinese": 4.0,
+        "Chinese (Simplified)": 4.0,
+        "Chinese (Traditional)": 4.0,
+        "Japanese": 4.2,
+        "Korean": 4.0,
+        "Vietnamese": 3.8,
+        "Thai": 3.8,
+        "English": 3.2,
+        "Spanish": 3.4,
+        "French": 3.3,
+        "German": 3.1,
+        "Russian": 3.2,
+    }
+
+    @staticmethod
+    def estimate_speech_quota(duration_sec: float, target_lang: str = "") -> dict[str, int]:
+        """min / target / max speaking units for a line slot (LLM duration fit).
+
+        Prefers Rust `claynext-ai speech-quota`; falls back to Python if binary missing.
+        """
+        try:
+            from claynext.adapters.rust_bridge import RustAiAdapter
+
+            rust = RustAiAdapter.estimate_speech_quota(duration_sec, target_lang or "")
+            if rust:
+                return rust
+        except Exception:
+            pass
+        dur = max(0.0, float(duration_sec or 0.0))
+        rate = TranslateEngine._PACE_RATES.get(target_lang or "", 3.5)
+        target = int(dur * rate)
+        return {
+            "min": max(1, int(dur * rate * 0.80)),
+            "target": max(1, target),
+            "max": max(2, int(dur * rate * 1.20)),
+        }
+
     @staticmethod
     def gemini_key() -> str:
         keys = get_key_pool().secrets("gemini")
@@ -119,6 +159,10 @@ class TranslateEngine:
         gemini_key: str = "",
         translator: str = "auto",
         ollama_model: str = "",
+        *,
+        fit_duration: bool = True,
+        use_slang: bool = True,
+        use_expression: bool = True,
     ) -> List[Dict[str, Any]]:
         if not segments:
             raise RuntimeError("No lines to translate.")
@@ -129,28 +173,47 @@ class TranslateEngine:
             except Exception:
                 pass
 
+        # Fill timing / syllable budgets so LLM can fit TTS slot length
+        TranslateEngine._ensure_timing(segments, target_lang)
+
         engine = (translator or "auto").strip().lower()
         native = "Khmer (ភាសាខ្មែរ)" if target_lang == "Khmer" else target_lang
         model = (ollama_model or os.environ.get("OLLAMA_MODEL") or "qwen2.5:7b").strip()
+        style = {
+            "fit_duration": bool(fit_duration),
+            "use_slang": bool(use_slang),
+            "use_expression": bool(use_expression),
+        }
 
         def ping(pct: int, msg: str):
             if progress_callback:
                 progress_callback(pct, msg)
 
+        def _llm(backend: str, ollama: str = ""):
+            return TranslateEngine._translate_llm(
+                segments,
+                target_lang,
+                backend,
+                ollama,
+                ping,
+                source_lang=source_lang,
+                style=style,
+            )
+
         chain: list[tuple[str, Callable]] = []
         if engine == "gemini":
-            chain = [("Gemini Flash (free tier)", lambda: TranslateEngine._translate_llm(segments, target_lang, "gemini", "", ping, source_lang=source_lang))]
+            chain = [("Gemini Flash (free tier)", lambda: _llm("gemini"))]
         elif engine == "ollama":
-            chain = [(f"Ollama {model}", lambda: TranslateEngine._translate_llm(segments, target_lang, "ollama", model, ping, source_lang=source_lang))]
+            chain = [(f"Ollama {model}", lambda: _llm("ollama", model))]
         elif engine == "nllb":
             chain = [("NLLB-200 Hugging Face", lambda: TranslateEngine._translate_nllb(segments, target_lang, ping, source_lang=source_lang))]
         elif engine == "google":
             chain = [("Google Translate", lambda: TranslateEngine._translate_google_batched(segments, target_lang, ping, source_lang=source_lang))]
         else:
             if pool.secrets("gemini"):
-                chain.append(("Gemini Flash (free tier)", lambda: TranslateEngine._translate_llm(segments, target_lang, "gemini", "", ping, source_lang=source_lang)))
+                chain.append(("Gemini Flash (free tier)", lambda: _llm("gemini")))
             if TranslateEngine.ollama_available():
-                chain.append((f"Ollama {model}", lambda: TranslateEngine._translate_llm(segments, target_lang, "ollama", model, ping, source_lang=source_lang)))
+                chain.append((f"Ollama {model}", lambda: _llm("ollama", model)))
             chain.append(("Google Translate", lambda: TranslateEngine._translate_google_batched(segments, target_lang, ping, source_lang=source_lang)))
 
         last_err = "Translation failed"
@@ -269,39 +332,135 @@ class TranslateEngine:
         return parsed
 
     @staticmethod
-    def _payload_for(batch: list[dict]) -> list[dict]:
+    def _ensure_timing(segments: list[dict], target_lang: str) -> None:
+        """Ensure start/end/duration + speech quota exist for duration-aware translate."""
+        from claynext.models.dubbing_service import timestamp_to_sec
+
+        for seg in segments:
+            start = seg.get("start_sec")
+            end = seg.get("end_sec")
+            if not isinstance(start, (int, float)):
+                start = timestamp_to_sec(str(seg.get("start") or ""))
+                seg["start_sec"] = start
+            if not isinstance(end, (int, float)):
+                end = timestamp_to_sec(str(seg.get("end") or ""))
+                seg["end_sec"] = end
+            dur = float(seg.get("duration_sec") or 0.0)
+            if dur <= 0 and isinstance(start, (int, float)) and isinstance(end, (int, float)):
+                dur = max(0.15, float(end) - float(start))
+                seg["duration_sec"] = round(dur, 3)
+            quota = seg.get("recommended_syllables")
+            if not isinstance(quota, dict) or not quota.get("target"):
+                seg["recommended_syllables"] = TranslateEngine.estimate_speech_quota(
+                    float(seg.get("duration_sec") or dur or 2.0),
+                    target_lang,
+                )
+            if not seg.get("speed_tolerance"):
+                seg["speed_tolerance"] = {"min_rate": 0.65, "max_rate": 1.85}
+
+    @staticmethod
+    def _payload_for(batch: list[dict], target_lang: str = "") -> list[dict]:
         payload = []
         for s in batch:
             start = s.get("start_sec")
             end = s.get("end_sec")
-            dur = None
-            if isinstance(start, (int, float)) and isinstance(end, (int, float)):
-                dur = round(max(0.08, end - start), 2)
+            dur = s.get("duration_sec")
+            if not isinstance(dur, (int, float)) or float(dur) <= 0:
+                if isinstance(start, (int, float)) and isinstance(end, (int, float)):
+                    dur = round(max(0.08, end - start), 2)
+                else:
+                    dur = 2.0
+            quota = s.get("recommended_syllables") or {}
+            if not isinstance(quota, dict) or not quota.get("target"):
+                quota = TranslateEngine.estimate_speech_quota(float(dur), target_lang)
             payload.append({
                 "id": s.get("id"),
                 "segment_id": s.get("segment_id", s.get("id")),
                 "speaker": s.get("speaker") or "",
-                "duration_sec": dur,
-                "text": (s.get("text") or "").strip(),
-                "recommended_syllables": s.get("recommended_syllables") or {},
-                "speed_tolerance": s.get("speed_tolerance") or {},
+                "duration_sec": float(dur),
+                "text": (s.get("text") or s.get("original_text") or "").strip(),
+                "recommended_syllables": quota,
+                "speed_tolerance": s.get("speed_tolerance") or {"min_rate": 0.65, "max_rate": 1.85},
             })
         return payload
 
     @staticmethod
-    def _dub_prompt(payload: list[dict], target_lang: str, source_lang: str = "auto") -> str:
+    def _dub_prompt(
+        payload: list[dict],
+        target_lang: str,
+        source_lang: str = "auto",
+        *,
+        style: dict | None = None,
+    ) -> str:
+        style = style or {}
+        # Prefer Rust core (claynext-ai build-dub-prompt) so GUI/features share one prompt builder.
+        try:
+            from claynext.adapters.rust_bridge import RustAiAdapter
+
+            rust = RustAiAdapter.build_dub_prompt(
+                payload, target_lang, source_lang, style=style
+            )
+            if rust:
+                return rust
+        except Exception:
+            pass
+
+        fit = bool(style.get("fit_duration", True))
+        slang = bool(style.get("use_slang", True))
+        expression = bool(style.get("use_expression", True))
         lang_name = "natural conversational Khmer (ភាសាខ្មែរ)" if target_lang == "Khmer" else target_lang
         src_name = f"from {source_lang} " if source_lang and source_lang not in {"auto", "Auto Detect"} else ""
+
+        rules = [
+            "1. Preserve emotional tone, character nuance, and actor delivery — write spoken dialogue, not subtitle captions.",
+            "2. Keep each line's meaning accurate; do not invent plot facts.",
+        ]
+        n = 3
+        if fit:
+            rules.append(
+                f"{n}. TTS DURATION FIT (critical): keep spoken length inside recommended_syllables "
+                f"(min/target/max) for duration_sec. Prefer shorter natural phrasing over padding. "
+                f"Stay within speed_tolerance (typically 0.65–1.85). Count syllables/units for {target_lang}."
+            )
+            n += 1
+        if slang:
+            rules.append(
+                f"{n}. SLANG & IDIOM: prefer natural slang, colloquialisms, and idioms a native "
+                f"{target_lang} speaker would say in film — not stiff word-for-word translation. "
+                f"Match register (teen slang, formal, rough) to the character."
+            )
+            n += 1
+        if expression:
+            from claynext.models.tts_expression import EXPRESSION_CHIPS
+
+            tags = ", ".join(tok for _label, tok in EXPRESSION_CHIPS)
+            rules.append(
+                f"{n}. EXPRESSION TAGS: when the source implies a non-verbal beat or strong emotion, "
+                f"you MAY insert at most one short TTS cue at the start or mid-line from: {tags}. "
+                f"Never invent story; never stack multiple tags; omit tags when the line is plain speech."
+            )
+            n += 1
+        rules.append(
+            f"{n}. Return STRICTLY a JSON array of objects with keys id (or segment_id) and khmer_text "
+            f"(use khmer_text for the translated spoken line even when the target is not Khmer)."
+        )
+
+        features = []
+        if fit:
+            features.append("duration-fit")
+        if slang:
+            features.append("slang/idiom")
+        if expression:
+            features.append("expression-tags")
+        feat = ", ".join(features) if features else "literal"
+
         return (
             f"You are a cinematic dubbing adapter translating film dialogue {src_name}into "
             f"{lang_name}.\n"
+            f"Active features: {feat}.\n"
             "Rules:\n"
-            "1. Preserve emotional tone, character nuance, and actor delivery.\n"
-            "2. Respect duration_sec and recommended_syllables (min/target/max) so speech matches the visual character duration.\n"
-            "3. Stay within speed_tolerance (typically 0.65–1.85).\n"
-            "4. Return strictly a JSON array of objects with keys id (or segment_id) and khmer_text "
-            "(use khmer_text for the translation output even if target language is not Khmer).\n\n"
-            f"Dialogue segments:\n{json.dumps(payload, ensure_ascii=False)}"
+            + "\n".join(rules)
+            + f"\n\nDialogue segments:\n{json.dumps(payload, ensure_ascii=False)}"
         )
 
     @staticmethod
@@ -363,12 +522,15 @@ class TranslateEngine:
         ollama_model: str,
         progress_callback: Callable = None,
         source_lang: str = "auto",
+        style: dict | None = None,
     ) -> List[Dict[str, Any]]:
         by_id: dict[Any, dict] = {}
         batches = [segments[i:i + BATCH_SIZE] for i in range(0, len(segments), BATCH_SIZE)]
         for b, batch in enumerate(batches):
-            payload = TranslateEngine._payload_for(batch)
-            prompt = TranslateEngine._dub_prompt(payload, target_lang, source_lang=source_lang)
+            payload = TranslateEngine._payload_for(batch, target_lang=target_lang)
+            prompt = TranslateEngine._dub_prompt(
+                payload, target_lang, source_lang=source_lang, style=style,
+            )
             if backend == "ollama":
                 mapped = TranslateEngine._ollama_generate(prompt, ollama_model)
             else:

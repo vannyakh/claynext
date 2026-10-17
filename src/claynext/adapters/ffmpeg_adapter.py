@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from claynext.adapters.rust_core_adapter import RustFfmpegAdapter
+from claynext.adapters.rust_bridge import RustFfmpegAdapter
 from claynext.models.media import MediaMetadata, MediaType
 
 logger = logging.getLogger("claynext.adapters.ffmpeg")

@@ -32,7 +32,7 @@ Zero regressions or orphaned references remain in the codebase. All UI views, di
 | `src/claynext/core/llm_keys.py` | `src/claynext/services/llm_keys.py` | — (Secure key storage) | DELETED |
 | `src/claynext/core/media_compat.py` | `src/claynext/services/media_compat.py` | `backends/ffmpeg` | DELETED |
 | `src/claynext/core/ocr_engine.py` | `src/claynext/services/ocr_service.py` | `backends/ai-runtime` | DELETED |
-| `src/claynext/core/rust_backends.py` | `src/claynext/adapters/rust_core_adapter.py` | Native Rust CLI bridge | DELETED |
+| `src/claynext/core/rust_backends.py` | `src/claynext/adapters/rust_bridge/` | Native Rust CLI bridge | DELETED |
 | `src/claynext/core/stem_separation.py` | `src/claynext/services/stem_separation.py` | `backends/cpu` (multitrack mixing) | DELETED |
 | `src/claynext/core/store.py` | `src/claynext/controllers/store.py` | Persistent SQLite store | DELETED |
 | `src/claynext/core/sysinfo.py` | `src/claynext/adapters/sysinfo_adapter.py`<br>`src/claynext/adapters/hardware_codecs_adapter.py` | `backends/hardware-codecs` | DELETED |

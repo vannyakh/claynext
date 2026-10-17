@@ -80,6 +80,7 @@ fn main() {
             }
         }
         "decode-audio" => {
+            // Args: <media> [sample_rate] [channels] [output.f32]
             if args.len() >= 3 {
                 let input = Path::new(&args[2]);
                 let rate = args
@@ -90,15 +91,32 @@ fn main() {
                     .get(4)
                     .and_then(|s| s.parse::<u32>().ok())
                     .unwrap_or(1);
+                let out_path = args.get(5).map(PathBuf::from);
                 match decode_audio_pcm_f32(input, rate, channels, None, None, None) {
                     Ok(frame) => {
+                        if let Some(out) = out_path.as_ref() {
+                            use std::io::Write;
+                            if let Some(parent) = out.parent() {
+                                let _ = std::fs::create_dir_all(parent);
+                            }
+                            let mut bytes = Vec::with_capacity(frame.samples.len() * 4);
+                            for s in &frame.samples {
+                                bytes.extend_from_slice(&s.to_le_bytes());
+                            }
+                            if let Err(e) = std::fs::File::create(out).and_then(|mut f| f.write_all(&bytes)) {
+                                eprintln!("Failed to write PCM: {}", e);
+                                std::process::exit(1);
+                            }
+                        }
+                        let duration = frame.samples.len() as f64
+                            / (frame.sample_rate as f64 * frame.channels.max(1) as f64);
+                        // Machine-readable JSON for the Python bridge.
                         println!(
-                            "Decoded audio: {} samples ({}Hz {}ch), {:.2}s duration",
-                            frame.samples.len(),
+                            "{{\"sample_rate\":{},\"channels\":{},\"sample_count\":{},\"duration_sec\":{:.6}}}",
                             frame.sample_rate,
                             frame.channels,
-                            frame.samples.len() as f64
-                                / (frame.sample_rate as f64 * frame.channels.max(1) as f64)
+                            frame.samples.len(),
+                            duration
                         );
                     }
                     Err(e) => {
@@ -107,7 +125,9 @@ fn main() {
                     }
                 }
             } else {
-                eprintln!("Usage: claynext-ffmpeg decode-audio <media_file> [sample_rate] [channels]");
+                eprintln!(
+                    "Usage: claynext-ffmpeg decode-audio <media_file> [sample_rate] [channels] [output.f32]"
+                );
                 std::process::exit(1);
             }
         }

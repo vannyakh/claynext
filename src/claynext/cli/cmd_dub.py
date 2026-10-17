@@ -48,6 +48,9 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
         help="Also write dubbed segments (.srt / .json)",
     )
     p.add_argument("--hf-token", default="", help="Hugging Face token (WhisperX)")
+    p.add_argument("--no-fit", action="store_true", help="Disable TTS duration fit in translate")
+    p.add_argument("--no-slang", action="store_true", help="Disable slang/idiom in translate")
+    p.add_argument("--no-expression", action="store_true", help="Disable expression tags in translate")
     p.add_argument("-q", "--quiet", action="store_true", help="Hide progress")
     p.set_defaults(func=run)
 
@@ -79,6 +82,9 @@ def run(args: argparse.Namespace) -> int:
             sync_mode=args.sync,
             auto_chain=not args.no_chain,
             render=not args.timeline_only,
+            translate_fit_duration=not args.no_fit,
+            translate_slang=not args.no_slang,
+            translate_expression=not args.no_expression,
             progress_callback=progress,
         )
     except Exception as exc:

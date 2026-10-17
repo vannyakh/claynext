@@ -160,6 +160,9 @@ class PipelineTools:
             "caption_y": caption_y,
             "export_srt": self.store.get_setting("dub", "export_srt", "0") == "1",
             "gender_detect": self.store.get_setting("dub", "gender_detect", "1") == "1",
+            "translate_fit_duration": self.store.get_setting("dub", "translate_fit_duration", "1") == "1",
+            "translate_slang": self.store.get_setting("dub", "translate_slang", "1") == "1",
+            "translate_expression": self.store.get_setting("dub", "translate_expression", "1") == "1",
             "auto_mix": bool(getattr(self, "chk_auto_mix", None) and self.chk_auto_mix.isChecked()),
             "vocal_master": bool(getattr(self, "chk_vocal_master", None) and self.chk_vocal_master.isChecked()),
             # Default: dedicated tasks — merge is opt-in for episode → one movie.
@@ -231,6 +234,21 @@ class PipelineTools:
         self._apply_start_check(getattr(self, "chk_vocal_master", None), opts.get("vocal_master"), "vocal_master")
         self._apply_start_check(None, opts.get("export_srt"), "export_srt")
         self._apply_start_check(None, opts.get("gender_detect"), "gender_detect")
+        self._apply_start_check(
+            getattr(self, "chk_translate_fit", None),
+            opts.get("translate_fit_duration"),
+            "translate_fit_duration",
+        )
+        self._apply_start_check(
+            getattr(self, "chk_translate_slang", None),
+            opts.get("translate_slang"),
+            "translate_slang",
+        )
+        self._apply_start_check(
+            getattr(self, "chk_translate_expression", None),
+            opts.get("translate_expression"),
+            "translate_expression",
+        )
         self._apply_start_check(None, opts.get("caption_lock"), "caption_lock")
         self._apply_caption_start_options(opts)
 
@@ -320,6 +338,9 @@ class PipelineTools:
         fade_ms = self.slider_fade_ms.value()
         sync_mode = self.combo_sync_mode.currentData() or "stretch"
         auto_chain = bool(getattr(self, "chk_auto_chain", None) and self.chk_auto_chain.isChecked())
+        translate_fit = self.store.get_setting("dub", "translate_fit_duration", "1") == "1"
+        translate_slang = self.store.get_setting("dub", "translate_slang", "1") == "1"
+        translate_expression = self.store.get_setting("dub", "translate_expression", "1") == "1"
 
         worker = Worker(
             DubbingEngine.process_dubbing,
@@ -343,6 +364,9 @@ class PipelineTools:
             render=False,
             control=control,
             live=bridge.send,
+            translate_fit_duration=translate_fit,
+            translate_slang=translate_slang,
+            translate_expression=translate_expression,
         )
         worker.signals.progress.connect(self._on_progress)
         worker.signals.result.connect(self._on_complete)

@@ -61,14 +61,14 @@ def parse_retry_after(headers: Any = None, body: str = "") -> float:
             raw = headers.get("Retry-After") or headers.get("retry-after") or ""
         except Exception:
             raw = ""
-    from claynext.adapters.rust_core_adapter import RustAiAdapter
+    from claynext.adapters.rust_bridge import RustAiAdapter
 
     _, retry_after = RustAiAdapter.parse_retry_after(429, header=raw, body=body)
     return retry_after
 
 
 def is_rate_limit(status: int, body: str = "") -> bool:
-    from claynext.adapters.rust_core_adapter import RustAiAdapter
+    from claynext.adapters.rust_bridge import RustAiAdapter
 
     limited, _ = RustAiAdapter.parse_retry_after(status, body=body)
     return limited
@@ -130,7 +130,7 @@ class ApiKeyPool:
             rows = self._ready_rows(provider)
             if not rows:
                 return None
-            from claynext.adapters.rust_core_adapter import RustAiAdapter
+            from claynext.adapters.rust_bridge import RustAiAdapter
 
             rust_chosen = RustAiAdapter.acquire_llm_key(rows, provider)
             if rust_chosen:
@@ -155,7 +155,7 @@ class ApiKeyPool:
         get_store().update_api_key_state(key_id, cooldown_until=until, fail_count=fails)
 
     def soonest_cooldown(self, provider: str) -> float:
-        from claynext.adapters.rust_core_adapter import RustAiAdapter
+        from claynext.adapters.rust_bridge import RustAiAdapter
 
         all_keys = self.list_keys(provider)
         # Convert cooldown_until to epoch seconds if present

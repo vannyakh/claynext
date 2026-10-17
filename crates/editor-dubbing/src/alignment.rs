@@ -1,10 +1,12 @@
 use crate::segments::DubbedSegment;
+use claynext_ai_runtime::align_speech_speed;
 use editor_types::Rational;
 
 pub struct SegmentAligner;
 
 impl SegmentAligner {
-    /// Adjust speech speed so translated segment fits within the original duration slot
+    /// Adjust speech speed so translated segment fits within the original duration slot.
+    /// Uses shared ai-runtime timing core (same as claynext-ai align-speed / Python bridge).
     pub fn align_segment_duration(
         segment: &mut DubbedSegment,
         available_duration: Rational,
@@ -13,10 +15,7 @@ impl SegmentAligner {
     ) {
         let current_dur = segment.duration().to_f64();
         let target_dur = available_duration.to_f64();
-
-        if current_dur > 0.0 && target_dur > 0.0 {
-            let required_speed = (current_dur / target_dur) as f32;
-            segment.speech_speed = required_speed.clamp(min_speed, max_speed);
-        }
+        segment.speech_speed =
+            align_speech_speed(current_dur, target_dur, min_speed, max_speed);
     }
 }

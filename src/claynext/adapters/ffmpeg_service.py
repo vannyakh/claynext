@@ -214,7 +214,18 @@ def fit_duration(
             args += ["-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", dst]
         proc = run_ffmpeg(args)
     else:
-        tempo = max(min_tempo, min(max_tempo, ratio))
+        # Tempo clamp from Rust align-speed (SegmentAligner); Python fallback.
+        tempo = None
+        try:
+            from claynext.adapters.rust_bridge import RustAiAdapter
+
+            tempo = RustAiAdapter.align_speech_speed(
+                current, target, min_speed=min_tempo, max_speed=max_tempo
+            )
+        except Exception:
+            tempo = None
+        if tempo is None:
+            tempo = max(min_tempo, min(max_tempo, ratio))
         # Build atempo filter chain (atempo filter accepts values in [0.5, 2.0])
         if tempo > 2.0:
             filters = [f"atempo=2.0", f"atempo={tempo / 2.0:.4f}"]
@@ -522,7 +533,7 @@ def probe_media(path: str) -> dict:
         return {}
 
     try:
-        from claynext.adapters.rust_core_adapter import RustFfmpegAdapter
+        from claynext.adapters.rust_bridge import RustFfmpegAdapter
         meta = RustFfmpegAdapter.probe(path)
         if meta and (meta.video_stream or meta.audio_stream):
             w = meta.video_stream.width if meta.video_stream else 0

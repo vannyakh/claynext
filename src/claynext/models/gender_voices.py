@@ -152,30 +152,7 @@ def voice_display_name(voice_id: str) -> str:
     """Short cast name from a TTS voice id (e.g. Sreymom, Bella, Andrew)."""
     from claynext.models.tts_service import TTSEngine
 
-    if not voice_id:
-        return "Voice"
-    for voice in TTSEngine.VOICE_PRESETS:
-        if voice.get("id") != voice_id:
-            continue
-        alias = str(voice.get("alias") or "").strip()
-        if alias:
-            return alias
-        name = str(voice.get("name") or "")
-        # "Edge - Sreymom (Female, Khmer)" → Sreymom
-        if " - " in name:
-            name = name.split(" - ", 1)[1]
-        if "(" in name:
-            name = name.split("(", 1)[0]
-        name = name.strip()
-        if name:
-            return name
-    # km-KH-SreymomNeural → Sreymom
-    stem = voice_id.split("/")[-1].replace("Neural", "")
-    skip = {"edge", "kitten", "voxcpm", "en", "us", "km", "kh", "vi", "vn", "ja", "jp", "ko", "kr", "zh", "cn"}
-    for part in reversed(stem.replace("_", "-").split("-")):
-        if part.isalpha() and len(part) >= 3 and part.lower() not in skip:
-            return part[:1].upper() + part[1:]
-    return stem or "Voice"
+    return TTSEngine.voice_label(voice_id)
 
 
 def voices_for_lang(lang: str = "") -> list[dict[str, Any]]:
@@ -183,20 +160,15 @@ def voices_for_lang(lang: str = "") -> list[dict[str, Any]]:
     from claynext.models.tts_service import TTSEngine
 
     out: list[dict[str, Any]] = []
-    for voice in TTSEngine.VOICE_PRESETS:
-        if lang and str(voice.get("lang") or "") != lang:
-            continue
-        vid = str(voice.get("id") or "")
-        if not vid:
-            continue
+    for voice in TTSEngine.list_voices(lang or None):
         out.append({
-            "id": vid,
-            "label": voice_display_name(vid),
-            "gender": voice_entry_gender(voice),
-            "name": voice.get("name") or vid,
+            "id": voice["id"],
+            "label": voice["name"],
+            "gender": voice.get("gender") or voice_entry_gender(voice),
+            "name": voice["name"],
+            "tag": voice.get("tag") or "",
+            "lang": voice.get("lang") or "",
         })
-    if not out and lang:
-        return voices_for_lang("")
     return out
 
 

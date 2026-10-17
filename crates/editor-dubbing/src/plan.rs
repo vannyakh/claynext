@@ -11,6 +11,19 @@ pub struct DubbingPipelinePlan {
     pub ducking_music_gain_db: f32,
     pub speech_speed_min: f32,
     pub speech_speed_max: f32,
+    /// Fit spoken length to TTS slot (recommended_syllables).
+    #[serde(default = "default_true")]
+    pub translate_fit_duration: bool,
+    /// Prefer natural slang / idioms in the target language.
+    #[serde(default = "default_true")]
+    pub translate_slang: bool,
+    /// Allow optional TTS expression tags in translated lines.
+    #[serde(default = "default_true")]
+    pub translate_expression: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for DubbingPipelinePlan {
@@ -25,6 +38,9 @@ impl Default for DubbingPipelinePlan {
             ducking_music_gain_db: -14.0,
             speech_speed_min: 0.85,
             speech_speed_max: 1.35,
+            translate_fit_duration: true,
+            translate_slang: true,
+            translate_expression: true,
         }
     }
 }

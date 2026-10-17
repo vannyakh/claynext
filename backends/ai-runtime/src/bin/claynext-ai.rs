@@ -1,9 +1,14 @@
 use claynext_ai_runtime::{
-    chunk_subtitles_for_translation, energy_vad_chunking, filter_ocr_results, is_rate_limit_status,
-    parse_expression_tags, parse_retry_after, ApiKeyItem, InferenceDeviceConfig, NativeKeyPool,
-    OcrBox, RateLimitDecision, VadConfig, WhisperConfig,
+    align_speech_speed_result, build_dubbing_llm_prompt_from_request, build_llm_translation_prompt,
+    calculate_ducked_background_volume, chunk_subtitles_for_translation, energy_vad_chunking,
+    estimate_speech_quota, filter_ocr_results, is_rate_limit_status, parse_expression_tags,
+    parse_retry_after, ApiKeyItem, DubPromptRequest, InferenceDeviceConfig, NativeKeyPool, OcrBox,
+    RateLimitDecision, VadConfig, WhisperConfig,
 };
 use std::env;
+use std::fs::File;
+use std::io::{self, Read};
+use std::path::Path;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -36,8 +41,25 @@ fn main() {
                 serde_json::to_string_pretty(&segments).unwrap_or_default()
             );
         }
+        "energy-vad" => {
+            // Args: pcm_f32_path sample_rate [threshold]
+            let path = args.get(2).map(|s| s.as_str()).unwrap_or("");
+            let sample_rate: u32 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(16000);
+            let threshold: f32 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(0.5);
+            match read_pcm_f32(path) {
+                Ok(samples) => {
+                    let mut cfg = VadConfig::default();
+                    cfg.threshold = threshold;
+                    let segments = energy_vad_chunking(&samples, sample_rate, &cfg);
+                    println!("{}", serde_json::to_string(&segments).unwrap_or_default());
+                }
+                Err(e) => {
+                    eprintln!("energy-vad failed: {e}");
+                    std::process::exit(2);
+                }
+            }
+        }
         "llm-parse-retry" => {
-            // Args: status [header] [body]
             let status: u16 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(200);
             let header = args.get(3).map(|s| s.as_str());
             let body = args.get(4).map(|s| s.as_str()).unwrap_or("");
@@ -51,7 +73,6 @@ fn main() {
             println!("{}", serde_json::to_string(&decision).unwrap_or_default());
         }
         "llm-acquire" => {
-            // Args: keys_json provider
             let keys_json = args.get(2).map(|s| s.as_str()).unwrap_or("[]");
             let provider = args.get(3).map(|s| s.as_str()).unwrap_or("gemini");
             let keys: Vec<ApiKeyItem> = serde_json::from_str(keys_json).unwrap_or_default();
@@ -60,7 +81,6 @@ fn main() {
             println!("{}", serde_json::to_string(&acquired).unwrap_or_default());
         }
         "llm-soonest-cooldown" => {
-            // Args: keys_json provider
             let keys_json = args.get(2).map(|s| s.as_str()).unwrap_or("[]");
             let provider = args.get(3).map(|s| s.as_str()).unwrap_or("gemini");
             let keys: Vec<ApiKeyItem> = serde_json::from_str(keys_json).unwrap_or_default();
@@ -69,30 +89,97 @@ fn main() {
             println!("{{\"soonest_cooldown_secs\": {:.2}}}", wait);
         }
         "parse-expression-tags" => {
-            // Args: text
             let text = args.get(2).map(|s| s.as_str()).unwrap_or("");
             let segments = parse_expression_tags(text);
             println!("{}", serde_json::to_string(&segments).unwrap_or_default());
         }
         "chunk-subtitles" => {
-            // Args: text [max_chars]
             let text = args.get(2).map(|s| s.as_str()).unwrap_or("");
             let max_chars: usize = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(1500);
             let chunks = chunk_subtitles_for_translation(text, max_chars);
             println!("{}", serde_json::to_string(&chunks).unwrap_or_default());
         }
         "filter-ocr" => {
-            // Args: boxes_json [min_confidence]
             let boxes_json = args.get(2).map(|s| s.as_str()).unwrap_or("[]");
             let min_conf: f32 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(0.5);
             let boxes: Vec<OcrBox> = serde_json::from_str(boxes_json).unwrap_or_default();
             let filtered = filter_ocr_results(&boxes, min_conf);
             println!("{}", serde_json::to_string(&filtered).unwrap_or_default());
         }
+        "speech-quota" => {
+            let duration: f64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0.0);
+            let lang = args.get(3).map(|s| s.as_str()).unwrap_or("");
+            let quota = estimate_speech_quota(duration, lang);
+            println!("{}", serde_json::to_string(&quota).unwrap_or_default());
+        }
+        "build-dub-prompt" => {
+            let raw = if args.get(2).map(|s| s.as_str()) == Some("-") {
+                let mut buf = String::new();
+                io::stdin().read_to_string(&mut buf).ok();
+                buf
+            } else {
+                args.get(2).cloned().unwrap_or_else(|| "{}".to_string())
+            };
+            match serde_json::from_str::<DubPromptRequest>(&raw) {
+                Ok(req) => {
+                    let prompt = build_dubbing_llm_prompt_from_request(&req);
+                    print!("{prompt}");
+                }
+                Err(e) => {
+                    eprintln!("Invalid DubPromptRequest JSON: {e}");
+                    std::process::exit(2);
+                }
+            }
+        }
+        "build-translate-prompt" => {
+            // Args: source_lang target_lang text
+            let source = args.get(2).map(|s| s.as_str()).unwrap_or("auto");
+            let target = args.get(3).map(|s| s.as_str()).unwrap_or("en");
+            let text = args.get(4).map(|s| s.as_str()).unwrap_or("");
+            print!("{}", build_llm_translation_prompt(source, target, text));
+        }
+        "ducked-volume" => {
+            // Args: base_volume attenuation_db
+            let base: f32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(1.0);
+            let atten: f32 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(-12.0);
+            let vol = calculate_ducked_background_volume(base, atten);
+            println!("{{\"volume\":{vol}}}");
+        }
+        "align-speed" => {
+            // Args: audio_dur slot_dur [min_speed] [max_speed]
+            let audio: f64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0.0);
+            let slot: f64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(0.0);
+            let min_s: f32 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(0.65);
+            let max_s: f32 = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(1.85);
+            let result = align_speech_speed_result(audio, slot, min_s, max_s);
+            println!("{}", serde_json::to_string(&result).unwrap_or_default());
+        }
         _ => {
             eprintln!("Claynext AI Runtime Tool");
-            eprintln!("Usage: claynext-ai [device | whisper-config | vad-sim | llm-parse-retry | llm-acquire | llm-soonest-cooldown | parse-expression-tags | chunk-subtitles | filter-ocr]");
+            eprintln!(
+                "Usage: claynext-ai [device | whisper-config | vad-sim | energy-vad | \
+                 llm-parse-retry | llm-acquire | llm-soonest-cooldown | parse-expression-tags | \
+                 chunk-subtitles | filter-ocr | speech-quota | build-dub-prompt | \
+                 build-translate-prompt | ducked-volume | align-speed]"
+            );
             std::process::exit(1);
         }
     }
+}
+
+fn read_pcm_f32(path: &str) -> Result<Vec<f32>, String> {
+    if path.is_empty() || !Path::new(path).is_file() {
+        return Err("pcm file missing".into());
+    }
+    let mut file = File::open(path).map_err(|e| e.to_string())?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    if bytes.len() % 4 != 0 {
+        return Err("pcm length not multiple of 4".into());
+    }
+    let mut samples = Vec::with_capacity(bytes.len() / 4);
+    for chunk in bytes.chunks_exact(4) {
+        samples.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+    }
+    Ok(samples)
 }

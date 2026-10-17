@@ -29,7 +29,7 @@ class TestAppStartup(unittest.TestCase):
         self.assertIsNotNone(engine)
 
     def test_rust_ai_adapter(self):
-        from claynext.adapters.rust_core_adapter import RustAiAdapter
+        from claynext.adapters.rust_bridge import RustAiAdapter
 
         # Test rate limit parsing via Rust AI binary
         limited, retry_after = RustAiAdapter.parse_retry_after(429, header="35", body="Rate limited")

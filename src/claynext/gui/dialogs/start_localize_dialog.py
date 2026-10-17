@@ -458,7 +458,7 @@ class StartLocalizeDialog(QDialog):
         for eid, label in TranslateEngine.ENGINES:
             self.combo_translator.addItem(label, eid)
         self._set_data(self.combo_translator, defaults.get("translator", "auto"))
-        self.combo_translator.currentIndexChanged.connect(self._sync_ollama)
+        self.combo_translator.currentIndexChanged.connect(self._sync_translate_style)
         grid.addWidget(self._label("Translate"), 1, 0)
         grid.addWidget(self.combo_translator, 1, 1)
 
@@ -470,6 +470,35 @@ class StartLocalizeDialog(QDialog):
         grid.addWidget(self._label("Ollama"), 2, 0)
         grid.addWidget(self.edit_ollama, 2, 1)
         self._sync_ollama()
+
+        lay.addWidget(self._section_divider("Translate style (LLM)"))
+        style = QVBoxLayout()
+        style.setContentsMargins(0, 0, 0, 0)
+        style.setSpacing(8)
+        self.chk_translate_fit = self._option(
+            style,
+            "Fit line to TTS duration",
+            "Ask Gemini/Ollama to keep dub length inside the timing slot (syllable budget)",
+            bool(defaults.get("translate_fit_duration", True)),
+        )
+        self.chk_translate_slang = self._option(
+            style,
+            "Natural slang & idiom",
+            "Prefer colloquial / slang phrasing a native speaker would say on screen",
+            bool(defaults.get("translate_slang", True)),
+        )
+        self.chk_translate_expression = self._option(
+            style,
+            "Expression tags",
+            "Allow [laugh] [sigh] [excited]… cues for TTS when emotion is clear",
+            bool(defaults.get("translate_expression", True)),
+        )
+        tip = QLabel("Applies when Translate uses Gemini or Ollama (Auto prefers them).")
+        tip.setObjectName("start_dub_sources_head")
+        tip.setWordWrap(True)
+        style.addWidget(tip)
+        lay.addLayout(style)
+        self._sync_translate_style()
 
         lay.addWidget(self._section_divider("Options"))
         opts = QVBoxLayout()
@@ -514,6 +543,15 @@ class StartLocalizeDialog(QDialog):
         eid = self.combo_translator.currentData() or "auto"
         self.edit_ollama.setEnabled(eid in {"auto", "ollama"})
 
+    def _sync_translate_style(self, *_args):
+        self._sync_ollama()
+        eid = self.combo_translator.currentData() or "auto"
+        llm = eid in {"auto", "gemini", "ollama"}
+        for name in ("chk_translate_fit", "chk_translate_slang", "chk_translate_expression"):
+            w = getattr(self, name, None)
+            if w is not None:
+                w.setEnabled(llm)
+
     @staticmethod
     def _option(layout: QVBoxLayout, title: str, hint: str, checked: bool) -> QCheckBox:
         chk = QCheckBox(title)
@@ -551,16 +589,16 @@ class StartLocalizeDialog(QDialog):
             "caption_y": self.spin_caption_y.value(),
             "export_srt": self.chk_export_srt.isChecked(),
             "gender_detect": self.chk_gender_detect.isChecked(),
+            "translate_fit_duration": self.chk_translate_fit.isChecked(),
+            "translate_slang": self.chk_translate_slang.isChecked(),
+            "translate_expression": self.chk_translate_expression.isChecked(),
             "auto_mix": self.chk_auto_mix.isChecked(),
             "vocal_master": self.chk_vocal_master.isChecked(),
             "batch_mode": batch_mode,
         }
 
     def _refill_voices(self, lang: str):
-        voice_lang = "Chinese" if str(lang).startswith("Chinese") else lang
-        voices = [v for v in TTSEngine.VOICE_PRESETS if v.get("lang") == voice_lang]
-        if not voices:
-            voices = list(TTSEngine.VOICE_PRESETS)
+        voices = TTSEngine.list_voices(lang)
 
         keep_prim = self.combo_voice.currentData() or self._voice_prim
         keep_sec = self.combo_voice_sec.currentData() or self._voice_sec
@@ -572,17 +610,18 @@ class StartLocalizeDialog(QDialog):
         pick_prim = 0
         pick_sec = min(1, len(voices) - 1) if len(voices) > 1 else 0
         for i, voice in enumerate(voices):
-            self.combo_voice.addItem(voice["name"], voice["id"])
-            self.combo_voice_sec.addItem(voice["name"], voice["id"])
+            label = voice["name"]
+            self.combo_voice.addItem(label, voice["id"])
+            self.combo_voice_sec.addItem(label, voice["id"])
             if voice["id"] == keep_prim:
                 pick_prim = i
             if voice["id"] == keep_sec:
                 pick_sec = i
         if lang == "Khmer":
             for i, voice in enumerate(voices):
-                if "Sreymom" in voice["name"] and not keep_prim:
+                if voice["name"] == "Sreymom" and not keep_prim:
                     pick_prim = i
-                elif "Piseth" in voice["name"] and not keep_sec:
+                elif voice["name"] == "Piseth" and not keep_sec:
                     pick_sec = i
         self.combo_voice.setCurrentIndex(pick_prim)
         self.combo_voice_sec.setCurrentIndex(pick_sec)
