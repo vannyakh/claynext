@@ -87,6 +87,17 @@ def normalize_envelope(env):
 
 
 def probe_duration(path: str) -> float:
+    """Duration in seconds — prefers Rust claynext-ffmpeg via FFmpegAdapter."""
+    if not path or not os.path.isfile(path):
+        return 0.0
+    try:
+        from claynext.adapters.ffmpeg_adapter import get_ffmpeg_adapter
+
+        dur = float(get_ffmpeg_adapter().duration(path) or 0.0)
+        if dur > 0:
+            return dur
+    except Exception:
+        pass
     proc = subprocess.run(
         [ffmpeg_exe(), "-hide_banner", "-i", path],
         capture_output=True,
@@ -104,7 +115,17 @@ def probe_duration(path: str) -> float:
 
 
 def demux_wav(media_path: str, wav_path: str, *, rate: int = 48000, channels: int = 2) -> str:
+    """Extract PCM WAV — prefers Rust claynext-ffmpeg demux-audio."""
     Path(wav_path).parent.mkdir(parents=True, exist_ok=True)
+    try:
+        from claynext.adapters.ffmpeg_adapter import get_ffmpeg_adapter
+
+        if get_ffmpeg_adapter().demux_audio(
+            media_path, wav_path, sample_rate=rate, channels=channels
+        ):
+            return wav_path
+    except Exception:
+        pass
     proc = run_ffmpeg([
         "-y", "-i", media_path,
         "-vn", "-ac", str(channels), "-ar", str(rate),
@@ -214,17 +235,14 @@ def fit_duration(
             args += ["-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", dst]
         proc = run_ffmpeg(args)
     else:
-        # Tempo clamp from Rust align-speed (SegmentAligner); Python fallback.
-        tempo = None
+        # Tempo clamp via DubbingAdapter → Rust align-speed; Python fallback.
         try:
-            from claynext.adapters.rust_bridge import RustAiAdapter
+            from claynext.adapters.dubbing import get_dubbing_adapter
 
-            tempo = RustAiAdapter.align_speech_speed(
+            tempo = get_dubbing_adapter().align_speech_speed(
                 current, target, min_speed=min_tempo, max_speed=max_tempo
             )
         except Exception:
-            tempo = None
-        if tempo is None:
             tempo = max(min_tempo, min(max_tempo, ratio))
         # Build atempo filter chain (atempo filter accepts values in [0.5, 2.0])
         if tempo > 2.0:
@@ -533,8 +551,8 @@ def probe_media(path: str) -> dict:
         return {}
 
     try:
-        from claynext.adapters.rust_bridge import RustFfmpegAdapter
-        meta = RustFfmpegAdapter.probe(path)
+        from claynext.adapters.ffmpeg_adapter import get_ffmpeg_adapter
+        meta = get_ffmpeg_adapter().probe(path)
         if meta and (meta.video_stream or meta.audio_stream):
             w = meta.video_stream.width if meta.video_stream else 0
             h = meta.video_stream.height if meta.video_stream else 0

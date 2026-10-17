@@ -369,5 +369,103 @@ QLabel#project_settings_warn {{
     font-weight: 500;
     padding: 0 0 0 22px;
 }}
+
+/* ─── New Project (compact Settings-sized controls) ──────────────── */
+QDialog#new_project_dialog {{
+    background: {COLOR_BG_DARK};
+}}
+QDialog#new_project_dialog QPushButton#btn_secondary,
+QDialog#new_project_dialog QPushButton#btn_primary {{
+    min-height: 26px;
+    max-height: 28px;
+    padding: 0 12px;
+    font-size: 11px;
+    font-weight: 600;
+}}
+QDialog#new_project_dialog QLineEdit#home_search,
+QDialog#new_project_dialog QComboBox#asr_option_combo {{
+    min-height: 26px;
+    max-height: 28px;
+    padding: 2px 8px;
+    font-size: 11.5px;
+}}
+QLabel#new_project_title {{
+    color: {COLOR_TEXT_MAIN};
+    font-size: 15px;
+    font-weight: 700;
+}}
+QLabel#new_project_kicker {{
+    color: {COLOR_TEXT_MUTED};
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+}}
+QLabel#new_project_field_lbl {{
+    color: {COLOR_TEXT_SUB};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QLabel#new_project_hint {{
+    color: {COLOR_TEXT_MUTED};
+    font-size: 10.5px;
+}}
+QLabel#new_project_summary_val {{
+    color: {COLOR_TEXT_MAIN};
+    font-size: 11.5px;
+    font-weight: 600;
+}}
+QLabel#new_project_path_preview {{
+    color: {COLOR_TEXT_MUTED};
+    font-size: 10.5px;
+}}
+QToolButton#new_project_template {{
+    background: {COLOR_BG_INPUT};
+    color: {COLOR_TEXT_MAIN};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 6px;
+    padding: 0 8px;
+    font-size: 10.5px;
+    font-weight: 600;
+}}
+QToolButton#new_project_template:hover {{
+    border-color: {primary};
+}}
+QToolButton#new_project_template:checked {{
+    background: {wash};
+    border-color: {primary};
+    color: {COLOR_TEXT_MAIN};
+}}
+QFrame#new_project_drop_zone {{
+    background: {COLOR_BG_INPUT};
+    border: 1px dashed {COLOR_BORDER};
+    border-radius: 8px;
+}}
+QLabel#new_project_pill_ready {{
+    background: rgba(16, 185, 129, 0.12);
+    color: {COLOR_ACCENT_EMERALD};
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 10.5px;
+    font-weight: 650;
+}}
+QLabel#new_project_pill_warn {{
+    background: rgba(245, 158, 11, 0.12);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 10.5px;
+    font-weight: 650;
+}}
+QLabel#new_project_pill_error {{
+    background: rgba(239, 68, 68, 0.12);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 10.5px;
+    font-weight: 650;
+}}
 """
 

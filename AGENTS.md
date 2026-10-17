@@ -6,15 +6,35 @@ Architecture, design standards, and operational guidelines for AI agents working
 
 ## 1. Project Overview & Tech Stack
 
-Claynext is a high-performance desktop AI media application built with:
-- **Language**: Python 3.12+ (strictly with modern typing annotations: `from __future__ import annotations`, `X | None`, `Path`)
-- **GUI Framework**: `PySide6` (Qt 6.11+) with custom Cyber Dark QSS styling
-- **Environment & Dependency Manager**: `uv` (Hatchling build backend in `pyproject.toml`)
-- **Audio & Video Engine**: `ffmpeg-python`, `imageio-ffmpeg` (bundled binaries), `moviepy`
-- **AI Processing Engines**:
-  - `faster-whisper` (ASR used inside studio pipeline)
-  - `edge-tts` (Neural multi-voice speech synthesis)
-  - `deep-translator` (NMT caption translation)
+Claynext is a high-performance desktop AI media application. The project is **migrating from all-Python core logic to a hybrid stack**:
+
+| Layer | Location | Responsibility |
+|:---|:---|:---|
+| GUI + CLI | `src/claynext/gui`, `cli` | PySide6 Studio, Cyber Dark UI, CLI entrypoints |
+| Models / orchestration | `src/claynext/models` | Pipelines, ML SDKs, JobControl |
+| Domain Adapters | `src/claynext/adapters` | Tool APIs → Rust; Python fallbacks |
+| Rust bridge | `src/claynext/adapters/rust_bridge` | Binary discovery + UTF-8 IPC |
+| Rust backends | `backends/*` | Fast CLI tools (`claynext-ai`, `claynext-ffmpeg`, …) |
+| Editor crates | `crates/editor-*` | Shared domain (dubbing plan, alignment, types) |
+
+- **Language (app shell)**: Python 3.12+ (`from __future__ import annotations`, `X | None`, `Path`)
+- **Language (core tools)**: Rust (Cargo workspace)
+- **GUI Framework**: `PySide6` (Qt 6.11+) with Cyber Dark QSS
+- **Environment**: `uv` (Hatchling in `pyproject.toml`)
+- **Media**: Rust `claynext-ffmpeg` preferred; `imageio-ffmpeg` fallback
+- **AI SDKs (still Python)**: `faster-whisper`, `edge-tts`, Gemini/Ollama HTTP, optional Demucs/WhisperX
+
+**Agent skill for this architecture:** `.agents/skills/claynext-rust-core/SKILL.md`  
+**Cursor rules:** `.cursor/rules/rust-python-architecture.mdc` (+ backends / adapters rules)
+
+### Canonical call path
+
+```text
+GUI/CLI → models → adapters (Ai / Dubbing / FFmpeg / …)
+                 → rust_bridge → backends/* or crates/*
+```
+
+Models and GUI **must not** import `rust_bridge` directly. Put new core algorithms in Rust; expose via Adapter.
 
 ---
 
@@ -50,10 +70,16 @@ Claynext is a high-performance desktop AI media application built with:
 - Always respect `CUSTOM_WINDOW_CHROME` from `src/claynext/constants/ui_constants.py`.
 
 ### Rule 4: FFmpeg and Media Compatibility
-- Never assume a bare `ffmpeg` is available on the system PATH. Always resolve FFmpeg using `imageio_ffmpeg.get_ffmpeg_exe()` as implemented in `src/claynext/core/ffmpeg_tools.py` and `src/claynext/core/media_compat.py`.
-- For media playback in Qt, verify and convert files to safe AAC-LC 44.1kHz stereo or generate 720p lightweight H.264 proxies using `src/claynext/core/media_compat.py`.
+- Prefer `get_ffmpeg_adapter()` / Rust `claynext-ffmpeg` for probe, stills, and PCM decode.
+- Never assume a bare `ffmpeg` is on PATH. Fall back to `imageio_ffmpeg.get_ffmpeg_exe()` via adapters / `ffmpeg_service`.
+- For Qt playback, use safe AAC-LC / H.264 proxies through media adapters (`ensure_playback_file`, `ensure_proxy_render`).
 
-### Rule 5: Filesystem & Cache Standards
+### Rule 5: Rust Core Before Python Hot Paths
+- Timing, speech quota, dub/translate prompts, VAD, OCR filter, tempo align, ducking math, media probe/decode belong in **Rust** (`backends/` / `crates/`).
+- Wire tools through **domain Adapters** (`get_ai_adapter`, `get_dubbing_adapter`, `get_ffmpeg_adapter`, …).
+- Keep Python fallbacks so Studio runs without built binaries; do not crash the GUI.
+
+### Rule 6: Filesystem & Cache Standards
 - Never output temporary or generated files into the project root directory.
 - Model weights: `data/models/`
 - User exports: `data/outputs/`

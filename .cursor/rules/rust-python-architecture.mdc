@@ -1,0 +1,47 @@
+---
+description: Claynext hybrid architecture — Python GUI + Rust core via Adapters
+alwaysApply: true
+---
+
+# Claynext Architecture: Python GUI + Rust Core
+
+Claynext is mid-migration from an all-Python stack to a **hybrid** design:
+
+| Layer | Tech | Role |
+|:---|:---|:---|
+| GUI / CLI / orchestration | Python (`src/claynext`) | PySide6 Studio, CLI, models, workers |
+| Domain Adapters | Python (`src/claynext/adapters`) | Stable API for tools; call Rust; Python fallback |
+| Rust bridge | Python (`adapters/rust_bridge`) | Locate binaries, UTF-8 subprocess IPC |
+| Native backends | Rust (`backends/*`) | Fast CLI tools: ffmpeg, ai, cpu, codecs, wgpu |
+| Editor crates | Rust (`crates/editor-*`) | Shared domain logic (dubbing plan, alignment, types) |
+
+## Hard rules for agents
+
+1. **Do not put new core logic in Python** when it belongs in Rust (timing, speech quota, prompts, VAD, OCR filter, PCM decode, tempo align, ducking math, probe/export).
+2. **Models and GUI must not import `rust_bridge` directly.** Use domain adapters:
+   - `get_ai_adapter()` — LLM pool, OCR filter, expression tags, VAD
+   - `get_dubbing_adapter()` — speech quota, dub prompt, align speed, duck volume
+   - `get_ffmpeg_adapter()` — probe, stills, PCM decode
+   - `get_media_adapter()` / `get_hardware_codecs()` — media + GPU encode
+3. **Rust bridge** (`claynext.adapters.rust_bridge`) is for adapters only.
+4. **Always keep a Python fallback** when a binary is missing so Studio still runs.
+5. **GUI stays non-blocking** — call adapters from `Worker` / `QThreadPool`, never on the Qt UI thread.
+6. **Build Rust tools** into `target/debug` or `target/release` (`claynext-ai`, `claynext-ffmpeg`, etc.). Python discovers them via `rust_bridge.process._find_binary`.
+
+## Call path (canonical)
+
+```text
+GUI / CLI
+  → models/* (TranslateEngine, DubbingEngine, …)
+    → adapters/* (AiAdapter, DubbingAdapter, FFmpegAdapter, …)
+      → rust_bridge/* (RustAiAdapter, RustFfmpegAdapter, …)
+        → backends/* binaries  OR  crates/* shared logic
+```
+
+## When adding a feature
+
+1. Implement or extend logic in `backends/` or `crates/`.
+2. Expose a CLI command on the matching binary (e.g. `claynext-ai speech-quota`).
+3. Add/extend the method on `rust_bridge` then the **domain adapter**.
+4. Wire `models/` + GUI to the **adapter only**.
+5. Prefer performance-critical paths in Rust; keep network/ML SDKs (Edge-TTS, Whisper, Gemini) in Python unless a Rust path already exists.

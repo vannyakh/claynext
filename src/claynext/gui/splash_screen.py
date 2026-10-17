@@ -9,7 +9,6 @@ from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QLabel, QProgressBar, QVBoxLayout, QWidget
 
 from claynext.constants.theme_constants import (
-    COLOR_ACCENT_PURPLE,
     COLOR_BG_CARD,
     COLOR_BG_DARK,
     COLOR_BG_INPUT,
@@ -17,10 +16,8 @@ from claynext.constants.theme_constants import (
     COLOR_PRIMARY,
     COLOR_TEXT_MAIN,
     COLOR_TEXT_MUTED,
-    COLOR_TEXT_SUB,
 )
 from claynext.gui.icons import image_pixmap
-from claynext.utils.config import APP_NAME, APP_VERSION
 
 
 class SplashScreen(QWidget):
@@ -32,17 +29,18 @@ class SplashScreen(QWidget):
         super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.setFixedSize(460, 280)
+        self.setFixedSize(420, 260)
         self.setObjectName("splashScreen")
 
         self._progress = 0
         self._phase_labels = [
-            "Initializing core engine…",
+            "Initializing…",
             "Loading media engines…",
             "Preparing workspace…",
-            f"Starting {APP_NAME}…",
+            "Ready",
         ]
         self._phase_idx = 0
+        self._logo_size = 120
 
         self._center()
         self._build_ui()
@@ -59,29 +57,28 @@ class SplashScreen(QWidget):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(36, 28, 36, 24)
+        layout.setContentsMargins(36, 28, 36, 28)
         layout.setSpacing(0)
         layout.addStretch(1)
 
+        size = self._logo_size
         logo_lbl = QLabel()
-        logo_lbl.setFixedSize(64, 64)
+        logo_lbl.setFixedSize(size, size)
         logo_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        px = image_pixmap("splash_hero", 64)
+        logo_lbl.setScaledContents(False)
+        px = image_pixmap("splash_hero", size)
         if px.isNull():
-            px = image_pixmap("app", 64)
+            px = image_pixmap("app", size)
         if not px.isNull():
-            logo_lbl.setPixmap(px)
+            logo_lbl.setPixmap(
+                px.scaled(
+                    size,
+                    size,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
         layout.addWidget(logo_lbl, 0, Qt.AlignmentFlag.AlignCenter)
-        layout.addSpacing(12)
-
-        name_lbl = QLabel(APP_NAME)
-        name_lbl.setObjectName("splash_title")
-        name_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        name_lbl.setStyleSheet(
-            f"color: {COLOR_TEXT_MAIN}; font-size: 18px; font-weight: 800; "
-            "letter-spacing: -0.3px; background: transparent;"
-        )
-        layout.addWidget(name_lbl, 0, Qt.AlignmentFlag.AlignCenter)
 
         layout.addStretch(1)
 
@@ -118,14 +115,6 @@ class SplashScreen(QWidget):
             }}
         """)
         layout.addWidget(self.progress_bar)
-
-        layout.addSpacing(8)
-        foot = QLabel(f"v{APP_VERSION}")
-        foot.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        foot.setStyleSheet(
-            f"color: {COLOR_TEXT_SUB}; font-size: 10px; font-weight: 600; background: transparent;"
-        )
-        layout.addWidget(foot, 0, Qt.AlignmentFlag.AlignCenter)
 
     def _start_animation(self):
         self._tick_timer = QTimer(self)

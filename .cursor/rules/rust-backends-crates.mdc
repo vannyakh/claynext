@@ -1,0 +1,36 @@
+---
+description: Conventions for Rust backends/ and crates/editor-* core tools
+globs: backends/**/*.{rs,toml},crates/**/*.{rs,toml}
+alwaysApply: false
+---
+
+# Rust Backends & Editor Crates
+
+## `backends/` — CLI tool binaries (called from Python)
+
+| Package | Binary | Purpose |
+|:---|:---|:---|
+| `backends/ai-runtime` | `claynext-ai` | Speech quota, dub/translate prompts, VAD, OCR filter, LLM key pool, expression tags, align-speed, ducked-volume |
+| `backends/ffmpeg` | `claynext-ffmpeg` | Probe, stills, decode-audio → `.f32`, demux-audio WAV, export/transcode, mux |
+| `backends/cpu` | `claynext-cpu` | Waveform downsample, SIMD audio stats, benchmark |
+| `backends/hardware-codecs` | `claynext-codecs` | GPU detect, optimal ffmpeg encoder args |
+| `backends/wgpu` | `claynext-wgpu` | GPU/WGPU device info |
+
+- Prefer **JSON stdout** for structured results; plain text OK for prompts.
+- Use UTF-8; Python bridge runs with `encoding="utf-8"`.
+- Share pure functions via the crate lib (`claynext_ai_runtime::…`) and call them from the bin.
+- Workspace build: `cargo build -p claynext-ai-runtime --bin claynext-ai` (set `CARGO_TARGET_DIR` to repo `target/` when needed).
+
+## `crates/editor-*` — shared editor domain
+
+Notable crates: `editor-dubbing` (plan, alignment, pipeline), `editor-speech`, `editor-types`, `editor-timeline`, `editor-media`, `editor-ai`, …
+
+- Keep **pure timing/plan logic** here or in `ai-runtime`; avoid duplicating formulas in Python.
+- `editor-dubbing` should reuse `claynext_ai_runtime` helpers (e.g. `align_speech_speed`) when possible.
+- Serialize plan fields (`translate_fit_duration`, `translate_slang`, `translate_expression`) with serde defaults for backward compatibility.
+
+## Do not
+
+- Reimplement the same algorithm only in Python when a Rust function already exists.
+- Add heavy GUI dependencies to Rust crates.
+- Break the Python adapter contract without updating `src/claynext/adapters/`.

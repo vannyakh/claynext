@@ -1,55 +1,51 @@
+use crate::error::{FfmpegError, Result};
+use crate::process::find_executable;
 use std::path::Path;
 use std::process::Command;
 
+/// Demux / extract audio to PCM WAV via bundled or system FFmpeg.
 pub fn extract_audio_wav(
     input: &Path,
     output: &Path,
     sample_rate: u32,
     channels: u32,
-    ffmpeg_exe: Option<&str>,
-) -> Result<(), anyhow::Error> {
-    let bin = ffmpeg_exe.unwrap_or("ffmpeg");
-
-    let status = Command::new(bin)
-        .args([
-            "-y",
-            "-i", input.to_str().unwrap_or_default(),
-            "-vn",
-            "-acodec", "pcm_s16le",
-            "-ar", &sample_rate.to_string(),
-            "-ac", &channels.to_string(),
-            output.to_str().unwrap_or_default(),
-        ])
-        .status()?;
-
-    if !status.success() {
-        return Err(anyhow::anyhow!("FFmpeg audio extraction failed"));
+) -> Result<()> {
+    if !input.exists() {
+        return Err(FfmpegError::InvalidInput(format!(
+            "Input file not found: {}",
+            input.display()
+        )));
     }
-    Ok(())
-}
+    let ffmpeg_exe = find_executable("ffmpeg").ok_or(FfmpegError::FfmpegNotFound)?;
+    if let Some(parent) = output.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
 
-pub fn extract_time_slice(
-    input: &Path,
-    output: &Path,
-    start_sec: f64,
-    duration_sec: f64,
-    ffmpeg_exe: Option<&str>,
-) -> Result<(), anyhow::Error> {
-    let bin = ffmpeg_exe.unwrap_or("ffmpeg");
-
-    let status = Command::new(bin)
+    let status = Command::new(&ffmpeg_exe)
         .args([
             "-y",
-            "-ss", &format!("{:.3}", start_sec),
-            "-i", input.to_str().unwrap_or_default(),
-            "-t", &format!("{:.3}", duration_sec),
-            "-c", "copy",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            input.to_str().unwrap_or_default(),
+            "-vn",
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            &sample_rate.to_string(),
+            "-ac",
+            &channels.to_string(),
             output.to_str().unwrap_or_default(),
         ])
-        .status()?;
+        .status()
+        .map_err(FfmpegError::ProcessSpawn)?;
 
-    if !status.success() {
-        return Err(anyhow::anyhow!("FFmpeg time slice extraction failed"));
+    if !status.success() || !output.is_file() {
+        return Err(FfmpegError::ProcessFailed {
+            exit_code: status.code(),
+            stderr: "FFmpeg audio demux failed".into(),
+        });
     }
     Ok(())
 }

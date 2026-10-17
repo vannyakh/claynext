@@ -17,9 +17,6 @@ from claynext.models.media import MediaMetadata, MediaType
 logger = logging.getLogger("claynext.adapters.ffmpeg")
 
 
-WAVE_RATE = 20
-
-
 def probe_media(file_path: str | Path) -> MediaMetadata:
     """Probe media metadata using Rust core probe when available, with fallback to ffprobe subprocess."""
     p = Path(file_path)
@@ -55,20 +52,23 @@ def probe_duration(file_path: str | Path) -> float:
 
 
 def run_ffmpeg(args: list[str]) -> bool:
-    """Execute FFmpeg command through Rust engine or imageio-ffmpeg binary."""
+    """Convenience bool wrapper over ffmpeg_service.run_ffmpeg (bundled binary)."""
     try:
-        import imageio_ffmpeg
-        exe = imageio_ffmpeg.get_ffmpeg_exe()
-        cmd = [exe] + args
-        subprocess.run(cmd, check=True, capture_output=True)
-        return True
+        from claynext.adapters.ffmpeg_service import run_ffmpeg as _run
+
+        # Ensure -y is present for overwrite-friendly model callers.
+        argv = list(args)
+        if "-y" not in argv:
+            argv = ["-y", *argv]
+        res = _run(argv)
+        return res.returncode == 0
     except Exception as e:
         logger.warning(f"run_ffmpeg error: {e}")
         return False
 
 
 class FFmpegAdapter:
-    """Orchestrates media probing and stream processing."""
+    """Orchestrates media probing and stream processing via Rust core."""
 
     @staticmethod
     def probe(file_path: str | Path) -> MediaMetadata:
@@ -77,6 +77,51 @@ class FFmpegAdapter:
     @staticmethod
     def duration(file_path: str | Path) -> float:
         return probe_duration(file_path)
+
+    @staticmethod
+    def extract_still(
+        file_path: str | Path,
+        output_path: str | Path,
+        *,
+        timestamp_secs: float = 1.0,
+        max_width: int | None = 160,
+    ) -> bool:
+        """Still frame via claynext-ffmpeg."""
+        return RustFfmpegAdapter.extract_still(
+            file_path,
+            output_path,
+            timestamp_secs=timestamp_secs,
+            max_width=max_width,
+        )
+
+    @staticmethod
+    def demux_audio(
+        media_path: str | Path,
+        output_wav: str | Path,
+        *,
+        sample_rate: int = 48000,
+        channels: int = 2,
+    ) -> bool:
+        """PCM WAV demux via claynext-ffmpeg."""
+        return RustFfmpegAdapter.demux_audio(
+            media_path, output_wav, sample_rate=sample_rate, channels=channels
+        )
+
+    @staticmethod
+    def decode_audio_pcm_f32(
+        file_path: str | Path,
+        *,
+        sample_rate: int = 16000,
+        channels: int = 1,
+    ):
+        """PCM f32 decode via claynext-ffmpeg (None if unavailable)."""
+        return RustFfmpegAdapter.decode_audio_pcm_f32(
+            file_path, sample_rate=sample_rate, channels=channels
+        )
+
+    @staticmethod
+    def is_rust_available() -> bool:
+        return RustFfmpegAdapter.is_available()
 
 
 _ffmpeg_adapter: FFmpegAdapter | None = None

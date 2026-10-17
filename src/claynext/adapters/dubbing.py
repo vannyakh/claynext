@@ -1,5 +1,5 @@
 """
-Dubbing Adapter: audio ducking + translate/timing helpers bridged to Rust core.
+Dubbing Adapter: ducking + translate/timing helpers → Rust core (claynext-ai / engine).
 """
 from __future__ import annotations
 
@@ -11,9 +11,11 @@ from claynext.adapters.rust_engine import get_rust_engine
 
 logger = logging.getLogger("claynext.adapters.dubbing")
 
+_PACE_FALLBACK = 3.5
+
 
 class DubbingAdapter:
-    """Manages ducking via Rust engine and AI timing/style via claynext-ai."""
+    """Domain facade for dubbing models — Rust first, Python fallback."""
 
     def __init__(self) -> None:
         self._engine = get_rust_engine()
@@ -39,9 +41,19 @@ class DubbingAdapter:
 
     def estimate_speech_quota(
         self, duration_sec: float, target_lang: str = ""
-    ) -> dict[str, int] | None:
-        """Delegate speech quota to Rust AI runtime."""
-        return RustAiAdapter.estimate_speech_quota(duration_sec, target_lang)
+    ) -> dict[str, int]:
+        """Speech unit budget (min/target/max). Always returns a dict."""
+        rust = RustAiAdapter.estimate_speech_quota(duration_sec, target_lang)
+        if rust:
+            return rust
+        dur = max(0.0, float(duration_sec or 0.0))
+        rate = _PACE_FALLBACK
+        target = int(dur * rate)
+        return {
+            "min": max(1, int(dur * rate * 0.80)),
+            "target": max(1, target),
+            "max": max(2, int(dur * rate * 1.20)),
+        }
 
     def build_dub_prompt(
         self,
@@ -51,7 +63,7 @@ class DubbingAdapter:
         *,
         style: dict[str, Any] | None = None,
     ) -> str | None:
-        """Delegate cinematic dub prompt to Rust AI runtime."""
+        """Cinematic dubbing LLM prompt from Rust (None if binary missing)."""
         return RustAiAdapter.build_dub_prompt(
             payload, target_lang, source_lang, style=style
         )

@@ -54,40 +54,40 @@ def ensure_thumbnail(media_path: str, width: int = 160) -> str | None:
     out.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        from claynext.adapters.rust_bridge import RustFfmpegAdapter
+        from claynext.adapters.ffmpeg_adapter import get_ffmpeg_adapter
 
-        if RustFfmpegAdapter.extract_still(
+        if get_ffmpeg_adapter().extract_still(
             abs_path, out, timestamp_secs=1.0, max_width=width
         ):
             return str(out)
     except Exception:
         pass
 
-    cmd = [
-        _ffmpeg_exe(),
-        "-hide_banner",
-        "-loglevel", "error",
-        "-ss", "1",
-        "-i", abs_path,
-        "-frames:v", "1",
-        "-vf", f"scale={width}:-1:force_original_aspect_ratio=decrease",
-        "-q:v", "4",
-        "-y",
-        str(out),
-    ]
+    from claynext.adapters.ffmpeg_adapter import run_ffmpeg
+
+    def _still_at(ss: str) -> bool:
+        ok = run_ffmpeg([
+            "-ss", ss,
+            "-i", abs_path,
+            "-frames:v", "1",
+            "-vf", f"scale={width}:-1:force_original_aspect_ratio=decrease",
+            "-q:v", "4",
+            "-y",
+            str(out),
+        ])
+        return bool(ok and out.is_file() and out.stat().st_size > 0)
+
     try:
-        subprocess.run(cmd, check=True, timeout=20, capture_output=True)
-        if out.is_file() and out.stat().st_size > 0:
+        if _still_at("1"):
             return str(out)
     except Exception:
-        # Retry from start for very short clips
-        try:
-            cmd[cmd.index("-ss") + 1] = "0"
-            subprocess.run(cmd, check=True, timeout=20, capture_output=True)
-            if out.is_file() and out.stat().st_size > 0:
-                return str(out)
-        except Exception:
-            pass
+        pass
+    # Retry from start for very short clips
+    try:
+        if _still_at("0"):
+            return str(out)
+    except Exception:
+        pass
     return None
 
 

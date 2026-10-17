@@ -29,15 +29,16 @@ class TestAppStartup(unittest.TestCase):
         self.assertIsNotNone(engine)
 
     def test_rust_ai_adapter(self):
-        from claynext.adapters.rust_bridge import RustAiAdapter
+        from claynext.adapters.ai import get_ai_adapter
 
-        # Test rate limit parsing via Rust AI binary
-        limited, retry_after = RustAiAdapter.parse_retry_after(429, header="35", body="Rate limited")
+        ai = get_ai_adapter()
+        # Test rate limit parsing via Adapter → Rust AI binary
+        limited, retry_after = ai.parse_retry_after(429, header="35", body="Rate limited")
         self.assertTrue(limited)
         self.assertGreaterEqual(retry_after, 20.0)
 
         # Test expression tags parsing
-        tags = RustAiAdapter.parse_expression_tags("Hello! [pause: 0.5s] [excited] Wow!")
+        tags = ai.parse_expression_tags("Hello! [pause: 0.5s] [excited] Wow!")
         self.assertGreaterEqual(len(tags), 2)
 
     def test_llm_keys_pool(self):

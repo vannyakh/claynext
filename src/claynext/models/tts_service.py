@@ -4,7 +4,6 @@ import asyncio
 import math
 import os
 import struct
-import subprocess
 import threading
 import wave
 from pathlib import Path
@@ -492,18 +491,15 @@ class TTSEngine:
         if output_path.lower().endswith(".mp3"):
             if progress_callback:
                 progress_callback(85, "Encoding to MP3…")
-            try:
-                import imageio_ffmpeg
-                ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-            except Exception:
-                ffmpeg_exe = "ffmpeg"
-            cmd = [
-                ffmpeg_exe, "-hide_banner", "-loglevel", "error", "-y",
-                "-i", wav_out,
+            from claynext.adapters.ffmpeg_adapter import run_ffmpeg
+
+            ok = run_ffmpeg([
+                "-y", "-i", wav_out,
                 "-codec:a", "libmp3lame", "-q:a", "2",
                 output_path,
-            ]
-            subprocess.run(cmd, check=True)
+            ])
+            if not ok or not os.path.isfile(output_path):
+                raise RuntimeError("Failed to encode VoxCPM speech to MP3.")
             if os.path.exists(wav_out) and wav_out != output_path:
                 try:
                     os.remove(wav_out)
@@ -550,22 +546,19 @@ class TTSEngine:
         import soundfile as sf
         sf.write(wav_out, audio, 24000)
 
-        # If user explicitly requested .mp3, convert via FFmpeg
+        # If user explicitly requested .mp3, convert via FFmpeg adapter
         if output_path.lower().endswith(".mp3"):
             if progress_callback:
                 progress_callback(85, "Encoding to MP3…")
-            try:
-                import imageio_ffmpeg
-                ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-            except Exception:
-                ffmpeg_exe = "ffmpeg"
-            cmd = [
-                ffmpeg_exe, "-hide_banner", "-loglevel", "error", "-y",
-                "-i", wav_out,
+            from claynext.adapters.ffmpeg_adapter import run_ffmpeg
+
+            ok = run_ffmpeg([
+                "-y", "-i", wav_out,
                 "-codec:a", "libmp3lame", "-q:a", "2",
                 output_path,
-            ]
-            subprocess.run(cmd, check=True)
+            ])
+            if not ok or not os.path.isfile(output_path):
+                raise RuntimeError("Failed to encode KittenTTS speech to MP3.")
             if os.path.exists(wav_out) and wav_out != output_path:
                 try:
                     os.remove(wav_out)
@@ -649,6 +642,14 @@ class TTSEngine:
 
     @staticmethod
     def _probe_duration(file_path: str) -> float:
+        try:
+            from claynext.adapters.ffmpeg_adapter import get_ffmpeg_adapter
+
+            dur = get_ffmpeg_adapter().duration(file_path)
+            if dur and dur > 0:
+                return float(dur)
+        except Exception:
+            pass
         try:
             import soundfile as sf
             info = sf.info(file_path)

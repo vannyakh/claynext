@@ -28,33 +28,30 @@ Command | Purpose | View Loaded
 
 ## 2. Core Architecture Reference
 
+**Hybrid stack:** Python GUI/models + Rust core tools via Adapters.  
+See skill **`claynext-rust-core`** and `AGENTS.md` §1 for the full migration rules.
+
 ```text
 Claynext/
-├── main.py                     # Entrypoint (CLI flags: --tool, --no-splash)
-├── pyproject.toml              # UV / Hatchling packaging config
-├── assets/                     # Icons (aspect.svg, tools) & banners
-├── data/
-│   ├── cache/                  # Playback audio & 720p H.264 proxy renders
-│   ├── models/                 # Cached AI models (Whisper, EasyOCR)
-│   └── outputs/                # User exports (.srt, .vtt, .wav, .mp4)
+├── main.py / pyproject.toml
+├── backends/                   # Rust CLI tools (performance core)
+│   ├── ai-runtime/             # claynext-ai
+│   ├── ffmpeg/                 # claynext-ffmpeg
+│   ├── cpu/ · hardware-codecs/ · wgpu/
+├── crates/editor-*/            # Shared Rust domain (dubbing, speech, types…)
+├── data/                       # cache, models, outputs
 └── src/claynext/
-    ├── app.py                  # High-DPI setup, splash screen orchestration
-    ├── constants/              # UI layout constants & Cyber Dark theme tokens
-    ├── core/                   # Headless engines & background workers
-    │   ├── asr_engine.py       # Faster-Whisper transcription
-    │   ├── dubbing_engine.py   # Full dubbing pipeline orchestrator
-    │   ├── ffmpeg_tools.py     # Demux, probe, stretch, timeline mix
-    │   ├── media_compat.py     # AAC-LC conversion & proxy rendering
-    │   ├── ocr_engine.py       # OCR recognition
-    │   ├── tts_engine.py       # Edge-TTS neural speech synthesis
-    │   └── worker.py           # QRunnable / QThreadPool async worker
-    └── gui/                    # PySide6 User Interface
-        ├── launcher_window.py  # Primary launcher & tool cards
-        ├── main_window.py      # Dedicated tool window with custom chrome
-        ├── styles.py           # Cyber Dark QSS compilation
-        ├── components/         # Timeline, media preview, drop zone, etc.
-        └── views/              # View implementations for each tool
+    ├── gui/                    # PySide6 Studio (Cyber Dark)
+    ├── models/                 # Orchestration + ML SDKs (call adapters)
+    ├── adapters/               # Domain facades → Rust
+    │   ├── ai.py · dubbing.py · ffmpeg_adapter.py · media.py …
+    │   └── rust_bridge/        # Binary IPC (adapters only)
+    ├── cli/                    # claynext CLI
+    └── core/worker.py          # QThreadPool workers (never block UI)
 ```
+
+**Call path:** `GUI → models → adapters → rust_bridge → backends/crates`  
+Do **not** import `rust_bridge` from `gui/` or `models/`.
 
 ---
 

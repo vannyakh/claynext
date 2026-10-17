@@ -1,0 +1,40 @@
+---
+description: Python adapters and models must bridge to Rust core, not bypass it
+globs: src/claynext/adapters/**/*.py,src/claynext/models/**/*.py,src/claynext/gui/**/*.py,src/claynext/cli/**/*.py
+alwaysApply: false
+---
+
+# Python Adapters, Models, GUI
+
+## Layers
+
+```text
+gui/ / cli/     → user-facing only; call models or adapters
+models/         → orchestration, ML SDKs, business flow
+adapters/       → domain facades (Ai, Dubbing, FFmpeg, Media, …)
+adapters/rust_bridge/ → binary IPC only (adapters may import; models/gui must not)
+```
+
+## Domain adapters (prefer these)
+
+| Adapter | Import | Owns |
+|:---|:---|:---|
+| AI | `from claynext.adapters.ai import get_ai_adapter` | LLM retry/keys, OCR filter, expression tags, VAD, subtitle chunk |
+| Dubbing | `from claynext.adapters.dubbing import get_dubbing_adapter` | Speech quota, dub prompt, align speed, duck volume |
+| FFmpeg | `from claynext.adapters.ffmpeg_adapter import get_ffmpeg_adapter` | Probe, duration, stills, PCM decode |
+| Media / Codecs / Engine | `get_media_adapter`, `get_hardware_codecs`, `get_rust_engine` | Proxy, waveforms, GPU encode, timeline engine |
+
+## Migration mindset
+
+- Old: all logic in Python models/services.
+- New: **Rust owns core computation**; Python owns GUI, I/O SDKs, and orchestration.
+- When touching a hot path (quota, prompt, tempo, VAD, probe), check `backends/` / `crates/` first and extend the adapter instead of growing Python-only code.
+
+## Fallbacks
+
+```python
+result = get_dubbing_adapter().estimate_speech_quota(dur, lang)
+# adapter already falls back if claynext-ai missing
+```
+
+Never crash the GUI if a Rust binary is absent — log and degrade gracefully.

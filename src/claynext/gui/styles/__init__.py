@@ -4,6 +4,7 @@ from __future__ import annotations
 from claynext.constants.theme_constants import accent_rgba, primary_color
 from claynext.gui.styles.chrome import chrome_qss
 from claynext.gui.styles.controls import controls_qss
+from claynext.gui.styles.home import home_qss
 from claynext.gui.styles.launcher import launcher_qss
 from claynext.gui.styles.studio import studio_qss
 from claynext.gui.styles.media import media_qss
@@ -22,6 +23,7 @@ def build_stylesheet(primary=None):
         media_qss(accent, wash),
         controls_qss(accent, wash),
         widgets_qss(accent, wash),
+        home_qss(accent, wash),
         studio_qss(accent, wash),
         settings_qss(accent, wash),
         launcher_qss(accent, wash),

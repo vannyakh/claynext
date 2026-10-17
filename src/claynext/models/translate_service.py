@@ -113,14 +113,14 @@ class TranslateEngine:
     def estimate_speech_quota(duration_sec: float, target_lang: str = "") -> dict[str, int]:
         """min / target / max speaking units for a line slot (LLM duration fit).
 
-        Prefers Rust `claynext-ai speech-quota`; falls back to Python if binary missing.
+        Prefers Rust via DubbingAdapter; falls back to local pace table.
         """
         try:
-            from claynext.adapters.rust_bridge import RustAiAdapter
+            from claynext.adapters.dubbing import get_dubbing_adapter
 
-            rust = RustAiAdapter.estimate_speech_quota(duration_sec, target_lang or "")
-            if rust:
-                return rust
+            return get_dubbing_adapter().estimate_speech_quota(
+                duration_sec, target_lang or ""
+            )
         except Exception:
             pass
         dur = max(0.0, float(duration_sec or 0.0))
@@ -393,11 +393,11 @@ class TranslateEngine:
         style: dict | None = None,
     ) -> str:
         style = style or {}
-        # Prefer Rust core (claynext-ai build-dub-prompt) so GUI/features share one prompt builder.
+        # Prefer Rust via DubbingAdapter so GUI/features share one prompt builder.
         try:
-            from claynext.adapters.rust_bridge import RustAiAdapter
+            from claynext.adapters.dubbing import get_dubbing_adapter
 
-            rust = RustAiAdapter.build_dub_prompt(
+            rust = get_dubbing_adapter().build_dub_prompt(
                 payload, target_lang, source_lang, style=style
             )
             if rust:

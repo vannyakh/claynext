@@ -467,7 +467,7 @@ class DubbingEngine:
                     dialogue_intervals.append((st, en))
 
             bgm_bed = str(job / "bgm_dynamic_ducked.wav")
-            duck_target = max(0.05, min(0.50, background_vol))
+            duck_target = max(0.05, min(0.50, float(background_vol)))
             clamped_fade_ms = max(50, min(500, int(fade_ms)))
             fade_sec = clamped_fade_ms / 1000.0
             dynamic_duck_audio(

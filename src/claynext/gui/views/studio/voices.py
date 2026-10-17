@@ -91,17 +91,21 @@ class VoiceTools:
         self.voice_search.textChanged.connect(lambda _text: self._refresh_voice_browser())
         search_row.addWidget(self.voice_search, 1)
 
-        self.voice_filter_btn = QToolButton()
-        self.voice_filter_btn.setObjectName("voice_filter_btn")
-        self.voice_filter_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.voice_filter_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.voice_filter_btn.setToolTip("Filter language and sort order")
-        self._voice_menu = QMenu(self.voice_filter_btn)
-        self._voice_menu.setObjectName("media_lib_menu")
-        self._voice_menu.aboutToShow.connect(self._fill_voice_menu)
-        self.voice_filter_btn.setMenu(self._voice_menu)
+        self.voice_lang_btn = self._make_voice_filter_btn("Language")
+        self._voice_lang_menu = QMenu(self.voice_lang_btn)
+        self._voice_lang_menu.setObjectName("media_lib_menu")
+        self._voice_lang_menu.aboutToShow.connect(self._fill_voice_lang_menu)
+        self.voice_lang_btn.setMenu(self._voice_lang_menu)
+        search_row.addWidget(self.voice_lang_btn)
+
+        self.voice_order_btn = self._make_voice_filter_btn("Sort")
+        self._voice_order_menu = QMenu(self.voice_order_btn)
+        self._voice_order_menu.setObjectName("media_lib_menu")
+        self._voice_order_menu.aboutToShow.connect(self._fill_voice_order_menu)
+        self.voice_order_btn.setMenu(self._voice_order_menu)
+        search_row.addWidget(self.voice_order_btn)
+
         self._sync_voice_filter_caption()
-        search_row.addWidget(self.voice_filter_btn)
         body_lay.addLayout(search_row)
 
         scroll = QScrollArea()
@@ -167,12 +171,23 @@ class VoiceTools:
         self._save_favorite_voice_ids(ids)
         self._refresh_voice_browser()
 
+    def _make_voice_filter_btn(self, tooltip: str) -> QToolButton:
+        btn = QToolButton()
+        btn.setObjectName("voice_filter_btn")
+        btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setToolTip(tooltip)
+        return btn
+
     def _sync_voice_filter_caption(self):
-        if not hasattr(self, "voice_filter_btn"):
-            return
-        lang = self._voice_lang_filter or "All"
-        order = dict(_VOICE_ORDERS).get(self._voice_order, "Favorites")
-        self.voice_filter_btn.setText(f"{lang} · {order}")
+        if hasattr(self, "voice_lang_btn"):
+            lang = self._voice_lang_filter or "All"
+            self.voice_lang_btn.setText(lang)
+            self.voice_lang_btn.setToolTip(f"Language · {lang}")
+        if hasattr(self, "voice_order_btn"):
+            order = dict(_VOICE_ORDERS).get(self._voice_order, "Favorites")
+            self.voice_order_btn.setText(order)
+            self.voice_order_btn.setToolTip(f"Sort · {order}")
 
     def _set_voice_lang_filter(self, lang: str):
         self._voice_lang_filter = lang
@@ -184,33 +199,38 @@ class VoiceTools:
         self._sync_voice_filter_caption()
         self._refresh_voice_browser()
 
-    def _fill_voice_menu(self):
-        menu = self._voice_menu
+    def _fill_voice_lang_menu(self):
+        menu = self._voice_lang_menu
         menu.clear()
-        lang_menu = menu.addMenu("Language")
-        lang_menu.setObjectName("media_lib_menu")
-        lang_group = QActionGroup(menu)
-        lang_group.setExclusive(True)
-        languages = sorted({str(voice.get("lang") or "") for voice in TTSEngine.list_voices() if voice.get("lang")})
+        group = QActionGroup(menu)
+        group.setExclusive(True)
+        languages = sorted(
+            {str(voice.get("lang") or "") for voice in TTSEngine.list_voices() if voice.get("lang")}
+        )
         for key, label in [("", "All languages"), *[(name, name) for name in languages]]:
             act = QAction(label, menu)
             act.setCheckable(True)
             act.setChecked(key == self._voice_lang_filter)
-            act.triggered.connect(lambda _checked=False, value=key: self._set_voice_lang_filter(value))
-            lang_group.addAction(act)
-            lang_menu.addAction(act)
+            act.triggered.connect(
+                lambda _checked=False, value=key: self._set_voice_lang_filter(value)
+            )
+            group.addAction(act)
+            menu.addAction(act)
 
-        order_menu = menu.addMenu("Order")
-        order_menu.setObjectName("media_lib_menu")
-        order_group = QActionGroup(menu)
-        order_group.setExclusive(True)
+    def _fill_voice_order_menu(self):
+        menu = self._voice_order_menu
+        menu.clear()
+        group = QActionGroup(menu)
+        group.setExclusive(True)
         for key, label in _VOICE_ORDERS:
             act = QAction(label, menu)
             act.setCheckable(True)
             act.setChecked(key == self._voice_order)
-            act.triggered.connect(lambda _checked=False, value=key: self._set_voice_order(value))
-            order_group.addAction(act)
-            order_menu.addAction(act)
+            act.triggered.connect(
+                lambda _checked=False, value=key: self._set_voice_order(value)
+            )
+            group.addAction(act)
+            menu.addAction(act)
 
     def _voice_rows(self) -> list[dict]:
         query = self.voice_search.text().strip().lower() if hasattr(self, "voice_search") else ""

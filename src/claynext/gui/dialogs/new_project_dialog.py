@@ -50,6 +50,8 @@ from claynext.gui.dialogs.project_settings_dialog import (
     default_project_settings,
 )
 
+_FIELD_H = 28
+
 
 @dataclass(frozen=True)
 class ProjectTemplate:
@@ -96,7 +98,7 @@ def _field(label: str, widget: QWidget) -> QWidget:
     wrap = QWidget()
     lay = QVBoxLayout(wrap)
     lay.setContentsMargins(0, 0, 0, 0)
-    lay.setSpacing(4)
+    lay.setSpacing(3)
     lbl = QLabel(label)
     lbl.setObjectName("new_project_field_lbl")
     lay.addWidget(lbl)
@@ -115,12 +117,12 @@ class TemplateCard(QToolButton):
         self.setAutoExclusive(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.setIcon(icon(template.icon, color=COLOR_TEXT_SUB, size=16))
-        self.setIconSize(QSize(16, 16))
+        self.setIcon(icon(template.icon, color=COLOR_TEXT_SUB, size=14))
+        self.setIconSize(QSize(14, 14))
         self.setText(template.label)
         self.setToolTip(template.label)
         self.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
-        self.setFixedHeight(34)
+        self.setFixedHeight(_FIELD_H)
 
 
 class CanvasPreviewWidget(QWidget):
@@ -129,8 +131,8 @@ class CanvasPreviewWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._aspect = "16:9"
-        self.setMinimumHeight(120)
-        self.setMaximumHeight(132)
+        self.setMinimumHeight(88)
+        self.setMaximumHeight(96)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     def update_canvas(self, aspect: str):
@@ -200,20 +202,20 @@ class StarterMediaStrip(QFrame):
 
     def _build(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(12, 10, 12, 10)
+        root.setContentsMargins(10, 8, 10, 8)
         root.setSpacing(0)
 
         self.empty = QWidget()
         row = QHBoxLayout(self.empty)
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(10)
+        row.setSpacing(8)
 
         ic = QLabel()
-        ic.setPixmap(icon("video", color=COLOR_TEXT_SUB, size=20).pixmap(20, 20))
+        ic.setPixmap(icon("video", color=COLOR_TEXT_SUB, size=16).pixmap(16, 16))
         row.addWidget(ic)
 
         text = QVBoxLayout()
-        text.setSpacing(2)
+        text.setSpacing(1)
         title = QLabel("Add Initial Footage / Audio (Optional)")
         title.setObjectName("new_project_field_lbl")
         sub = QLabel("Drag & drop or browse · MP4, MKV, MOV, WAV, MP3")
@@ -225,7 +227,7 @@ class StarterMediaStrip(QFrame):
         browse = QPushButton("Browse…")
         browse.setObjectName("btn_secondary")
         browse.setCursor(Qt.CursorShape.PointingHandCursor)
-        browse.setFixedHeight(28)
+        browse.setFixedHeight(_FIELD_H)
         browse.clicked.connect(self._browse)
         row.addWidget(browse)
         root.addWidget(self.empty)
@@ -233,12 +235,12 @@ class StarterMediaStrip(QFrame):
         self.loaded = QWidget()
         loaded_row = QHBoxLayout(self.loaded)
         loaded_row.setContentsMargins(0, 0, 0, 0)
-        loaded_row.setSpacing(10)
+        loaded_row.setSpacing(8)
         ic2 = QLabel()
-        ic2.setPixmap(icon("video", color=primary_color(), size=20).pixmap(20, 20))
+        ic2.setPixmap(icon("video", color=primary_color(), size=16).pixmap(16, 16))
         loaded_row.addWidget(ic2)
         col = QVBoxLayout()
-        col.setSpacing(2)
+        col.setSpacing(1)
         self.lbl_name = QLabel()
         self.lbl_name.setObjectName("new_project_field_lbl")
         self.lbl_meta = QLabel()
@@ -248,8 +250,8 @@ class StarterMediaStrip(QFrame):
         loaded_row.addLayout(col, 1)
         clear = QPushButton()
         clear.setObjectName("btn_secondary")
-        clear.setIcon(icon("trash", color=COLOR_TEXT_MUTED, size=14))
-        clear.setFixedSize(28, 28)
+        clear.setIcon(icon("trash", color=COLOR_TEXT_MUTED, size=13))
+        clear.setFixedSize(_FIELD_H, _FIELD_H)
         clear.setCursor(Qt.CursorShape.PointingHandCursor)
         clear.clicked.connect(self.clear_media)
         loaded_row.addWidget(clear)
@@ -325,8 +327,8 @@ class NewProjectDialog(QDialog):
         self.setObjectName("new_project_dialog")
         self.setWindowTitle("New Project")
         self.setModal(True)
-        self.setMinimumSize(900, 560)
-        self.resize(940, 600)
+        self.setMinimumSize(720, 460)
+        self.resize(760, 500)
 
         self._data = dict(defaults or default_project_settings(name="Untitled"))
         self._template_id = "hd_landscape"
@@ -338,21 +340,21 @@ class NewProjectDialog(QDialog):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(20, 18, 20, 16)
-        root.setSpacing(14)
+        root.setContentsMargins(14, 12, 14, 12)
+        root.setSpacing(10)
 
         title = QLabel("New Project")
         title.setObjectName("new_project_title")
         root.addWidget(title)
 
         body = QHBoxLayout()
-        body.setSpacing(14)
+        body.setSpacing(12)
         body.addWidget(self._left_column(), 1)
         body.addWidget(self._right_column(), 0)
         root.addLayout(body, 1)
 
         footer = QHBoxLayout()
-        footer.setSpacing(10)
+        footer.setSpacing(8)
         tip = QLabel("Canvas options can also be changed inside Studio.")
         tip.setObjectName("new_project_hint")
         footer.addWidget(tip)
@@ -361,17 +363,17 @@ class NewProjectDialog(QDialog):
         cancel = QPushButton("Cancel")
         cancel.setObjectName("btn_secondary")
         cancel.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel.setFixedHeight(34)
-        cancel.setMinimumWidth(96)
+        cancel.setFixedHeight(_FIELD_H)
+        cancel.setMinimumWidth(84)
         cancel.clicked.connect(self.reject)
         footer.addWidget(cancel)
 
         self.btn_create = QPushButton("Create Project")
         self.btn_create.setObjectName("btn_primary")
-        self.btn_create.setIcon(icon("plus", color="#ffffff", size=15))
+        self.btn_create.setIcon(icon("plus", color="#ffffff", size=13))
         self.btn_create.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_create.setFixedHeight(34)
-        self.btn_create.setMinimumWidth(140)
+        self.btn_create.setFixedHeight(_FIELD_H)
+        self.btn_create.setMinimumWidth(120)
         self.btn_create.setDefault(True)
         self.btn_create.clicked.connect(self.accept)
         footer.addWidget(self.btn_create)
@@ -381,14 +383,14 @@ class NewProjectDialog(QDialog):
         col = QWidget()
         lay = QVBoxLayout(col)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(12)
+        lay.setSpacing(8)
 
         # Templates — flat chips, no group card
         lay.addWidget(self._kicker("PROJECT TEMPLATES"))
         chips = QGridLayout()
         chips.setContentsMargins(0, 0, 0, 0)
-        chips.setHorizontalSpacing(6)
-        chips.setVerticalSpacing(6)
+        chips.setHorizontalSpacing(5)
+        chips.setVerticalSpacing(5)
         group = QButtonGroup(self)
         group.setExclusive(True)
         for i, tmpl in enumerate(TEMPLATES):
@@ -400,10 +402,11 @@ class NewProjectDialog(QDialog):
         lay.addLayout(chips)
 
         # Details — flat, no section card
-        lay.addSpacing(4)
+        lay.addSpacing(2)
         lay.addWidget(self._kicker("PROJECT DETAILS"))
         self.edit_name = QLineEdit()
         self.edit_name.setObjectName("home_search")
+        self.edit_name.setFixedHeight(_FIELD_H)
         self.edit_name.setPlaceholderText("Project name")
         self.edit_name.textChanged.connect(self._refresh_summary)
         lay.addWidget(_field("Project Name", self.edit_name))
@@ -412,48 +415,52 @@ class NewProjectDialog(QDialog):
         loc_lbl.setObjectName("new_project_field_lbl")
         lay.addWidget(loc_lbl)
         loc_row = QHBoxLayout()
-        loc_row.setSpacing(8)
+        loc_row.setSpacing(6)
         self.edit_location = QLineEdit()
         self.edit_location.setObjectName("home_search")
+        self.edit_location.setFixedHeight(_FIELD_H)
         self.edit_location.setReadOnly(True)
         self.edit_location.textChanged.connect(self._refresh_summary)
         loc_row.addWidget(self.edit_location, 1)
         browse = QPushButton("Browse…")
         browse.setObjectName("btn_secondary")
         browse.setCursor(Qt.CursorShape.PointingHandCursor)
-        browse.setFixedHeight(30)
+        browse.setFixedHeight(_FIELD_H)
         browse.clicked.connect(self._browse_location)
         loc_row.addWidget(browse)
         default = QPushButton("Default")
         default.setObjectName("btn_secondary")
         default.setCursor(Qt.CursorShape.PointingHandCursor)
-        default.setFixedHeight(30)
+        default.setFixedHeight(_FIELD_H)
         default.clicked.connect(lambda: self.edit_location.setText(str(PROJECT_DIR)))
         loc_row.addWidget(default)
         lay.addLayout(loc_row)
 
         # Starter footage
-        lay.addSpacing(4)
+        lay.addSpacing(2)
         lay.addWidget(self._kicker("STARTER FOOTAGE (OPTIONAL)"))
         self.media_strip = StarterMediaStrip(self)
         self.media_strip.media_changed.connect(self._on_media_changed)
         lay.addWidget(self.media_strip)
 
         # Canvas
-        lay.addSpacing(4)
+        lay.addSpacing(2)
         lay.addWidget(self._kicker("CANVAS & TIMELINE"))
         row = QHBoxLayout()
-        row.setSpacing(10)
+        row.setSpacing(8)
         self.combo_aspect = QComboBox()
         self.combo_aspect.setObjectName("asr_option_combo")
+        self.combo_aspect.setFixedHeight(_FIELD_H)
         self.combo_aspect.addItems(ASPECT_CHOICES)
         self.combo_aspect.currentTextChanged.connect(self._refresh_summary)
         self.combo_res = QComboBox()
         self.combo_res.setObjectName("asr_option_combo")
+        self.combo_res.setFixedHeight(_FIELD_H)
         self.combo_res.addItems(RESOLUTION_CHOICES)
         self.combo_res.currentTextChanged.connect(self._refresh_summary)
         self.combo_fps = QComboBox()
         self.combo_fps.setObjectName("asr_option_combo")
+        self.combo_fps.setFixedHeight(_FIELD_H)
         self.combo_fps.addItems(FPS_CHOICES)
         self.combo_fps.currentTextChanged.connect(self._refresh_summary)
         row.addWidget(_field("Aspect Ratio", self.combo_aspect), 1)
@@ -465,13 +472,13 @@ class NewProjectDialog(QDialog):
 
     def _right_column(self) -> QWidget:
         panel = QWidget()
-        panel.setFixedWidth(260)
+        panel.setFixedWidth(220)
         lay = QVBoxLayout(panel)
-        lay.setContentsMargins(8, 0, 0, 0)
+        lay.setContentsMargins(6, 0, 0, 0)
         lay.setSpacing(0)
 
         lay.addWidget(self._kicker("CANVAS PREVIEW"))
-        lay.addSpacing(8)
+        lay.addSpacing(6)
 
         self.canvas = CanvasPreviewWidget(self)
         lay.addWidget(self.canvas)
@@ -480,22 +487,22 @@ class NewProjectDialog(QDialog):
         self.lbl_canvas_size = QLabel("1920 × 1080")
         self.lbl_canvas_size.setObjectName("new_project_hint")
         self.lbl_canvas_size.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lay.addSpacing(6)
+        lay.addSpacing(4)
         lay.addWidget(self.lbl_canvas_size)
 
-        lay.addSpacing(14)
+        lay.addSpacing(10)
         line = QFrame()
         line.setObjectName("prop_divider")
         line.setFrameShape(QFrame.Shape.HLine)
         lay.addWidget(line)
-        lay.addSpacing(12)
-
-        lay.addWidget(self._kicker("SPECIFICATION SUMMARY"))
         lay.addSpacing(8)
 
+        lay.addWidget(self._kicker("SPECIFICATION SUMMARY"))
+        lay.addSpacing(6)
+
         grid = QGridLayout()
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(8)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(5)
         grid.setColumnStretch(1, 1)
 
         self.val_preset = QLabel("—")
@@ -517,21 +524,21 @@ class NewProjectDialog(QDialog):
             grid.addWidget(val, i, 1)
         lay.addLayout(grid)
 
-        lay.addSpacing(14)
+        lay.addSpacing(10)
         line2 = QFrame()
         line2.setObjectName("prop_divider")
         line2.setFrameShape(QFrame.Shape.HLine)
         lay.addWidget(line2)
-        lay.addSpacing(12)
+        lay.addSpacing(8)
 
         lay.addWidget(self._kicker("TARGET PROJECT FILE"))
-        lay.addSpacing(6)
+        lay.addSpacing(4)
         self.lbl_dest = QLabel()
         self.lbl_dest.setObjectName("new_project_path_preview")
         self.lbl_dest.setWordWrap(True)
         lay.addWidget(self.lbl_dest)
 
-        lay.addSpacing(12)
+        lay.addSpacing(8)
         self.lbl_status = QLabel("✓ Ready to create")
         self.lbl_status.setObjectName("new_project_pill_ready")
         self.lbl_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -558,7 +565,7 @@ class NewProjectDialog(QDialog):
         for tid, btn in self._template_buttons.items():
             active = tid == template_id
             btn.setChecked(active)
-            btn.setIcon(icon(btn.template.icon, color=accent if active else COLOR_TEXT_SUB, size=16))
+            btn.setIcon(icon(btn.template.icon, color=accent if active else COLOR_TEXT_SUB, size=14))
         if not apply_values:
             return
         tmpl = next((t for t in TEMPLATES if t.id == template_id), TEMPLATES[0])

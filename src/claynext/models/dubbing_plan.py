@@ -18,13 +18,11 @@ logger = logging.getLogger("claynext.dubbing_plan")
 
 
 def estimate_khmer_syllable_quota(duration_sec: float) -> dict[str, int]:
-    """Speech unit budget for a line slot — prefers Rust claynext-ai speech-quota."""
+    """Speech unit budget for a line slot — via DubbingAdapter → Rust core."""
     try:
-        from claynext.adapters.rust_bridge import RustAiAdapter
+        from claynext.adapters.dubbing import get_dubbing_adapter
 
-        rust = RustAiAdapter.estimate_speech_quota(duration_sec, "Khmer")
-        if rust:
-            return rust
+        return get_dubbing_adapter().estimate_speech_quota(duration_sec, "Khmer")
     except Exception:
         pass
     dur = max(0.0, float(duration_sec))

@@ -26,11 +26,22 @@ def _resolve_tool_index(value: str | None) -> int:
     return 0
 
 
-def _open_studio(tool_index: int = 0, project_path: str | None = None):
+def _open_home():
+    from claynext.gui.project_home_window import ProjectHomeWindow
+
+    home = ProjectHomeWindow()
+    home.show()
+    home.raise_()
+    home.activateWindow()
+    return home
+
+
+def _open_studio(tool_index: int = 0, project_path: str | None = None, home_window=None):
     from claynext.gui.main_window import ToolWindow
 
     win = ToolWindow(
         tool_index=tool_index,
+        home_window=home_window,
         project_path=project_path,
     )
     win.show()
@@ -42,10 +53,10 @@ def _open_studio(tool_index: int = 0, project_path: str | None = None):
 def main(argv: list[str] | None = None):
     """
     Application entrypoint.
-    Flow: loader splash → Studio editor.
+    Flow: loader splash → Project Home → Studio.
     Dev: uv run main.py
+         uv run main.py --studio
          uv run main.py --project path.claynext.json
-         uv run claynext gui
     """
     parser = argparse.ArgumentParser(description="Claynext Studio")
     parser.add_argument(
@@ -56,12 +67,12 @@ def main(argv: list[str] | None = None):
     parser.add_argument(
         "--studio",
         action="store_true",
-        help="Deprecated: Studio opens by default (kept for compatibility)",
+        help="Skip project home and open the studio editor directly",
     )
     parser.add_argument(
         "--project",
         metavar="PATH",
-        help="Open this .claynext.json project in the studio",
+        help="Open this .claynext.json project in the studio (implies --studio)",
     )
     args, qt_args = parser.parse_known_args(argv)
 
@@ -77,12 +88,16 @@ def main(argv: list[str] | None = None):
     app.setOrganizationName("Claynext")
 
     tool_index = _resolve_tool_index(args.tool)
+    open_studio = bool(args.studio or args.project)
 
     # Keep strong refs so windows are not GC'd.
-    state: dict = {"win": None, "loader": None}
+    state: dict = {"home": None, "win": None, "loader": None}
 
     def _after_loader():
-        state["win"] = _open_studio(tool_index, project_path=args.project)
+        if open_studio:
+            state["win"] = _open_studio(tool_index, project_path=args.project)
+        else:
+            state["home"] = _open_home()
 
     from claynext.gui.components.tool_loader import ToolLoaderScreen
 

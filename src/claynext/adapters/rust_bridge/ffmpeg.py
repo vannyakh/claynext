@@ -177,6 +177,38 @@ class RustFfmpegAdapter:
                     pass
 
     @classmethod
+    def demux_audio(
+        cls,
+        media_path: str | Path,
+        output_wav: str | Path,
+        *,
+        sample_rate: int = 48000,
+        channels: int = 2,
+    ) -> bool:
+        """Extract PCM WAV via claynext-ffmpeg demux-audio."""
+        binary = _find_binary("claynext-ffmpeg")
+        if not binary:
+            return False
+        out = Path(output_wav)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            res = _run_rust(
+                binary,
+                [
+                    "demux-audio",
+                    str(media_path),
+                    str(out),
+                    str(int(sample_rate)),
+                    str(int(channels)),
+                ],
+                timeout=600,
+            )
+            return res.returncode == 0 and out.is_file() and out.stat().st_size > 0
+        except Exception as e:
+            logger.warning("Rust demux-audio failed: %s", e)
+            return False
+
+    @classmethod
     def mux_video_audio(
         cls, video_path: str | Path, audio_path: str | Path, output_path: str | Path
     ) -> bool:

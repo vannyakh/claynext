@@ -17,8 +17,9 @@ from claynext.constants.theme_constants import COLOR_ACCENT_ROSE
 from claynext.constants.timeline_constants import (
     FX_KINDS, LANE_COLLAPSED_W, LANE_MAX_W, LANE_MIN_W, LANE_RATIO, LANE_W, OVERLAY_KINDS, PRESET,
 )
+from claynext.adapters.ffmpeg_adapter import probe_duration
 from claynext.adapters.ffmpeg_service import (
-    extract_audio, extract_wave_envelope, normalize_envelope, probe_duration, probe_media,
+    extract_audio, extract_wave_envelope, normalize_envelope, probe_media,
 )
 from claynext.gui.icons import icon
 from claynext.models.text_style import apply_case, clean_text_style
@@ -1611,9 +1612,9 @@ class TimelinePanel(QWidget):
 
     def auto_mix(self, source: str = "") -> bool:
         """Detect original speech in the footage, then key those spans plus the voice clips."""
-        from claynext.adapters.rust_bridge import RustAiAdapter
+        from claynext.adapters.ai import get_ai_adapter
         def detect_voice_spans(src, **kw):
-            chunks = RustAiAdapter.vad_chunk(src)
+            chunks = get_ai_adapter().vad_chunk(src)
             return [(float(c.get("start_sec", 0.0)), float(c.get("end_sec", 0.0))) for c in chunks]
 
         source = source or self.speech_source or self.canvas.media_path

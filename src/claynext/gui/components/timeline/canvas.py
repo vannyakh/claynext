@@ -19,7 +19,8 @@ from claynext.constants.timeline_constants import (
 )
 from claynext.constants.theme_constants import COLOR_ACCENT_ROSE, COLOR_TEXT_MAIN
 from claynext.models.dubbing_service import timestamp_to_sec
-from claynext.adapters.ffmpeg_service import WAVE_RATE, probe_duration
+from claynext.adapters.ffmpeg_adapter import probe_duration
+from claynext.adapters.ffmpeg_service import WAVE_RATE
 from claynext.gui.icons import icon
 from claynext.models.text_style import anim_spans, clean_text_style
 from claynext.models.fx import clean_fx, fx_label

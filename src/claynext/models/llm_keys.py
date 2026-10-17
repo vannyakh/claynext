@@ -61,16 +61,16 @@ def parse_retry_after(headers: Any = None, body: str = "") -> float:
             raw = headers.get("Retry-After") or headers.get("retry-after") or ""
         except Exception:
             raw = ""
-    from claynext.adapters.rust_bridge import RustAiAdapter
+    from claynext.adapters.ai import get_ai_adapter
 
-    _, retry_after = RustAiAdapter.parse_retry_after(429, header=raw, body=body)
+    _, retry_after = get_ai_adapter().parse_retry_after(429, header=raw, body=body)
     return retry_after
 
 
 def is_rate_limit(status: int, body: str = "") -> bool:
-    from claynext.adapters.rust_bridge import RustAiAdapter
+    from claynext.adapters.ai import get_ai_adapter
 
-    limited, _ = RustAiAdapter.parse_retry_after(status, body=body)
+    limited, _ = get_ai_adapter().parse_retry_after(status, body=body)
     return limited
 
 
@@ -130,9 +130,9 @@ class ApiKeyPool:
             rows = self._ready_rows(provider)
             if not rows:
                 return None
-            from claynext.adapters.rust_bridge import RustAiAdapter
+            from claynext.adapters.ai import get_ai_adapter
 
-            rust_chosen = RustAiAdapter.acquire_llm_key(rows, provider)
+            rust_chosen = get_ai_adapter().acquire_llm_key(rows, provider)
             if rust_chosen:
                 chosen = rust_chosen
             else:
@@ -155,7 +155,7 @@ class ApiKeyPool:
         get_store().update_api_key_state(key_id, cooldown_until=until, fail_count=fails)
 
     def soonest_cooldown(self, provider: str) -> float:
-        from claynext.adapters.rust_bridge import RustAiAdapter
+        from claynext.adapters.ai import get_ai_adapter
 
         all_keys = self.list_keys(provider)
         # Convert cooldown_until to epoch seconds if present
@@ -167,7 +167,7 @@ class ApiKeyPool:
             d["cooldown_until"] = dt.timestamp() if dt else None
             prepared.append(d)
 
-        rust_wait = RustAiAdapter.soonest_cooldown(prepared, provider)
+        rust_wait = get_ai_adapter().soonest_cooldown(prepared, provider)
         if rust_wait > 0:
             return rust_wait
 

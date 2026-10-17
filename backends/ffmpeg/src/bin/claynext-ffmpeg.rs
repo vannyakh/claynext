@@ -1,7 +1,7 @@
 use claynext_ffmpeg::{
-    decode_audio_pcm_f32, extract_frame_rgba, extract_still_image, is_encoder_available,
-    mux_video_audio, probe_media_file, run_export_job, AudioEncoderConfig, ExportJob, MuxOptions,
-    SeekMode, VideoEncoderConfig,
+    decode_audio_pcm_f32, extract_audio_wav, extract_frame_rgba, extract_still_image,
+    is_encoder_available, mux_video_audio, probe_media_file, run_export_job, AudioEncoderConfig,
+    ExportJob, MuxOptions, SeekMode, VideoEncoderConfig,
 };
 use std::env;
 use std::path::{Path, PathBuf};
@@ -210,10 +210,43 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        "demux-audio" => {
+            // Args: <media> <output.wav> [sample_rate] [channels]
+            if args.len() >= 4 {
+                let input = Path::new(&args[2]);
+                let output = Path::new(&args[3]);
+                let rate = args
+                    .get(4)
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(48000);
+                let channels = args
+                    .get(5)
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(2);
+                match extract_audio_wav(input, output, rate, channels) {
+                    Ok(()) => println!(
+                        "{{\"ok\":true,\"output\":\"{}\",\"sample_rate\":{},\"channels\":{}}}",
+                        output.display().to_string().replace('\\', "/"),
+                        rate,
+                        channels
+                    ),
+                    Err(e) => {
+                        eprintln!("demux-audio error: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            } else {
+                eprintln!(
+                    "Usage: claynext-ffmpeg demux-audio <media> <output.wav> [sample_rate] [channels]"
+                );
+                std::process::exit(1);
+            }
+        }
         _ => {
             eprintln!("Claynext FFmpeg CLI Tool");
             eprintln!(
-                "Commands: probe, extract-frame, extract-still, decode-audio, export, check-encoder, mux"
+                "Commands: probe, extract-frame, extract-still, decode-audio, demux-audio, \
+                 export, check-encoder, mux"
             );
             std::process::exit(1);
         }

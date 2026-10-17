@@ -79,6 +79,14 @@ def _fmt_ts(seconds: float) -> str:
 def _extract_wav(media_path: str, wav_path: str, progress_callback: Callable | None = None):
     if progress_callback:
         progress_callback(12, "Extracting audio…")
+    try:
+        from claynext.adapters.ffmpeg_service import demux_wav
+
+        demux_wav(media_path, wav_path, rate=16000, channels=1)
+        if os.path.isfile(wav_path) and os.path.getsize(wav_path) > 0:
+            return
+    except Exception:
+        pass
     cmd = [
         _ffmpeg(),
         "-hide_banner",
@@ -138,22 +146,29 @@ def _transcribe_gemini(
 
     with tempfile.TemporaryDirectory(prefix="claynext-gemini-asr-") as tmp:
         audio_path = os.path.join(tmp, "audio.mp3")
-        cmd = [
-            _ffmpeg(),
-            "-hide_banner",
-            "-loglevel", "error",
-            "-nostdin",
-            "-y",
-            "-i", media_path,
-            "-vn",
-            "-ac", "1",
-            "-ar", "16000",
-            "-c:a", "libmp3lame",
-            "-b:a", "48k",
-            audio_path,
-        ]
-        proc = subprocess.run(cmd, capture_output=True, timeout=300, check=False)
-        if proc.returncode != 0 or not os.path.isfile(audio_path):
+        try:
+            from claynext.adapters.ffmpeg_service import extract_audio
+
+            extract_audio(media_path, audio_path, rate=16000, channels=1, bitrate="48k")
+        except Exception:
+            cmd = [
+                _ffmpeg(),
+                "-hide_banner",
+                "-loglevel", "error",
+                "-nostdin",
+                "-y",
+                "-i", media_path,
+                "-vn",
+                "-ac", "1",
+                "-ar", "16000",
+                "-c:a", "libmp3lame",
+                "-b:a", "48k",
+                audio_path,
+            ]
+            proc = subprocess.run(cmd, capture_output=True, timeout=300, check=False)
+            if proc.returncode != 0 or not os.path.isfile(audio_path):
+                raise RuntimeError("Failed to extract audio track for Gemini.")
+        if not os.path.isfile(audio_path):
             raise RuntimeError("Failed to extract audio track for Gemini.")
 
         with open(audio_path, "rb") as f:

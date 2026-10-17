@@ -1,4 +1,4 @@
-from claynext.adapters.ffmpeg_adapter import probe_media
+from claynext.adapters.ffmpeg_service import probe_media
 import os
 import time
 
