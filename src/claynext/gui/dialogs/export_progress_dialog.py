@@ -3,13 +3,45 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import Qt, QSize, QThreadPool
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt, QRectF, QSize, QThreadPool, QTimer
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QPushButton, QFrame,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QPushButton,
 )
 
+from claynext.constants.theme_constants import COLOR_BORDER
+
 from claynext.gui.worker import Worker
+
+
+def _rounded_thumb(pix: QPixmap, max_size: QSize, radius: int, pixel_ratio: float) -> QPixmap:
+    """Scale the still to its own aspect and clip it to a rounded border."""
+    ratio = pixel_ratio if pixel_ratio > 0 else 1.0
+    target = QSize(int(max_size.width() * ratio), int(max_size.height() * ratio))
+    scaled = pix.scaled(
+        target,
+        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    image = QPixmap(scaled.size())
+    image.setDevicePixelRatio(ratio)
+    image.fill(Qt.GlobalColor.transparent)
+    logical = QRectF(0, 0, scaled.width() / ratio, scaled.height() / ratio)
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    clip = QPainterPath()
+    clip.addRoundedRect(logical.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)
+    painter.setClipPath(clip)
+    painter.drawPixmap(logical.toRect(), scaled)
+    painter.setClipping(False)
+    painter.setPen(QPen(QColor(COLOR_BORDER), 1))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(logical.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)
+    painter.end()
+    return image
+
+_THUMB_MAX = QSize(280, 240)
+_THUMB_RADIUS = 12
 
 
 class ExportProgressDialog(QDialog):
@@ -23,21 +55,21 @@ class ExportProgressDialog(QDialog):
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.setMinimumWidth(420)
         self._closed = False
+        self._target = 0.0
+        self._shown = 0.0
+        self._timer = QTimer(self)
+        self._timer.setInterval(16)
+        self._timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self._timer.timeout.connect(self._tick)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 18, 18, 16)
         root.setSpacing(12)
 
-        self.thumb_frame = QFrame()
-        self.thumb_frame.setObjectName("export_thumb_frame")
-        self.thumb_frame.setFixedSize(384, 216)
-        frame_layout = QVBoxLayout(self.thumb_frame)
-        frame_layout.setContentsMargins(1, 1, 1, 1)
         self.thumb = QLabel("Loading preview…")
         self.thumb.setObjectName("export_thumb")
         self.thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        frame_layout.addWidget(self.thumb)
-        root.addWidget(self.thumb_frame, alignment=Qt.AlignmentFlag.AlignHCenter)
+        root.addWidget(self.thumb, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         heading = QLabel(title or "Export")
         heading.setObjectName("dub_panel_title")
@@ -59,14 +91,14 @@ class ExportProgressDialog(QDialog):
         row.setSpacing(10)
         self.bar = QProgressBar()
         self.bar.setObjectName("export_progress")
-        self.bar.setRange(0, 100)
+        self.bar.setRange(0, 10_000)
         self.bar.setValue(0)
         self.bar.setTextVisible(False)
         self.bar.setFixedHeight(18)
         row.addWidget(self.bar, 1)
         self.percent = QLabel("0%")
         self.percent.setObjectName("export_percent")
-        self.percent.setMinimumWidth(42)
+        self.percent.setMinimumWidth(54)
         self.percent.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         row.addWidget(self.percent)
         root.addLayout(row)
@@ -118,22 +150,46 @@ class ExportProgressDialog(QDialog):
         if pix.isNull():
             self.thumb.setText("No preview")
             return
-        scaled = pix.scaled(
-            QSize(382, 214),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        self.thumb.setPixmap(scaled)
+        rounded = _rounded_thumb(pix, _THUMB_MAX, _THUMB_RADIUS, self.devicePixelRatioF())
+        self.thumb.setPixmap(rounded)
         self.thumb.setText("")
+        ratio = rounded.devicePixelRatio() or 1.0
+        self.thumb.setFixedSize(int(rounded.width() / ratio), int(rounded.height() / ratio))
 
-    def set_progress(self, pct: int, msg: str) -> None:
+    def set_progress(self, pct: float, msg: str = "") -> None:
         if self._closed:
             return
-        value = max(0, min(100, int(pct)))
-        self.bar.setValue(value)
-        self.percent.setText(f"{value}%")
+        try:
+            value = float(pct)
+        except (TypeError, ValueError):
+            value = 0.0
+        self._target = max(0.0, min(100.0, value))
         if msg:
             self.status.setText(msg)
+        if not self._timer.isActive():
+            self._timer.start()
+
+    def _tick(self) -> None:
+        if self._closed:
+            self._timer.stop()
+            return
+        delta = self._target - self._shown
+        if abs(delta) <= 0.45:
+            self._shown = self._target
+        else:
+            self._shown += delta * 0.2
+        self._paint_bar()
+        if abs(self._target - self._shown) <= 0.01:
+            self._timer.stop()
+
+    def _paint_bar(self) -> None:
+        self.bar.setValue(int(round(self._shown * 100.0)))
+        if self._shown >= 99.95:
+            label = "100%"
+        else:
+            label = f"{self._shown:.1f}%"
+        if self.percent.text() != label:
+            self.percent.setText(label)
 
     def succeed(self, name: str) -> None:
         self.set_progress(100, "Export complete")
@@ -152,4 +208,5 @@ class ExportProgressDialog(QDialog):
 
     def closeEvent(self, event) -> None:
         self._closed = True
+        self._timer.stop()
         super().closeEvent(event)

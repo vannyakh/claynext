@@ -6,13 +6,15 @@ use claynext_ffmpeg::{
 use std::env;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
-fn emit_progress(pct: u8, message: &str) {
+fn emit_progress(pct: f64, message: &str) {
+    let rounded = (pct.clamp(0.0, 100.0) * 100.0).round() / 100.0;
     println!(
         "{}",
         serde_json::json!({
             "event": "progress",
-            "pct": pct,
+            "pct": rounded,
             "message": message,
         })
     );
@@ -26,7 +28,11 @@ fn media_duration(path: &Path) -> f64 {
 }
 
 fn report_encode_progress(total_secs: f64, message: &'static str) -> impl FnMut(FfmpegProgress) {
-    let mut last = -1i32;
+    // ffmpeg is asked for a sample about every 16ms. Emit at most one line per frame.
+    let mut last_emit = Instant::now()
+        .checked_sub(Duration::from_millis(20))
+        .unwrap_or_else(Instant::now);
+    let mut last_pct = -1.0f64;
     move |progress: FfmpegProgress| {
         let Some(time_secs) = progress.time_seconds else {
             return;
@@ -34,11 +40,13 @@ fn report_encode_progress(total_secs: f64, message: &'static str) -> impl FnMut(
         if total_secs <= 0.0 {
             return;
         }
-        let pct = ((time_secs / total_secs) * 100.0).clamp(0.0, 99.0) as i32;
-        if pct != last {
-            last = pct;
-            emit_progress(pct as u8, message);
+        let pct = ((time_secs / total_secs) * 100.0).clamp(0.0, 99.0);
+        if (pct - last_pct).abs() < 0.01 || last_emit.elapsed() < Duration::from_millis(15) {
+            return;
         }
+        last_pct = pct;
+        last_emit = Instant::now();
+        emit_progress(pct, message);
     }
 }
 
@@ -216,7 +224,7 @@ fn main() {
                     None,
                     report_encode_progress(total, "Encoding video…"),
                 ) {
-                    Ok(_) => emit_progress(100, "Export complete"),
+                    Ok(_) => emit_progress(100.0, "Export complete"),
                     Err(e) => {
                         eprintln!("Export error: {}", e);
                         std::process::exit(1);
@@ -259,7 +267,7 @@ fn main() {
                     None,
                     report_encode_progress(total, message),
                 ) {
-                    Ok(_) => emit_progress(100, "Export complete"),
+                    Ok(_) => emit_progress(100.0, "Export complete"),
                     Err(e) => {
                         eprintln!("Mux error: {}", e);
                         std::process::exit(1);

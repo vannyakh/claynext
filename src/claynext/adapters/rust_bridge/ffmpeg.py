@@ -61,7 +61,7 @@ def _media_duration_seconds(exe: str, path: Path) -> float:
     return int(match.group(1)) * 3600 + int(match.group(2)) * 60 + float(match.group(3))
 
 
-def _parse_progress_event(line: str) -> tuple[int, str] | None:
+def _parse_progress_event(line: str) -> tuple[float, str] | None:
     text = (line or "").strip()
     if not text.startswith("{"):
         return None
@@ -72,10 +72,10 @@ def _parse_progress_event(line: str) -> tuple[int, str] | None:
     if not isinstance(data, dict) or data.get("event") != "progress":
         return None
     try:
-        pct = int(data.get("pct") or 0)
+        pct = float(data.get("pct") or 0.0)
     except (TypeError, ValueError):
-        pct = 0
-    return max(0, min(100, pct)), str(data.get("message") or "")
+        pct = 0.0
+    return max(0.0, min(100.0, pct)), str(data.get("message") or "")
 
 
 class RustFfmpegAdapter:
@@ -294,7 +294,7 @@ class RustFfmpegAdapter:
         video_filter: str = "",
         crf: int = 18,
         preset: str = "medium",
-        progress_callback: Callable[[int, str], None] | None = None,
+        progress_callback: Callable[[float, str], None] | None = None,
     ) -> None:
         """Mux (and optionally re-encode) through claynext-ffmpeg, streaming encode percent.
 
@@ -463,7 +463,8 @@ class RustFfmpegAdapter:
             return False
         exe = imageio_ffmpeg.get_ffmpeg_exe()
         args: list[str] = [
-            exe, "-y", "-hide_banner", "-nostats", "-loglevel", "error", "-progress", "pipe:1",
+            exe, "-y", "-hide_banner", "-nostats", "-loglevel", "error",
+            "-stats_period", "0.016", "-progress", "pipe:1",
         ]
         if start_time_secs is not None:
             args += ["-ss", f"{float(start_time_secs):.3f}"]

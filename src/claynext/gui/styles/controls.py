@@ -98,13 +98,9 @@ def controls_qss(accent: str, wash: str) -> str:
 }}
 
 /* ─── Export progress ────────────────────────────────────────────── */
-#export_thumb_frame {{
-    background-color: {COLOR_BG_DARK};
-    border: 1px solid {COLOR_BORDER};
-    border-radius: 8px;
-}}
 #export_thumb {{
     background: transparent;
+    border: none;
     color: {COLOR_TEXT_MUTED};
     font-size: 11px;
 }}

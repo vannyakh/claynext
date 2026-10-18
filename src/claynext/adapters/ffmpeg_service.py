@@ -57,7 +57,7 @@ def run_ffmpeg_progress(
     """Run ffmpeg and report encode fraction 0..1 from the `-progress` protocol."""
     cmd = [
         ffmpeg_exe(), "-hide_banner", "-nostdin", "-nostats",
-        "-loglevel", "error", "-progress", "pipe:1", *args,
+        "-loglevel", "error", "-stats_period", "0.016", "-progress", "pipe:1", *args,
     ]
     proc = subprocess.Popen(
         cmd,
@@ -75,17 +75,18 @@ def run_ffmpeg_progress(
 
     thread = threading.Thread(target=_drain, daemon=True)
     thread.start()
-    last = -1
+    last = -1.0
     try:
         if proc.stdout is not None:
             for line in proc.stdout:
                 seconds = _progress_seconds(line)
                 if seconds is None or not on_fraction or duration_sec <= 0:
                     continue
-                pct = int(min(0.99, seconds / duration_sec) * 100)
-                if pct != last:
-                    last = pct
-                    on_fraction(min(0.99, seconds / duration_sec))
+                frac = min(0.99, seconds / duration_sec)
+                if last >= 0.0 and abs(frac - last) < 0.0004:
+                    continue
+                last = frac
+                on_fraction(frac)
         proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         proc.kill()
@@ -874,7 +875,7 @@ def compose_overlays(
 
     def _on_fraction(frac: float) -> None:
         if progress_callback:
-            progress_callback(int(frac * 100), "Rendering on-screen text…")
+            progress_callback(frac * 100.0, "Rendering on-screen text…")
 
     proc = run_ffmpeg_progress(args, duration_sec=duration, on_fraction=_on_fraction, timeout=1200)
     if proc.returncode != 0 or not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
@@ -1016,9 +1017,9 @@ def mix_timeline_audio(
     import wave
     import numpy as np
 
-    def ping(pct: int, msg: str):
+    def ping(pct: float, msg: str):
         if progress_callback:
-            progress_callback(pct, msg)
+            progress_callback(float(pct), msg)
 
     if not video_path or not os.path.isfile(video_path):
         raise FileNotFoundError("The source footage is missing.")
@@ -1091,9 +1092,9 @@ def render_timeline(
     progress_callback=None,
 ) -> str:
     """Mix the timeline audio, then mux it under the movie picture."""
-    def ping(pct: int, msg: str):
+    def ping(pct: float, msg: str):
         if progress_callback:
-            progress_callback(pct, msg)
+            progress_callback(float(pct), msg)
 
     root = Path(work_dir or Path(output_path).parent / ".render")
     root.mkdir(parents=True, exist_ok=True)
@@ -1101,12 +1102,12 @@ def render_timeline(
     mix_path = mix_timeline_audio(
         video_path, str(root / "timeline_mix.wav"), voice_clips, footage_keys,
         footage_gain=footage_gain, bed_path=bed_path, bed_keys=bed_keys,
-        work_dir=str(root), progress_callback=lambda p, m: ping(int(p * 0.55), m),
+        work_dir=str(root), progress_callback=lambda p, m: ping(float(p) * 0.55, m),
     )
 
-    def _map_encode(pct: int, msg: str, lo: int, hi: int) -> None:
-        span = max(0, min(100, int(pct)))
-        ping(lo + (hi - lo) * span // 100, msg)
+    def _map_encode(pct: float, msg: str, lo: float, hi: float) -> None:
+        span = max(0.0, min(100.0, float(pct)))
+        ping(lo + (hi - lo) * span / 100.0, msg)
 
     if overlays:
         muxed = str(root / "timeline_mux.mp4")
@@ -1141,9 +1142,9 @@ def mux_video(
     reencode = reencode or bool(video_filter)
     label = "Encoding video…" if reencode else "Muxing video…"
 
-    def _ping(pct: int, msg: str = "") -> None:
+    def _ping(pct: float, msg: str = "") -> None:
         if progress_callback:
-            progress_callback(max(0, min(100, int(pct))), msg or label)
+            progress_callback(max(0.0, min(100.0, float(pct))), msg or label)
 
     try:
         from claynext.adapters.rust_bridge.ffmpeg import RustFfmpegAdapter
@@ -1169,7 +1170,7 @@ def mux_video(
     duration = probe_duration(video_path)
 
     def _on_fraction(frac: float) -> None:
-        _ping(int(frac * 100), label)
+        _ping(frac * 100.0, label)
 
     proc = run_ffmpeg_progress([
         "-y", "-i", video_path, "-i", audio_path,
@@ -1192,7 +1193,7 @@ def encode_source_movie(src: str, dest: str, progress_callback=None) -> str:
     def _on_frac(pct: float) -> None:
         if progress_callback:
             done = float(pct) >= 100
-            progress_callback(int(pct), "Export complete" if done else "Encoding video…")
+            progress_callback(float(pct), "Export complete" if done else "Encoding video…")
 
     ok = RustFfmpegAdapter.transcode_video(
         src, dest,

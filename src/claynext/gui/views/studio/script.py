@@ -1076,7 +1076,7 @@ class ScriptTools:
             previous.close()
         dialog = ExportProgressDialog(self.window() or self, title=title, source=source, dest=dest)
         self._export_dialog = dialog
-        worker.signals.progress.connect(dialog.set_progress)
+        worker.signals.progress_fine.connect(dialog.set_progress)
         worker.signals.error.connect(self._on_export_failed)
         dialog.show()
         dialog.raise_()

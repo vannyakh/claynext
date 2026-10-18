@@ -116,6 +116,8 @@ where
         "-nostats",
         "-loglevel",
         "error",
+        "-stats_period",
+        "0.016",
         "-progress",
         "pipe:2",
     ]);

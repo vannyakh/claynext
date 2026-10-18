@@ -20,6 +20,7 @@ class WorkerSignals(QObject):
     """
     started = Signal()
     progress = Signal(int, str)
+    progress_fine = Signal(float, str)
     result = Signal(object)
     finished = Signal()
     error = Signal(str, str)
@@ -39,7 +40,14 @@ class Worker(QRunnable):
         # Inject progress callback into kwargs if supported
         def _emit_progress(val=0, msg=""):
             try:
-                self.signals.progress.emit(int(val), str(msg))
+                number = float(val)
+            except (TypeError, ValueError):
+                number = 0.0
+            number = max(0.0, min(100.0, number))
+            text = str(msg)
+            try:
+                self.signals.progress.emit(int(number), text)
+                self.signals.progress_fine.emit(number, text)
             except Exception:
                 pass
 
