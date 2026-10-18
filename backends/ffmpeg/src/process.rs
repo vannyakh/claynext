@@ -34,7 +34,9 @@ pub struct FfmpegProgress {
 }
 
 pub fn parse_progress_line(line: &str) -> Option<FfmpegProgress> {
-    if !line.contains("time=") && !line.contains("frame=") {
+    let line = line.trim();
+    // Classic stats (`time=`) and the `-progress` protocol (`out_time`, `out_time_us`).
+    if !line.contains("time=") && !line.contains("frame=") && !line.contains("out_time") {
         return None;
     }
 
@@ -48,9 +50,13 @@ pub fn parse_progress_line(line: &str) -> Option<FfmpegProgress> {
                 "fps" => {
                     progress.fps = v.parse::<f32>().ok();
                 }
-                "time" => {
+                "time" | "out_time" => {
                     // HH:MM:SS.xx
                     progress.time_seconds = parse_time_str(v);
+                }
+                // ffmpeg names both of these in microseconds.
+                "out_time_us" | "out_time_ms" => {
+                    progress.time_seconds = v.parse::<f64>().ok().map(|us| us / 1_000_000.0);
                 }
                 "bitrate" => {
                     let clean = v.trim_end_matches("kbits/s");
@@ -142,7 +148,8 @@ impl ManagedProcess {
         cancel_token: Option<Arc<AtomicBool>>,
         timeout: Option<Duration>,
     ) -> Result<Self> {
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        // Progress is read from stderr. Leave stdout closed so a quiet encoder cannot fill the pipe.
+        cmd.stdout(Stdio::null()).stderr(Stdio::piped());
         let child = cmd.spawn().map_err(FfmpegError::ProcessSpawn)?;
 
         Ok(Self {
@@ -211,5 +218,20 @@ impl ManagedProcess {
         }
 
         Ok(all_stderr)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_progress_line;
+
+    #[test]
+    fn parses_progress_protocol_time() {
+        let us = parse_progress_line("out_time_us=2500000").unwrap();
+        assert!((us.time_seconds.unwrap() - 2.5).abs() < 0.001);
+        let ms = parse_progress_line("out_time_ms=2500000").unwrap();
+        assert!((ms.time_seconds.unwrap() - 2.5).abs() < 0.001);
+        let clock = parse_progress_line("out_time=00:00:03.500000").unwrap();
+        assert!((clock.time_seconds.unwrap() - 3.5).abs() < 0.001);
     }
 }

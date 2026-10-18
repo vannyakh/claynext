@@ -1146,7 +1146,8 @@ class TaskTools:
                 live.append({})
             live[index] = {**live[index], **segment}
             task["live_clip"] = index
-        if self._viewing_task == task_id:
+        follow = int(getattr(self, "_script_follow_task", -1) or -1)
+        if self._viewing_task == task_id or follow == task_id:
             self._live_timer.start()
 
     def _view_live_task(self, task: dict):
@@ -1165,7 +1166,10 @@ class TaskTools:
         self._sync_timeline_visibility()
 
     def _render_live_task(self):
-        task = self._task_by_id(self._viewing_task)
+        task_id = self._viewing_task
+        if task_id < 0:
+            task_id = int(getattr(self, "_script_follow_task", -1) or -1)
+        task = self._task_by_id(task_id)
         if not task:
             return
         segments = [seg for seg in task.get("live") or [] if seg]

@@ -316,6 +316,13 @@ class PipelineTools:
         task = self._start_next_task(self.selected_file)
         control = JobControl()
         task["control"] = control
+        # Own the script panel until this job's transcript list arrives.
+        self._segments = []
+        self._script_follow_task = task["id"]
+        if hasattr(self, "_set_script_loading"):
+            self._set_script_loading(True, "Transcribing…", "Reading dialogue from the movie")
+        if hasattr(self, "_fill_table"):
+            self._fill_table([])
         bridge = LiveBridge()
         bridge.event.connect(lambda kind, payload, tid=task["id"]: self._on_live_event(tid, kind, payload))
         self._live_bridge = bridge
@@ -381,7 +388,10 @@ class PipelineTools:
         if hasattr(self, "_set_script_loading_hint"):
             self._set_script_loading_hint(text or f"{int(val)}%")
         self._set_footer_progress(True, int(val), text)
-        self._set_window_status(f"{int(val)}% · {text}" if text else f"{int(val)}%")
+        self._set_window_status(
+            f"{int(val)}% · {text}" if text else f"{int(val)}%",
+            int(val),
+        )
 
     def _on_complete(self, res: dict):
         if not res:
@@ -532,6 +542,12 @@ class PipelineTools:
         self._composition_index = index
         self._viewing_task = -1
         self._live_return_index = -1
+        self._script_follow_task = -1
+        if getattr(self, "_script_loading", False):
+            self._script_loading = False
+            spinner = getattr(self, "script_load_spinner", None)
+            if spinner is not None:
+                spinner.stop()
         comp = self._compositions[index]
         self._output_path = comp.get("output") or ""
         if self.act_open_out:
@@ -710,16 +726,11 @@ class PipelineTools:
             self.log.debug(stack.splitlines()[-1])
 
     def _set_busy(self, busy: bool):
-        # Centered Script loader + locked actions (no header spinner)
-        if hasattr(self, "_set_script_loading"):
-            if busy:
-                hint = (
-                    "Character → translate → TTS → voice"
-                    if getattr(self, "chk_auto_chain", None) and self.chk_auto_chain.isChecked()
-                    else "Transcribe → lead voice → mix"
-                )
-                self._set_script_loading(True, "Dubbing…", hint)
-            else:
+        # The script panel spinner is only for transcription (see _launch_dub_job).
+        # Later steps keep footer / window progress and leave the transcript table up.
+        if not busy:
+            self._script_follow_task = -1
+            if hasattr(self, "_set_script_loading"):
                 self._set_script_loading(False)
         if self.act_dub:
             self.act_dub.setEnabled(not busy)
@@ -727,7 +738,7 @@ class PipelineTools:
         self._dub_busy = busy
         if busy:
             self._set_footer_progress(True, 0, "Starting…")
-            self._set_window_status("Localizing…")
+            self._set_window_status("Localizing…", 0)
         else:
             self._set_footer_progress(False)
             self._set_window_status("Ready")
@@ -754,11 +765,11 @@ class PipelineTools:
             return
         footer.set_localize_progress(busy, pct, message)
 
-    def _set_window_status(self, message: str):
+    def _set_window_status(self, message: str, progress: int | None = None):
         win = self.window() if hasattr(self, "window") else None
         bar = getattr(win, "status_bar", None) if win is not None else None
         if bar is not None and hasattr(bar, "set_status_message"):
-            bar.set_status_message(str(message or "Ready"))
+            bar.set_status_message(str(message or "Ready"), progress)
 
     def open_output(self):
         path = self._output_path

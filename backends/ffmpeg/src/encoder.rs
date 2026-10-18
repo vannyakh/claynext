@@ -109,7 +109,16 @@ where
     let ffmpeg_exe = find_executable("ffmpeg").ok_or(FfmpegError::FfmpegNotFound)?;
 
     let mut cmd = Command::new(&ffmpeg_exe);
-    cmd.arg("-y").arg("-hide_banner");
+    // `-progress pipe:2` writes one key=value per line so the encode percent can move live.
+    cmd.args([
+        "-y",
+        "-hide_banner",
+        "-nostats",
+        "-loglevel",
+        "error",
+        "-progress",
+        "pipe:2",
+    ]);
 
     if let Some(st) = job.start_time_secs {
         cmd.args(["-ss", &format!("{:.3}", st)]);

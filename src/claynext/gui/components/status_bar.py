@@ -1,9 +1,16 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QWidget
 
 from claynext.constants import STATUSBAR_HEIGHT
-from claynext.constants.theme_constants import COLOR_TEXT_SUB, COLOR_TEXT_MUTED, COLOR_PRIMARY
+from claynext.constants.theme_constants import (
+    COLOR_ACCENT_PURPLE,
+    COLOR_PRIMARY,
+    COLOR_TEXT_MUTED,
+    COLOR_TEXT_SUB,
+)
+from claynext.gui.components.spinner import Spinner
 from claynext.utils.config import APP_VERSION
 
 
@@ -19,29 +26,47 @@ class CustomStatusBar(QWidget):
     def _init_ui(self):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 0, 12, 0)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
+
+        # Spinner and track scale to the status-bar height so they stay inside the chrome.
+        spin_size = max(12, STATUSBAR_HEIGHT - 12)
+        track_h = max(4, min(8, STATUSBAR_HEIGHT // 4))
+        track_w = max(120, STATUSBAR_HEIGHT * 6)
+
+        self._spinner = Spinner(self, size=spin_size, color=COLOR_ACCENT_PURPLE)
+        layout.addWidget(self._spinner, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self.lbl_msg = QLabel("Ready")
-        self.lbl_msg.setStyleSheet(
-            f"color: {COLOR_TEXT_SUB}; font-size: 11px;"
-        )
+        self.lbl_msg.setObjectName("status_message")
         layout.addWidget(self.lbl_msg, 1)
 
+        self.progress = QProgressBar()
+        self.progress.setObjectName("status_progress")
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.setTextVisible(False)
+        self.progress.setFixedSize(track_w, track_h)
+        self.progress.hide()
+        layout.addWidget(self.progress, 0, Qt.AlignmentFlag.AlignVCenter)
+
         self.lbl_active_tool = QLabel("")
-        self.lbl_active_tool.setStyleSheet(
-            f"color: {COLOR_PRIMARY}; font-weight: 700; font-size: 11px;"
-        )
+        self.lbl_active_tool.setObjectName("status_tool")
         layout.addWidget(self.lbl_active_tool)
 
         self.lbl_ver = QLabel(f"v{APP_VERSION}")
-        self.lbl_ver.setStyleSheet(
-            f"color: {COLOR_TEXT_MUTED}; font-size: 11px; font-weight: 600; "
-            f"padding: 2px 6px; border-radius: 3px; background: rgba(255,255,255,0.04);"
-        )
+        self.lbl_ver.setObjectName("status_version")
         layout.addWidget(self.lbl_ver)
 
-    def set_status_message(self, msg: str):
+    def set_status_message(self, msg: str, progress: int | None = None):
         self.lbl_msg.setText(msg or "Ready")
+        if progress is None:
+            self._spinner.stop()
+            self.progress.hide()
+            return
+        pct = max(0, min(100, int(progress)))
+        self.progress.setValue(pct)
+        self.progress.show()
+        self._spinner.start()
 
     def set_active_tool_name(self, name: str):
         self.lbl_active_tool.setText(name or "")

@@ -42,7 +42,11 @@ class TimelineClip:
 
 def new_track(kind: str, index: int = 1) -> TimelineTrack:
     name, h, color, icn = PRESET.get(kind, (kind.title(), 24, "#64748b", "copy"))
-    label = name if index <= 1 else f"{name} {index}"
+    if kind == "video":
+        # First video lane is the master source. Later ones are overlay video.
+        label = "Source" if index <= 1 else ("Video" if index == 2 else f"Video {index - 1}")
+    else:
+        label = name if index <= 1 else f"{name} {index}"
     return TimelineTrack(
         id=uuid.uuid4().hex[:10],
         kind=kind,

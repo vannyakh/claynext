@@ -952,16 +952,24 @@ class TimelineCanvas(QWidget):
         self._relayout()
         return track
 
-    def delete_track(self, tid: str):
+    def source_track(self) -> TimelineTrack | None:
+        """Master footage lane — the first video track."""
+        return next((t for t in self.tracks if t.kind == "video"), None)
+
+    def delete_track(self, tid: str) -> bool:
         track = self.track_by_id(tid)
         if not track:
-            return
+            return False
+        source = self.source_track()
+        if source is not None and source.id == tid:
+            return False
         self.push_history()
         self.clips = [c for c in self.clips if c.track_id != tid]
         self.tracks = [t for t in self.tracks if t.id != tid]
         if not self.tracks:
             self.tracks = [new_track("video")]
         self._relayout()
+        return True
 
     def duplicate_track(self, tid: str):
         src = self.track_by_id(tid)
@@ -1025,7 +1033,7 @@ class TimelineCanvas(QWidget):
             ov.setdefault("kind", kind)
             ov.setdefault("text", label)
             ov.setdefault("path", payload.get("path", ""))
-            if kind == "shape":
+            if kind in {"shape", "mask"}:
                 ov["shape"] = ov.get("shape") if ov.get("shape") in SHAPE_LABELS else "rect"
                 ov.setdefault("w", shape_size(ov["shape"])[0])
                 ov.setdefault("h", shape_size(ov["shape"])[1])
@@ -2320,6 +2328,23 @@ class TimelineCanvas(QWidget):
                         self.update()
                         return
                 return
+            # Dropping an effect or filter onto footage keeps it on that clip
+            # and opens its settings in the inspector (Premiere-style), not a new lane.
+            if kind in FX_KINDS:
+                hit = self.clip_at(event.position().toPoint())
+                if hit is not None and hit.kind == "video" and not hit.locked:
+                    fx = clean_fx(kind, style if isinstance(style, dict) else {})
+                    fx["kind"] = kind
+                    applied = list(hit.extra.get("applied_fx") or [])
+                    applied.append(fx)
+                    hit.extra["applied_fx"] = applied
+                    self.selected_ids = {hit.id}
+                    for lane in self.tracks:
+                        lane.selected = lane.id == hit.track_id
+                    self.clip_selected.emit(hit.id)
+                    self.clips_changed.emit()
+                    self.update()
+                    return
             start = self.ms_at(int(event.position().x()))
             if self.duration_ms:
                 start = min(start, max(0, self.duration_ms - 800))

@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import threading
 from pathlib import Path
 
 from claynext.utils.paths import BASE_DIR
@@ -66,6 +67,64 @@ def _run_rust(
         check=check,
         timeout=timeout,
         creationflags=creationflags,
+    )
+
+
+def _run_rust_stream(
+    binary: Path,
+    args: list[str],
+    on_line,
+    *,
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run a Rust CLI and deliver each stdout line as it is written.
+
+    Export and mux print JSON progress lines. stderr is drained on a side
+    thread so a long encode cannot stall on a full pipe.
+    """
+    _ensure_bundled_ffmpeg_env()
+    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    proc = subprocess.Popen(
+        [str(binary), *args],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+        creationflags=creationflags,
+    )
+    stderr_parts: list[str] = []
+
+    def _drain_stderr() -> None:
+        if proc.stderr is None:
+            return
+        for line in proc.stderr:
+            stderr_parts.append(line)
+
+    thread = threading.Thread(target=_drain_stderr, daemon=True)
+    thread.start()
+    stdout_parts: list[str] = []
+    try:
+        if proc.stdout is not None:
+            for line in proc.stdout:
+                stdout_parts.append(line)
+                try:
+                    on_line(line)
+                except Exception:
+                    logger.debug("progress line handler failed", exc_info=True)
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=10)
+        raise
+    finally:
+        thread.join(timeout=2)
+    return subprocess.CompletedProcess(
+        [str(binary), *args],
+        proc.returncode if proc.returncode is not None else 1,
+        "".join(stdout_parts),
+        "".join(stderr_parts),
     )
 
 

@@ -663,6 +663,23 @@ class TimelinePanel(QWidget):
                 continue
             rows.append({"kind": clip.kind, **clean_fx(clip.kind, clip.extra.get("fx")),
                          "start_ms": clip.start_ms, "end_ms": clip.end_ms, "track_id": clip.track_id})
+        for clip in self.canvas.clips:
+            if clip.kind != "video" or (not include_hidden and self._track_hidden(clip)):
+                continue
+            for fx in clip.extra.get("applied_fx") or []:
+                if not isinstance(fx, dict):
+                    continue
+                kind = str(fx.get("kind") or "effect")
+                if kind not in FX_KINDS:
+                    kind = "effect"
+                rows.append({
+                    "kind": kind,
+                    **clean_fx(kind, fx),
+                    "start_ms": clip.start_ms,
+                    "end_ms": clip.end_ms,
+                    "track_id": clip.track_id,
+                    "clip_id": clip.id,
+                })
         video_ids = {t.id for t in self.canvas.tracks if t.kind == "video"}
         primary_video = next((t.id for t in self.canvas.tracks if t.kind == "video"), "")
         for clip in sorted(self.canvas.clips, key=lambda c: (order.get(c.track_id, 0), c.start_ms)):
@@ -1088,6 +1105,8 @@ class TimelinePanel(QWidget):
             return lambda: self.transcript_action.emit(action)
 
         source = track.kind in {"video", "voice", "audio"}
+        master = self.canvas.source_track()
+        is_master = master is not None and master.id == track.id
         return TrackMenuHandlers(
             rename=_rename,
             set_locked=_set_locked,
@@ -1100,7 +1119,7 @@ class TimelinePanel(QWidget):
             move_up=lambda: _move(-1),
             move_down=lambda: _move(1),
             duplicate_track=_dup_track,
-            delete_track=_del_track,
+            delete_track=None if is_master else _del_track,
             clear_track_keys=_clear_track_keys,
             auto_mix=_auto_mix,
             record_voice=_record,
@@ -1219,12 +1238,36 @@ class TimelinePanel(QWidget):
     def _add_track(self, kind: str):
         if kind == "transition":
             return
+        # Blur is an effect clip, not its own lane type.
+        if kind == "blur":
+            track = self.canvas.add_track("effect")
+            if track is None:
+                return
+            n = sum(1 for t in self.canvas.tracks if t.name == "Blur" or t.name.startswith("Blur "))
+            track.name = "Blur" if n <= 1 else f"Blur {n}"
+            clip = self.canvas.add_clip(
+                "effect", "Blur", track_id=track.id,
+                extra={"fx": {"kind": "effect", "effect": "blur", "intensity": 80, "name": "Blur"}},
+            )
+            self._rebuild_rail()
+            if clip is not None:
+                self.selection_changed.emit(clip.id, clip.track_id)
+            return
+        # Captions are text. A new video lane is overlay footage, not another master.
+        if kind == "caption":
+            kind = "text"
         track = self.canvas.add_track(kind)
         if track is None:
             return
         if kind not in {"video", "voice", "audio"}:
-            self.canvas.add_clip(kind, track.name, track_id=track.id)
+            clip = self.canvas.add_clip(kind, track.name, track_id=track.id)
+        else:
+            clip = None
         self._rebuild_rail()
+        if clip is not None:
+            self.selection_changed.emit(clip.id, clip.track_id)
+        else:
+            self.selection_changed.emit("", track.id)
 
     def _resize_track(self, tid: str, height: int):
         self.canvas.set_track_height(tid, height)
@@ -1295,10 +1338,13 @@ class TimelinePanel(QWidget):
             self._emit_mix()
 
     def _delete_track(self, tid: str):
-        self.canvas.delete_track(tid)
+        if not self.canvas.delete_track(tid):
+            self.record_message.emit("Source track stays — it is the master footage", True)
+            return
         self._rebuild_rail()
         self._refresh_meta()
         self.clips_changed.emit()
+        self.selection_changed.emit("", "")
 
     def _duplicate_track(self, tid: str):
         self.canvas.duplicate_track(tid)

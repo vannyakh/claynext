@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from claynext.constants.timeline_constants import (
-    DUB_FOCUS_KINDS, LANE_MAX_W, LANE_MIN_W, RULER_H, TRACK_PRESETS,
+    ADD_TRACK_PRESETS, DUB_FOCUS_KINDS, LANE_MAX_W, LANE_MIN_W, RULER_H,
 )
 from claynext.gui.icons import icon
 from claynext.gui.components.text_styles_panel import parse_text_style
@@ -53,7 +53,7 @@ class LaneRail(QWidget):
     def _build_add_menu(self, parent_widget) -> QMenu:
         menu = QMenu(parent_widget)
         menu.setObjectName("timeline_add_menu")
-        for kind, name, _h, col, icn in TRACK_PRESETS:
+        for kind, name, _h, col, icn in ADD_TRACK_PRESETS:
             act = QAction(icon(icn, color=col, size=13), f"{name} track", self)
             act.triggered.connect(lambda _=False, k=kind: self.add_track.emit(k))
             menu.addAction(act)
@@ -87,8 +87,8 @@ class LaneRail(QWidget):
         self.chk_dub_focus.setChecked(True)
         self.chk_dub_focus.setCursor(Qt.CursorShape.PointingHandCursor)
         self.chk_dub_focus.setToolTip(
-            "Dub focus · show only Cover (video) and Voice (TTS)\n"
-            "Uncheck to reveal Filter, Audio, Text, and other lanes"
+            "Dub focus · show only Source (master) and Voice (TTS)\n"
+            "Uncheck to reveal overlay, audio, text, and effect lanes"
         )
         self.chk_dub_focus.toggled.connect(self._on_dub_focus)
 
@@ -127,6 +127,7 @@ class LaneRail(QWidget):
                 w.deleteLater()
         self._rows.clear()
 
+        source_id = next((t.id for t in tracks if t.kind == "video"), "")
         visible_n = sum(1 for t in tracks if self._lane_shown(t.kind))
         self.title.setText(
             f"Tracks ({visible_n})" if self._dub_focus else f"Tracks ({len(tracks)})"
@@ -147,6 +148,7 @@ class LaneRail(QWidget):
             row.renamed.connect(self.renamed)
             row.reorder_dragged.connect(self._on_row_reorder)
             row.context_menu_requested.connect(self.context_menu_requested)
+            row.set_deletable(track.id != source_id)
             row.setVisible(self._lane_shown(track.kind))
             self.stack_lay.insertWidget(self.stack_lay.count() - 1, row)
             self._rows.append(row)

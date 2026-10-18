@@ -6,7 +6,7 @@ from claynext.constants.theme_constants import (
     COLOR_BG_CARD, COLOR_BG_CARD_HOVER, COLOR_BG_INPUT, COLOR_BG_STATUSBAR,
     COLOR_BORDER, COLOR_BORDER_FOCUS, COLOR_PRIMARY, COLOR_PRIMARY_HOVER,
     COLOR_TEXT_MAIN, COLOR_TEXT_MUTED, COLOR_TEXT_SUB,
-    COLOR_ACCENT_EMERALD, COLOR_ACCENT_PURPLE,
+    COLOR_ACCENT_EMERALD, COLOR_ACCENT_PURPLE, COLOR_ACCENT_ROSE,
 )
 
 
@@ -61,6 +61,86 @@ def controls_qss(accent: str, wash: str) -> str:
 #custom_status_bar {{
     background-color: {COLOR_BG_STATUSBAR};
     border-top: 1px solid {COLOR_BORDER};
+}}
+#status_message {{
+    color: {COLOR_TEXT_SUB};
+    font-size: 11px;
+    background: transparent;
+}}
+#status_tool {{
+    color: {COLOR_PRIMARY};
+    font-weight: 700;
+    font-size: 11px;
+    background: transparent;
+}}
+#status_version {{
+    color: {COLOR_TEXT_MUTED};
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: rgba(255,255,255,0.04);
+}}
+#status_progress {{
+    border: none;
+    border-radius: 3px;
+    background-color: rgba(255,255,255,0.08);
+    padding: 0px;
+    margin: 0px;
+    min-height: 4px;
+    max-height: 8px;
+    font-size: 1px;
+}}
+#status_progress::chunk {{
+    background-color: {COLOR_ACCENT_PURPLE};
+    border-radius: 3px;
+    margin: 0px;
+}}
+
+/* ─── Export progress ────────────────────────────────────────────── */
+#export_thumb_frame {{
+    background-color: {COLOR_BG_DARK};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 8px;
+}}
+#export_thumb {{
+    background: transparent;
+    color: {COLOR_TEXT_MUTED};
+    font-size: 11px;
+}}
+#export_filename {{
+    color: {COLOR_TEXT_MAIN};
+    font-size: 13px;
+    font-weight: 600;
+    background: transparent;
+}}
+#export_status {{
+    color: {COLOR_TEXT_SUB};
+    font-size: 12px;
+    background: transparent;
+}}
+#export_status[error="true"] {{
+    color: {COLOR_ACCENT_ROSE};
+}}
+#export_percent {{
+    color: {COLOR_TEXT_MAIN};
+    font-size: 12px;
+    font-weight: 700;
+    background: transparent;
+}}
+QProgressBar#export_progress {{
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 6px;
+    background-color: rgba(255,255,255,0.05);
+    min-height: 16px;
+    max-height: 18px;
+    padding: 0px;
+    text-align: center;
+}}
+QProgressBar#export_progress::chunk {{
+    background-color: {COLOR_ACCENT_PURPLE};
+    border-radius: 4px;
+    margin: 2px;
 }}
 
 /* ─── Cards ──────────────────────────────────────────────────────── */

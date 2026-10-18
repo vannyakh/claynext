@@ -18,7 +18,7 @@ _ADDABLE_KINDS = OVERLAY_KINDS | FX_KINDS
 _SOURCE_KINDS = frozenset({"video", "voice", "audio"})
 
 _KIND_TITLE = {
-    "video": "Cover",
+    "video": "Source",
     "voice": "Voice",
     "audio": "Audio",
     "caption": "Caption",
@@ -244,10 +244,11 @@ def populate_track_menu(
         _fill_transcripts_menu(menu, handlers)
     elif kind in _ADDABLE_KINDS:
         add_label = {
-            "caption": "Add Caption",
+            "caption": "Add Text",
             "text": "Add Text",
             "image": "Add Image",
             "shape": "Add Shape",
+            "mask": "Add Mask",
             "effect": "Add Effect",
             "filter": "Add Filter",
             "logo": "Add Logo",

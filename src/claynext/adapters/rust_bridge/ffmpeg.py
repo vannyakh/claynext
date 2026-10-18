@@ -4,12 +4,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
+import threading
 from pathlib import Path
 from typing import Any, Callable
 
 from claynext.adapters.rust_bridge.codecs import RustHardwareCodecsAdapter
-from claynext.adapters.rust_bridge.process import _find_binary, _run_rust
+from claynext.adapters.rust_bridge.process import _find_binary, _run_rust, _run_rust_stream
 from claynext.models.media import (
     AudioStreamInfo,
     DecodedAudioChunk,
@@ -20,6 +22,60 @@ from claynext.models.media import (
 )
 
 logger = logging.getLogger("claynext.adapters.rust")
+
+
+def _ffmpeg_out_time(line: str) -> float | None:
+    text = (line or "").strip()
+    if text.startswith("out_time_us=") or text.startswith("out_time_ms="):
+        raw = text.split("=", 1)[1].strip()
+        try:
+            return int(raw) / 1_000_000.0
+        except ValueError:
+            return None
+    if text.startswith("out_time="):
+        parts = text.split("=", 1)[1].strip().split(":")
+        if len(parts) != 3:
+            return None
+        try:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+        except ValueError:
+            return None
+    return None
+
+
+def _media_duration_seconds(exe: str, path: Path) -> float:
+    try:
+        proc = subprocess.run(
+            [exe, "-hide_banner", "-i", str(path)],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=30,
+        )
+    except Exception:
+        return 0.0
+    text = (proc.stderr or "") + (proc.stdout or "")
+    match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", text)
+    if not match:
+        return 0.0
+    return int(match.group(1)) * 3600 + int(match.group(2)) * 60 + float(match.group(3))
+
+
+def _parse_progress_event(line: str) -> tuple[int, str] | None:
+    text = (line or "").strip()
+    if not text.startswith("{"):
+        return None
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or data.get("event") != "progress":
+        return None
+    try:
+        pct = int(data.get("pct") or 0)
+    except (TypeError, ValueError):
+        pct = 0
+    return max(0, min(100, pct)), str(data.get("message") or "")
 
 
 class RustFfmpegAdapter:
@@ -227,6 +283,54 @@ class RustFfmpegAdapter:
             return False
 
     @classmethod
+    def mux_with_progress(
+        cls,
+        video_path: str | Path,
+        audio_path: str | Path,
+        output_path: str | Path,
+        *,
+        reencode: bool = False,
+        audio_bitrate: str = "256k",
+        video_filter: str = "",
+        crf: int = 18,
+        preset: str = "medium",
+        progress_callback: Callable[[int, str], None] | None = None,
+    ) -> None:
+        """Mux (and optionally re-encode) through claynext-ffmpeg, streaming encode percent.
+
+        Raises FileNotFoundError when the binary is missing, RuntimeError when encode fails.
+        """
+        binary = _find_binary("claynext-ffmpeg")
+        if not binary:
+            raise FileNotFoundError("claynext-ffmpeg")
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        digits = "".join(ch for ch in str(audio_bitrate) if ch.isdigit())
+        kbps = int(digits or "256")
+        args = [
+            "mux",
+            str(video_path),
+            str(audio_path),
+            str(out),
+            "--audio-bitrate",
+            str(kbps),
+        ]
+        if reencode or video_filter:
+            args += ["--reencode", "--crf", str(int(crf)), "--preset", preset or "medium"]
+        if video_filter:
+            args += ["--vf", video_filter]
+
+        def _on_line(line: str) -> None:
+            parsed = _parse_progress_event(line)
+            if parsed and progress_callback:
+                progress_callback(parsed[0], parsed[1])
+
+        res = _run_rust_stream(binary, args, _on_line, timeout=None)
+        if res.returncode != 0 or not out.is_file() or out.stat().st_size == 0:
+            err = (res.stderr or res.stdout or "").strip()
+            raise RuntimeError(err or "Failed to mux dubbed video.")
+
+    @classmethod
     def transcode_video(
         cls,
         input_path: str | Path,
@@ -240,6 +344,7 @@ class RustFfmpegAdapter:
         audio_codec: str = "aac",
         sample_rate: int = 44100,
         channels: int = 2,
+        audio_bitrate_kbps: int = 192,
         start_time_secs: float | None = None,
         duration_secs: float | None = None,
         prefer_hardware: bool = False,
@@ -284,6 +389,7 @@ class RustFfmpegAdapter:
                     "--preset", preset or "veryfast",
                     "--sample-rate", str(int(sample_rate)),
                     "--channels", str(int(channels)),
+                    "--audio-bitrate", str(int(audio_bitrate_kbps)),
                 ]
                 if width:
                     args += ["--width", str(int(width))]
@@ -293,7 +399,13 @@ class RustFfmpegAdapter:
                     args += ["--start", f"{float(start_time_secs):.3f}"]
                 if duration_secs is not None:
                     args += ["--duration", f"{float(duration_secs):.3f}"]
-                res = _run_rust(binary, args, timeout=None)
+
+                def _on_line(line: str) -> None:
+                    parsed = _parse_progress_event(line)
+                    if parsed and progress_callback:
+                        progress_callback(float(parsed[0]))
+
+                res = _run_rust_stream(binary, args, _on_line, timeout=None)
                 if res.returncode == 0 and out.is_file() and out.stat().st_size > 0:
                     if progress_callback:
                         progress_callback(100.0)
@@ -317,8 +429,10 @@ class RustFfmpegAdapter:
             audio_codec=audio_codec,
             sample_rate=sample_rate,
             channels=channels,
+            audio_bitrate_kbps=audio_bitrate_kbps,
             start_time_secs=start_time_secs,
             duration_secs=duration_secs,
+            progress_callback=progress_callback,
         )
         if ok and progress_callback:
             progress_callback(100.0)
@@ -337,8 +451,10 @@ class RustFfmpegAdapter:
         audio_codec: str,
         sample_rate: int,
         channels: int,
+        audio_bitrate_kbps: int = 192,
         start_time_secs: float | None = None,
         duration_secs: float | None = None,
+        progress_callback: Callable[[float], None] | None = None,
     ) -> bool:
         try:
             import imageio_ffmpeg
@@ -346,7 +462,9 @@ class RustFfmpegAdapter:
             logger.warning("imageio-ffmpeg unavailable for transcode: %s", e)
             return False
         exe = imageio_ffmpeg.get_ffmpeg_exe()
-        args: list[str] = [exe, "-y", "-hide_banner", "-loglevel", "error"]
+        args: list[str] = [
+            exe, "-y", "-hide_banner", "-nostats", "-loglevel", "error", "-progress", "pipe:1",
+        ]
         if start_time_secs is not None:
             args += ["-ss", f"{float(start_time_secs):.3f}"]
         args += ["-i", str(input_path)]
@@ -366,14 +484,45 @@ class RustFfmpegAdapter:
             args += ["-vf", f"scale={int(width)}:-2"]
         args += [
             "-c:a", audio_codec or "aac",
+            "-b:a", f"{int(audio_bitrate_kbps)}k",
             "-ar", str(int(sample_rate)),
             "-ac", str(int(channels)),
             "-movflags", "+faststart",
             str(output_path),
         ]
+        duration = float(duration_secs or 0.0)
+        if duration <= 0:
+            duration = _media_duration_seconds(exe, input_path)
         try:
             creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-            subprocess.run(args, check=True, capture_output=True, creationflags=creationflags)
+            proc = subprocess.Popen(
+                args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=creationflags,
+            )
+            err_parts: list[str] = []
+
+            def _drain() -> None:
+                if proc.stderr is not None:
+                    err_parts.append(proc.stderr.read())
+
+            thread = threading.Thread(target=_drain, daemon=True)
+            thread.start()
+            if proc.stdout is not None:
+                for line in proc.stdout:
+                    parsed = _ffmpeg_out_time(line)
+                    if parsed is None or duration <= 0 or not progress_callback:
+                        continue
+                    progress_callback(min(99.0, parsed / duration * 100.0))
+            proc.wait()
+            thread.join(timeout=2)
+            if proc.returncode != 0:
+                logger.warning("imageio-ffmpeg transcode failed: %s", "".join(err_parts)[:400])
+                return False
             return output_path.is_file() and output_path.stat().st_size > 0
         except Exception as e:
             logger.warning("imageio-ffmpeg transcode failed: %s", e)

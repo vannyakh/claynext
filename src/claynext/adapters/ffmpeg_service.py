@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import threading
 from functools import lru_cache
 from pathlib import Path
 
@@ -24,6 +25,75 @@ def run_ffmpeg(args: list[str], timeout: int = 600) -> subprocess.CompletedProce
         timeout=timeout,
         check=False,
     )
+
+
+def _progress_seconds(line: str) -> float | None:
+    text = (line or "").strip()
+    if text.startswith("out_time_us=") or text.startswith("out_time_ms="):
+        raw = text.split("=", 1)[1].strip()
+        try:
+            return int(raw) / 1_000_000.0
+        except ValueError:
+            return None
+    if text.startswith("out_time="):
+        clock = text.split("=", 1)[1].strip()
+        parts = clock.split(":")
+        if len(parts) != 3:
+            return None
+        try:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+        except ValueError:
+            return None
+    return None
+
+
+def run_ffmpeg_progress(
+    args: list[str],
+    *,
+    duration_sec: float = 0.0,
+    on_fraction=None,
+    timeout: int = 3600,
+) -> subprocess.CompletedProcess:
+    """Run ffmpeg and report encode fraction 0..1 from the `-progress` protocol."""
+    cmd = [
+        ffmpeg_exe(), "-hide_banner", "-nostdin", "-nostats",
+        "-loglevel", "error", "-progress", "pipe:1", *args,
+    ]
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    err_parts: list[str] = []
+
+    def _drain() -> None:
+        if proc.stderr is not None:
+            err_parts.append(proc.stderr.read())
+
+    thread = threading.Thread(target=_drain, daemon=True)
+    thread.start()
+    last = -1
+    try:
+        if proc.stdout is not None:
+            for line in proc.stdout:
+                seconds = _progress_seconds(line)
+                if seconds is None or not on_fraction or duration_sec <= 0:
+                    continue
+                pct = int(min(0.99, seconds / duration_sec) * 100)
+                if pct != last:
+                    last = pct
+                    on_fraction(min(0.99, seconds / duration_sec))
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=10)
+    finally:
+        thread.join(timeout=2)
+    code = proc.returncode if proc.returncode is not None else 1
+    return subprocess.CompletedProcess(cmd, code, "", "".join(err_parts))
 
 
 WAVE_RATE = 200  # envelope peaks per second of audio
@@ -743,6 +813,7 @@ def compose_overlays(
     *,
     segments: list[dict] | None = None,
     work_dir: str | None = None,
+    progress_callback=None,
 ) -> str:
     """Burn logo / image / text / caption overlays onto a muxed video."""
     rows = list(overlays or [])
@@ -799,9 +870,15 @@ def compose_overlays(
         "-shortest",
         output_path,
     ]
-    proc = run_ffmpeg(args, timeout=1200)
+    duration = probe_duration(video_path)
+
+    def _on_fraction(frac: float) -> None:
+        if progress_callback:
+            progress_callback(int(frac * 100), "Rendering on-screen text…")
+
+    proc = run_ffmpeg_progress(args, duration_sec=duration, on_fraction=_on_fraction, timeout=1200)
     if proc.returncode != 0 or not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
-        err = (proc.stderr or b"").decode("utf-8", errors="replace").strip()
+        err = str(proc.stderr or "").strip()
         raise RuntimeError(err or "Overlay compose failed.")
     return output_path
 
@@ -1024,20 +1101,30 @@ def render_timeline(
     mix_path = mix_timeline_audio(
         video_path, str(root / "timeline_mix.wav"), voice_clips, footage_keys,
         footage_gain=footage_gain, bed_path=bed_path, bed_keys=bed_keys,
-        work_dir=str(root), progress_callback=lambda p, m: ping(int(p * 0.7), m),
+        work_dir=str(root), progress_callback=lambda p, m: ping(int(p * 0.55), m),
     )
-    ping(75, "Muxing the mix into the movie…")
+
+    def _map_encode(pct: int, msg: str, lo: int, hi: int) -> None:
+        span = max(0, min(100, int(pct)))
+        ping(lo + (hi - lo) * span // 100, msg)
+
     if overlays:
         muxed = str(root / "timeline_mux.mp4")
-        mux_video(video_path, mix_path, muxed, audio_bitrate=audio_bitrate, video_filter=video_filter)
-        ping(88, "Rendering on-screen text…")
-        compose_overlays(muxed, overlays, output_path, segments=segments, work_dir=str(root))
+        mux_video(
+            video_path, mix_path, muxed, audio_bitrate=audio_bitrate, video_filter=video_filter,
+            progress_callback=lambda pct, msg: _map_encode(pct, msg, 55, 86),
+        )
+        compose_overlays(
+            muxed, overlays, output_path, segments=segments, work_dir=str(root),
+            progress_callback=lambda pct, msg: _map_encode(pct, msg, 86, 99),
+        )
     else:
         mux_video(
             video_path, mix_path, output_path,
             audio_bitrate=audio_bitrate, reencode=reencode, video_filter=video_filter,
+            progress_callback=lambda pct, msg: _map_encode(pct, msg, 55, 99),
         )
-    ping(100, "Render complete")
+    ping(100, "Export complete")
     return output_path
 
 
@@ -1049,18 +1136,77 @@ def mux_video(
     audio_bitrate: str = "256k",
     reencode: bool = False,
     video_filter: str = "",
+    progress_callback=None,
 ) -> str:
     reencode = reencode or bool(video_filter)
+    label = "Encoding video…" if reencode else "Muxing video…"
+
+    def _ping(pct: int, msg: str = "") -> None:
+        if progress_callback:
+            progress_callback(max(0, min(100, int(pct))), msg or label)
+
+    try:
+        from claynext.adapters.rust_bridge.ffmpeg import RustFfmpegAdapter
+        from claynext.adapters.rust_bridge.process import _find_binary
+
+        if _find_binary("claynext-ffmpeg"):
+            RustFfmpegAdapter.mux_with_progress(
+                video_path, audio_path, output_path,
+                reencode=reencode, audio_bitrate=audio_bitrate, video_filter=video_filter,
+                progress_callback=_ping,
+            )
+            _ping(100, "Export complete")
+            return output_path
+    except FileNotFoundError:
+        pass
+    except Exception as exc:
+        if _find_binary("claynext-ffmpeg"):
+            raise
+        _ = exc
+
     video_codec = ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p"] if reencode else ["-c:v", "copy"]
     vf = ["-vf", video_filter] if video_filter else []
-    proc = run_ffmpeg([
+    duration = probe_duration(video_path)
+
+    def _on_fraction(frac: float) -> None:
+        _ping(int(frac * 100), label)
+
+    proc = run_ffmpeg_progress([
         "-y", "-i", video_path, "-i", audio_path,
         "-map", "0:v:0", "-map", "1:a:0",
         *vf, *video_codec, "-c:a", "aac", "-b:a", audio_bitrate,
         "-shortest", "-movflags", "+faststart",
         output_path,
-    ], timeout=3600 if reencode else 900)
+    ], duration_sec=duration, on_fraction=_on_fraction, timeout=3600 if reencode else 900)
     if proc.returncode != 0 or not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
-        err = (proc.stderr or b"").decode("utf-8", errors="replace").strip()
+        err = (proc.stderr or "").strip()
         raise RuntimeError(err or "Failed to mux dubbed video.")
+    _ping(100, "Export complete")
     return output_path
+
+
+def encode_source_movie(src: str, dest: str, progress_callback=None) -> str:
+    """Re-encode a source movie through claynext-ffmpeg, reporting encode percent."""
+    from claynext.adapters.rust_bridge.ffmpeg import RustFfmpegAdapter
+
+    def _on_frac(pct: float) -> None:
+        if progress_callback:
+            done = float(pct) >= 100
+            progress_callback(int(pct), "Export complete" if done else "Encoding video…")
+
+    ok = RustFfmpegAdapter.transcode_video(
+        src, dest,
+        video_codec="libx264",
+        crf=18,
+        preset="medium",
+        audio_codec="aac",
+        sample_rate=44100,
+        channels=2,
+        audio_bitrate_kbps=256,
+        progress_callback=_on_frac,
+    )
+    if not ok or not os.path.isfile(dest) or os.path.getsize(dest) == 0:
+        raise RuntimeError("Encode failed.")
+    if progress_callback:
+        progress_callback(100, "Export complete")
+    return dest

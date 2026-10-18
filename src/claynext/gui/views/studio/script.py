@@ -18,7 +18,9 @@ from PySide6.QtWidgets import (
 )
 
 from claynext.models.dubbing_service import timestamp_to_sec
-from claynext.adapters.ffmpeg_service import concat_videos, mix_timeline_audio, render_timeline, run_ffmpeg
+from claynext.adapters.ffmpeg_service import (
+    concat_videos, encode_source_movie, mix_timeline_audio, render_timeline,
+)
 from claynext.gui.icons import icon
 from claynext.models.thumbnails import VIDEO_EXTS
 from claynext.models.translate_service import TranslateEngine
@@ -59,13 +61,17 @@ def _format_script_error(hint: str) -> str:
 
 
 class _ScriptLoadBridge:
-    """Compatibility shim — table_spinner.start/stop drive the centered loader."""
+    """Compatibility shim — table_spinner.start/stop drive the centered loader.
+
+    The loader covers the script panel only while there is no transcript list yet.
+    Translate, TTS, and other later steps leave the table in place.
+    """
 
     def __init__(self, host: "ScriptTools"):
         self._host = host
 
     def start(self):
-        self._host._set_script_loading(True)
+        self._host._set_script_loading(True, "Transcribing…", "Reading dialogue from the movie")
 
     def stop(self):
         self._host._set_script_loading(False)
@@ -1041,33 +1047,58 @@ class ScriptTools:
                 **common,
             )
             title = "Export mix" if kind == "mix_wav" else "Export voice-over"
-        self.table_spinner.start()
-        worker.signals.progress.connect(lambda pct, msg: self.log.debug(f"{pct}% · {msg}"))
-        worker.signals.result.connect(lambda path, d=work_dir, t=title, k=kind: self._on_timeline_rendered(path, d, t, k))
-        worker.signals.error.connect(self._on_render_error)
-        worker.signals.finished.connect(self.table_spinner.stop)
-        self.thread_pool.start(worker)
+        worker.signals.result.connect(
+            lambda path, d=work_dir, t=title, k=kind: self._on_timeline_rendered(path, d, t, k)
+        )
         self.log.info(f"{title} · {len(plan['voice'])} voice clips · {len(plan['footage_keys'])} key points")
+        self._start_export_job(worker, title, source, dest)
 
     def _export_source(self, source: str, dest: str, reencode: bool):
         def job(src: str, out: str, progress_callback=None) -> str:
             if not reencode:
+                if progress_callback:
+                    progress_callback(30, "Copying source…")
                 shutil.copy2(src, out)
+                if progress_callback:
+                    progress_callback(100, "Export complete")
                 return out
-            proc = run_ffmpeg([
-                "-y", "-i", src, "-c:v", "libx264", "-preset", "medium", "-crf", "18",
-                "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart", out,
-            ], timeout=3600)
-            if proc.returncode != 0 or not os.path.isfile(out):
-                raise RuntimeError((proc.stderr or b"").decode("utf-8", errors="replace").strip() or "Encode failed.")
-            return out
+            return encode_source_movie(src, out, progress_callback=progress_callback)
 
-        self.table_spinner.start()
         worker = Worker(job, source, dest)
-        worker.signals.result.connect(lambda path: self._on_render_ready(str(path), "Export source"))
-        worker.signals.error.connect(self._on_render_error)
-        worker.signals.finished.connect(self.table_spinner.stop)
+        worker.signals.result.connect(lambda path: self._on_source_exported(str(path)))
+        self._start_export_job(worker, "Export source", source, dest)
+
+    def _start_export_job(self, worker, title: str, source: str, dest: str) -> None:
+        from claynext.gui.dialogs.export_progress_dialog import ExportProgressDialog
+
+        previous = getattr(self, "_export_dialog", None)
+        if previous is not None:
+            previous.close()
+        dialog = ExportProgressDialog(self.window() or self, title=title, source=source, dest=dest)
+        self._export_dialog = dialog
+        worker.signals.progress.connect(dialog.set_progress)
+        worker.signals.error.connect(self._on_export_failed)
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
         self.thread_pool.start(worker)
+
+    def _finish_export(self, name: str) -> None:
+        dialog = getattr(self, "_export_dialog", None)
+        if dialog is not None:
+            dialog.succeed(name)
+
+    def _on_export_failed(self, message: str, _stack: str) -> None:
+        self.log.error(f"Export failed · {message}")
+        dialog = getattr(self, "_export_dialog", None)
+        if dialog is not None:
+            dialog.fail(message)
+            return
+        QMessageBox.warning(self, "Export", message)
+
+    def _on_source_exported(self, path: str) -> None:
+        self._finish_export(os.path.basename(path))
+        self._on_render_ready(path, "Export source")
 
     def _on_timeline_rendered(self, path: str, work_dir: str, title: str = "Render dub", kind: str = "movie"):
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -1075,6 +1106,7 @@ class ScriptTools:
             self._output_path = str(path)
             if self.act_open_out:
                 self.act_open_out.setEnabled(os.path.isfile(self._output_path))
+        self._finish_export(os.path.basename(str(path)))
         self._on_render_ready(str(path), title)
 
     def _render_source(self):
@@ -1220,9 +1252,28 @@ class ScriptTools:
                 self.lbl_script_count.setText(f"{visible} of {n}")
             else:
                 self.lbl_script_count.setText(f"{n} line{'s' if n != 1 else ''}")
+        if self._script_loading and n:
+            # Transcript lines are in — drop the overlay and keep the table.
+            self._script_loading = False
+            spinner = getattr(self, "script_load_spinner", None)
+            if spinner is not None:
+                spinner.stop()
         if self._script_loading:
             self.script_stack.setCurrentWidget(self.script_loading_page)
             self._set_script_actions_enabled(False)
+            return
+        dub_busy = bool(getattr(self, "_dub_busy", False))
+        if dub_busy:
+            self._set_script_actions_enabled(False)
+            if hasattr(self, "script_search"):
+                self.script_search.setEnabled(n > 0)
+                self.script_character_filter.setEnabled(n > 0)
+                if hasattr(self, "script_view_filter"):
+                    self.script_view_filter.setEnabled(n > 0)
+            if n > 0:
+                self.script_stack.setCurrentWidget(self.table)
+            else:
+                self.script_stack.setCurrentWidget(self.script_empty_page)
             return
         if hasattr(self, "btn_script_import"):
             self.btn_script_import.setEnabled(True)
@@ -1264,12 +1315,14 @@ class ScriptTools:
                 if hasattr(self, "btn_empty_retry"):
                     self.btn_empty_retry.setVisible(False)
 
-    def _set_script_loading(self, on: bool, title: str = "Dubbing…", hint: str = ""):
-        """Show a large centered spinner and lock script actions while a job runs."""
+    def _set_script_loading(self, on: bool, title: str = "Transcribing…", hint: str = ""):
+        """Cover the script panel only while transcription has not produced lines yet."""
+        if on and getattr(self, "_segments", None):
+            return
         self._script_loading = bool(on)
         if on:
             if hasattr(self, "load_title"):
-                self.load_title.setText(title or "Dubbing…")
+                self.load_title.setText(title or "Transcribing…")
             if hasattr(self, "load_hint"):
                 self.load_hint.setText(hint or "Please wait")
             if hasattr(self, "script_load_spinner"):

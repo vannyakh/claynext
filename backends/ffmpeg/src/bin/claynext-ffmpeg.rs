@@ -1,10 +1,46 @@
 use claynext_ffmpeg::{
     decode_audio_pcm_f32, extract_audio_wav, extract_frame_rgba, extract_still_image,
-    is_encoder_available, mux_video_audio, probe_media_file, run_export_job, AudioEncoderConfig,
-    ExportJob, MuxOptions, SeekMode, VideoEncoderConfig,
+    is_encoder_available, mux_video_audio_progress, probe_media_file, run_export_job,
+    AudioEncoderConfig, ExportJob, FfmpegProgress, MuxOptions, SeekMode, VideoEncoderConfig,
 };
 use std::env;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+
+fn emit_progress(pct: u8, message: &str) {
+    println!(
+        "{}",
+        serde_json::json!({
+            "event": "progress",
+            "pct": pct,
+            "message": message,
+        })
+    );
+    let _ = io::stdout().flush();
+}
+
+fn media_duration(path: &Path) -> f64 {
+    probe_media_file(path)
+        .map(|info| info.duration_seconds)
+        .unwrap_or(0.0)
+}
+
+fn report_encode_progress(total_secs: f64, message: &'static str) -> impl FnMut(FfmpegProgress) {
+    let mut last = -1i32;
+    move |progress: FfmpegProgress| {
+        let Some(time_secs) = progress.time_seconds else {
+            return;
+        };
+        if total_secs <= 0.0 {
+            return;
+        }
+        let pct = ((time_secs / total_secs) * 100.0).clamp(0.0, 99.0) as i32;
+        if pct != last {
+            last = pct;
+            emit_progress(pct as u8, message);
+        }
+    }
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -159,21 +195,30 @@ fn main() {
                 }
 
                 let job = ExportJob {
-                    input_path: input,
+                    input_path: input.clone(),
                     output_path: output,
                     video,
                     audio,
                     start_time_secs: opts.start,
                     duration_secs: opts.duration,
                 };
-                match run_export_job(&job, None, None, |p| {
-                    if let Some(t) = p.time_seconds {
-                        print!("\rExporting: time={:.2}s", t);
+                let probed = media_duration(&input);
+                let total = opts.duration.unwrap_or_else(|| {
+                    if let Some(start) = opts.start {
+                        (probed - start).max(0.0)
+                    } else {
+                        probed
                     }
-                }) {
-                    Ok(_) => println!("\nExport finished successfully!"),
+                });
+                match run_export_job(
+                    &job,
+                    None,
+                    None,
+                    report_encode_progress(total, "Encoding video…"),
+                ) {
+                    Ok(_) => emit_progress(100, "Export complete"),
                     Err(e) => {
-                        eprintln!("\nExport error: {}", e);
+                        eprintln!("Export error: {}", e);
                         std::process::exit(1);
                     }
                 }
@@ -198,15 +243,32 @@ fn main() {
                 let video = Path::new(&args[2]);
                 let audio = Path::new(&args[3]);
                 let output = Path::new(&args[4]);
-                match mux_video_audio(video, audio, output, &MuxOptions::default()) {
-                    Ok(_) => println!("Muxed successfully to: {}", output.display()),
+                let options = parse_mux_flags(&args[5..]);
+                let total = media_duration(video);
+                let message = if options.copy_video && options.video_filter.is_empty() {
+                    "Muxing video…"
+                } else {
+                    "Encoding video…"
+                };
+                match mux_video_audio_progress(
+                    video,
+                    audio,
+                    output,
+                    &options,
+                    None,
+                    None,
+                    report_encode_progress(total, message),
+                ) {
+                    Ok(_) => emit_progress(100, "Export complete"),
                     Err(e) => {
                         eprintln!("Mux error: {}", e);
                         std::process::exit(1);
                     }
                 }
             } else {
-                eprintln!("Usage: claynext-ffmpeg mux <video_in> <audio_in> <output>");
+                eprintln!(
+                    "Usage: claynext-ffmpeg mux <video_in> <audio_in> <output> [--reencode] [--crf 18] [--preset medium] [--audio-bitrate 256] [--vf FILTER]"
+                );
                 std::process::exit(1);
             }
         }
@@ -323,4 +385,48 @@ fn parse_export_flags(args: &[String]) -> ExportFlags {
         }
     }
     flags
+}
+
+fn parse_mux_flags(args: &[String]) -> MuxOptions {
+    let mut options = MuxOptions::default();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--reencode" => {
+                options.copy_video = false;
+                i += 1;
+            }
+            "--copy-audio" => {
+                options.copy_audio = true;
+                i += 1;
+            }
+            "--crf" => {
+                if let Some(value) = args.get(i + 1).and_then(|s| s.parse().ok()) {
+                    options.video_crf = value;
+                }
+                i += 2;
+            }
+            "--preset" => {
+                if let Some(value) = args.get(i + 1) {
+                    options.video_preset = value.clone();
+                }
+                i += 2;
+            }
+            "--audio-bitrate" => {
+                if let Some(value) = args.get(i + 1).and_then(|s| s.parse().ok()) {
+                    options.audio_bitrate_kbps = value;
+                }
+                i += 2;
+            }
+            "--vf" => {
+                if let Some(value) = args.get(i + 1) {
+                    options.video_filter = value.clone();
+                    options.copy_video = false;
+                }
+                i += 2;
+            }
+            _ => i += 1,
+        }
+    }
+    options
 }

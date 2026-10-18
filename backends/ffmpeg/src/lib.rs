@@ -18,7 +18,7 @@ pub use encoder::{
     VideoEncoderConfig,
 };
 pub use error::{FfmpegError, Result};
-pub use muxer::{mux_video_audio, ContainerFormat, MuxOptions};
+pub use muxer::{mux_video_audio, mux_video_audio_progress, ContainerFormat, MuxOptions};
 pub use probe::{
     probe_media_file, AudioMetadata, MediaInspection, Rational, StreamInfo, StreamKindMetadata,
     VideoMetadata,

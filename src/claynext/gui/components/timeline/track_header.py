@@ -47,6 +47,7 @@ class TrackHeader(QWidget):
         self._dragging_track = False
         self._drag_start_y = 0
         self._compact = False
+        self._can_delete = True
         self._current_tall = None
         self._init_ui()
 
@@ -473,8 +474,14 @@ class TrackHeader(QWidget):
         self.grip.setVisible(not compact)
         self._update_tier()
 
+    def set_deletable(self, on: bool):
+        """Source (master) cannot be removed."""
+        self._can_delete = bool(on)
+        if not self._can_delete:
+            self.btn_del.hide()
+
     def enterEvent(self, event):
-        if not self._compact:
+        if not self._compact and self._can_delete:
             self.btn_del.show()
         super().enterEvent(event)
 

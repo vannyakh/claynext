@@ -196,7 +196,7 @@ class InspectorTools:
     def _editor_for_kind(self, kind: str):
         if kind in TEXT_KINDS:
             return self.track_props.text_inspector
-        if kind == "shape":
+        if kind in {"shape", "mask"}:
             return self.track_props.shape_inspector
         return self.inspector
 
@@ -321,15 +321,7 @@ class InspectorTools:
         track = canvas.track_by_id(track_id) if track_id else None
         if clip and not track:
             track = canvas.track_by_id(clip.track_id)
-        # Caption track / clip → Captions page in the Inspector dock.
-        is_caption = bool(
-            (track is not None and track.kind == "caption")
-            or (clip is not None and clip.kind == "caption")
-        )
-        if is_caption:
-            self._set_canvas_edit(False)
-            self._show_caption_page(focus=True)
-            return
+        # Captions are text — their settings live in the track inspector.
         if track:
             source = ""
             if track.kind == "video":
@@ -395,7 +387,16 @@ class InspectorTools:
         clip = self.track_props.clip
         if clip is None:
             return
-        if clip.kind in FX_KINDS:
+        applied = clip.extra.get("applied_fx") if clip.kind == "video" else None
+        if isinstance(applied, list) and applied:
+            from claynext.models.fx import clean_fx
+
+            last = applied[-1] if isinstance(applied[-1], dict) else {}
+            kind = str(last.get("kind") or "effect")
+            applied[-1] = clean_fx(kind, {**last, **fx, "kind": kind})
+            self.timeline.canvas.update()
+            self._sync_preview_fx()
+        elif clip.kind in FX_KINDS:
             self.timeline.update_fx_extra(clip.id, fx)
             self.track_props.title.setText(clip.label)
             self._sync_preview_fx()

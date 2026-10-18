@@ -19,24 +19,25 @@ _edge_endpoint_ready = False
 
 
 def _ensure_edge_tts_endpoint() -> None:
-    """Point edge-tts at the current Microsoft host (legacy Bing WSS returns 403)."""
+    """Require the current Edge Read Aloud handshake.
+
+    edge-tts 7.2.x sends a v1 Sec-MS-GEC token. Microsoft answers that with 403.
+    7.3+ sends the v2 token on the library's own host. Rewriting WSS_URL to
+    api.msedgeservices.com keeps the rejection, so this leaves the package URL alone.
+    """
     global _edge_endpoint_ready
     if _edge_endpoint_ready:
         return
-    try:
-        import edge_tts.communicate as edge_communicate
-        from edge_tts.constants import TRUSTED_CLIENT_TOKEN
+    from edge_tts.drm import DRM
 
-        # speech.platform.bing.com rejects Sec-MS-GEC v1; msedgeservices accepts it.
-        # See: https://github.com/rany2/edge-tts/issues/490
-        edge_communicate.WSS_URL = (
-            "wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1"
-            f"?Ocp-Apim-Subscription-Key={TRUSTED_CLIENT_TOKEN}"
+    token = DRM.generate_sec_ms_gec()
+    # v2 tokens are "<16 hex>-<64 hex>". A bare 64-hex digest is the rejected v1 token.
+    if "-" not in token:
+        raise RuntimeError(
+            "Edge TTS client is too old (v1 handshake). "
+            "Upgrade with: uv sync  (needs edge-tts>=7.3.1)"
         )
-        _edge_endpoint_ready = True
-    except Exception:
-        # Keep package default; synthesize will surface the network error.
-        _edge_endpoint_ready = True
+    _edge_endpoint_ready = True
 
 
 def voice_display_fallback(voice_id: str) -> str:

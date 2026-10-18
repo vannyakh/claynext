@@ -741,7 +741,9 @@ class TrackPropsPage(QWidget):
             show = {
                 self.sec_text: False,
                 self.sec_shape: False,
-                self.sec_fx: clip is not None and bool(clip.extra.get("transition")),
+                self.sec_fx: clip is not None and (
+                    bool(clip.extra.get("transition")) or bool(clip.extra.get("applied_fx"))
+                ),
                 self.sec_canvas: tab == "video" and clip is not None,
                 self.sec_clip: False,
                 self.sec_audio: tab == "audio",
@@ -752,12 +754,12 @@ class TrackPropsPage(QWidget):
         else:
             show = {
                 self.sec_text: clip is not None and clip.kind in TEXT_KINDS,
-                self.sec_shape: clip is not None and clip.kind == "shape",
+                self.sec_shape: clip is not None and clip.kind in {"shape", "mask"},
                 self.sec_fx: clip is not None and clip.kind in FX_KINDS,
                 self.sec_canvas: False,
                 self.sec_clip: clip is not None and not is_master
                     and clip.kind in OVERLAY_KINDS
-                    and clip.kind not in TEXT_KINDS | FX_KINDS | {"shape"},
+                    and clip.kind not in TEXT_KINDS | FX_KINDS | {"shape", "mask"},
                 self.sec_audio: has_audio,
                 self.sec_autokey: False,
                 self.sec_filter: False,
@@ -812,7 +814,7 @@ class TrackPropsPage(QWidget):
             data["duration_ms"] = clip.duration_ms
             overlay = OverlayItem.from_dict(data)
         is_text = overlay is not None and overlay.kind in TEXT_KINDS
-        is_shape = overlay is not None and overlay.kind == "shape"
+        is_shape = overlay is not None and overlay.kind in {"shape", "mask"}
         styled = is_text or is_shape
         self.inspector.bind(None if styled else overlay)
         self.inspector.setVisible(overlay is not None and not styled)
@@ -820,7 +822,15 @@ class TrackPropsPage(QWidget):
         self.shape_inspector.bind(overlay if is_shape else None)
         is_fx = clip is not None and clip.kind in FX_KINDS
         has_tr = clip is not None and bool(clip.extra.get("transition"))
-        if is_fx:
+        applied = list(clip.extra.get("applied_fx") or []) if clip is not None else []
+        applied = [row for row in applied if isinstance(row, dict)]
+        if applied:
+            last = applied[-1]
+            kind = str(last.get("kind") or "effect")
+            self.fx_inspector.bind(kind if kind in {"effect", "filter"} else "effect", last)
+            if isinstance(self.sec_fx, CollapsibleSection):
+                self.sec_fx.set_title("Filter" if kind == "filter" else "Effect")
+        elif is_fx:
             self.fx_inspector.bind(clip.kind, clip.extra.get("fx"))
             if isinstance(self.sec_fx, CollapsibleSection):
                 self.sec_fx.set_title("Filter" if clip.kind == "filter" else "Effect")

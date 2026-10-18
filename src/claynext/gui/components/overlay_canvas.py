@@ -28,7 +28,7 @@ from claynext.gui.components.shape_render import paint_shape, shape_px, shape_si
 from claynext.gui.components.text_render import caption_width, fit_caption, item_box, paint_text, wrap_text
 
 TEXT_KINDS = {"text", "caption"}
-HANDLE_KINDS = TEXT_KINDS | {"shape"}
+HANDLE_KINDS = TEXT_KINDS | {"shape", "mask"}
 
 
 @dataclass
@@ -382,7 +382,7 @@ class OverlayCanvas(QWidget):
 
     def _box_for(self, item: OverlayItem, style: dict, text: str = "") -> QRectF:
         _fw, fh = self._frame_wh()
-        if item.kind == "shape":
+        if item.kind in {"shape", "mask"}:
             w, h = shape_px(style, item.w, item.h, fh)
             return QRectF(-w / 2, -h / 2, w, h)
         return item_box(style, text or " ", fh)
@@ -427,7 +427,7 @@ class OverlayCanvas(QWidget):
             return "handle_br"
         if abs(local.x() - box.left()) <= reach and abs(local.y() - box.bottom()) <= reach:
             return "handle_bl"
-        if item.kind == "shape":
+        if item.kind in {"shape", "mask"}:
             if abs(local.y() - box.top()) <= reach and abs(local.x()) <= reach + 8:
                 return "handle_top"
             if abs(local.y() - box.bottom()) <= reach and abs(local.x()) <= reach + 8:
@@ -599,7 +599,7 @@ class OverlayCanvas(QWidget):
                 if item.id == self.selected_id:
                     self._paint_text_chrome(p, item, center, box)
                 continue
-            if item.kind == "shape":
+            if item.kind in {"shape", "mask"}:
                 center, box, style, _text = self._text_geom(item)
                 paint_shape(
                     p,
@@ -651,7 +651,7 @@ class OverlayCanvas(QWidget):
         p.setBrush(QColor(COLOR_TEXT_MAIN))
         for corner in (box.topLeft(), box.topRight(), box.bottomRight(), box.bottomLeft()):
             p.drawEllipse(corner, _HANDLE_R, _HANDLE_R)
-        if item.kind == "shape":
+        if item.kind in {"shape", "mask"}:
             for mid_x, mid_y, pw, ph in (
                 (0, box.top(), 10, 4),
                 (0, box.bottom(), 10, 4),
@@ -913,7 +913,7 @@ class OverlayCanvas(QWidget):
         start_h = start["start_h"]
         start_dist = start["start_dist"]
 
-        if item.kind == "shape":
+        if item.kind in {"shape", "mask"}:
             k = max(1.0, (item.scale / 100.0) * rh)
 
             if self._drag_mode in ("handle_tl", "handle_tr", "handle_br", "handle_bl"):
