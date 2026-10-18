@@ -743,6 +743,8 @@ def _write_overlay_ass(
 
     events: list[str] = []
     for item in overlays or []:
+        if item.get("hidden"):
+            continue
         kind = str(item.get("kind") or "text")
         if kind in {"logo", "image"}:
             continue
@@ -825,7 +827,9 @@ def compose_overlays(
     width, height = probe_size(video_path)
     images = [
         it for it in rows
-        if str(it.get("kind") or "") in {"logo", "image"} and os.path.isfile(str(it.get("path") or ""))
+        if str(it.get("kind") or "") in {"logo", "image"}
+        and not it.get("hidden")
+        and os.path.isfile(str(it.get("path") or ""))
     ]
     ass_path = _write_overlay_ass(rows, segments, str(root), width, height)
     if not images and not ass_path:
@@ -842,6 +846,10 @@ def compose_overlays(
         rot = float(item.get("rotation") or 0.0)
         lab = f"im{i}"
         chain = f"[{i}:v]format=rgba,scale={w}:{h}"
+        if item.get("flip_h"):
+            chain += ",hflip"
+        if item.get("flip_v"):
+            chain += ",vflip"
         if abs(rot) > 0.4:
             rad = rot * 3.14159265 / 180.0
             chain += f",rotate={rad}:c=none:ow=rotw(iw):oh=roth(ih)"

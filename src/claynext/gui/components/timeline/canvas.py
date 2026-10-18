@@ -956,6 +956,32 @@ class TimelineCanvas(QWidget):
         """Master footage lane — the first video track."""
         return next((t for t in self.tracks if t.kind == "video"), None)
 
+    def master_span(self) -> tuple[int, int] | None:
+        """Start and length of the master footage, in milliseconds."""
+        source = self.source_track()
+        masters: list[TimelineClip] = []
+        if source is not None:
+            masters = [
+                c for c in self.clips
+                if c.track_id == source.id and (c.extra.get("master") or c.id == "footage")
+            ]
+            if not masters:
+                masters = [c for c in self.clips if c.track_id == source.id and c.kind == "video"]
+        if masters:
+            start = min(c.start_ms for c in masters)
+            end = max(c.end_ms for c in masters)
+            if end > start:
+                return start, end - start
+        if self.duration_ms > 0:
+            return 0, self.duration_ms
+        return None
+
+    def fit_master_placement(self, kind: str) -> tuple[int, int] | None:
+        """On-screen overlays cover the whole master clip. Effects stay timed."""
+        if kind not in OVERLAY_KINDS:
+            return None
+        return self.master_span()
+
     def delete_track(self, tid: str) -> bool:
         track = self.track_by_id(tid)
         if not track:
@@ -2346,10 +2372,12 @@ class TimelineCanvas(QWidget):
                     self.update()
                     return
             start = self.ms_at(int(event.position().x()))
-            if self.duration_ms:
-                start = min(start, max(0, self.duration_ms - 800))
             dur = 4000
-            if self.duration_ms:
+            fit = self.fit_master_placement(kind)
+            if fit:
+                start, dur = fit
+            elif self.duration_ms:
+                start = min(start, max(0, self.duration_ms - 800))
                 dur = max(800, min(6000, self.duration_ms - start))
             busy = track is not None and any(
                 c.track_id == track.id and c.start_ms < start + dur and start < c.end_ms for c in self.clips

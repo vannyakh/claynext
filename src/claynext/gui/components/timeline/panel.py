@@ -640,12 +640,18 @@ class TimelinePanel(QWidget):
             return None
 
         dur = 4000
-        if self.canvas.duration_ms:
+        start = None
+        fit = self.canvas.fit_master_placement(kind)
+        if fit:
+            start, dur = fit
+        elif self.canvas.duration_ms:
             dur = max(800, min(8000, self.canvas.duration_ms - self.canvas.playhead_ms or 4000))
         if kind in FX_KINDS:
             return self.canvas.add_clip(kind, fx_label(kind, style), duration_ms=dur, extra={"fx": dict(style)})
         label = str(style.get("text") or style.get("name") or kind)
-        return self.canvas.add_clip(kind, label, duration_ms=dur, extra={"overlay": dict(style)})
+        return self.canvas.add_clip(
+            kind, label, duration_ms=dur, extra={"overlay": dict(style)}, start_ms=start,
+        )
 
     def overlay_clips(self, ms: int | None = None) -> list[TimelineClip]:
         t = self.canvas.playhead_ms if ms is None else int(ms)
@@ -1001,7 +1007,12 @@ class TimelinePanel(QWidget):
             t = _live_track()
             if t is None or t.locked:
                 return
-            self.canvas.add_clip(t.kind, t.name, track_id=tid)
+            fit = self.canvas.fit_master_placement(t.kind)
+            if fit:
+                start, dur = fit
+                self.canvas.add_clip(t.kind, t.name, track_id=tid, duration_ms=dur, start_ms=start)
+            else:
+                self.canvas.add_clip(t.kind, t.name, track_id=tid)
             self._rebuild_rail()
             self._refresh_meta()
             self.clips_changed.emit()
@@ -1260,7 +1271,14 @@ class TimelinePanel(QWidget):
         if track is None:
             return
         if kind not in {"video", "voice", "audio"}:
-            clip = self.canvas.add_clip(kind, track.name, track_id=track.id)
+            fit = self.canvas.fit_master_placement(kind)
+            if fit:
+                start, dur = fit
+                clip = self.canvas.add_clip(
+                    kind, track.name, track_id=track.id, duration_ms=dur, start_ms=start,
+                )
+            else:
+                clip = self.canvas.add_clip(kind, track.name, track_id=track.id)
         else:
             clip = None
         self._rebuild_rail()
@@ -1404,12 +1422,20 @@ class TimelinePanel(QWidget):
             if target is None:
                 target = self.canvas.ensure_track(kind if kind != "audio" else "audio")
             dur = 3000
+            start = None
             extra = {"path": path}
             if kind == "audio":
                 dur = max(1000, int(probe_duration(path) * 1000))
                 extra["file_ms"] = dur
                 self._load_wave(path)
-            self.canvas.add_clip(kind, os.path.basename(path), duration_ms=dur, extra=extra, track_id=target.id)
+            else:
+                fit = self.canvas.fit_master_placement(kind)
+                if fit:
+                    start, dur = fit
+            self.canvas.add_clip(
+                kind, os.path.basename(path), duration_ms=dur, extra=extra,
+                track_id=target.id, start_ms=start,
+            )
         if not replaced_video:
             self._rebuild_rail()
 

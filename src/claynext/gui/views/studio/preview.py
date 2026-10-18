@@ -50,6 +50,7 @@ class PreviewTools:
         self.overlay.item_selected.connect(self._on_overlay_selected)
         self.overlay.items_changed.connect(self._on_overlays_changed)
         self.overlay.item_edited.connect(self._on_overlay_edited)
+        self.overlay.command.connect(self._on_overlay_command)
         self.overlay.video_clicked.connect(self._select_footage_from_preview)
         self.overlay.video_transform.connect(self._on_video_transform)
         self.preview.canvas_edited.connect(self._on_player_canvas_edited)

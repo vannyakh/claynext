@@ -448,7 +448,8 @@ def ass_events(item: dict, text: str, start_s: float, end_s: float, width: int, 
         return rf"\1a{vis}\3a{vis}\4a{_ass_alpha(opacity * mult * 0.8)}"
 
     def motion(fa: dict, fb: dict, off_x: float, off_y: float, alpha_fn) -> str:
-        return _motion(cx, cy, height, base_rot, fa, fb, off_x, off_y, alpha_fn)
+        flip = (-1.0 if item.get("flip_h") else 1.0, -1.0 if item.get("flip_v") else 1.0)
+        return _motion(cx, cy, height, base_rot, fa, fb, off_x, off_y, alpha_fn, flip)
 
     dur_ms = int(round((end_s - start_s) * 1000))
     chars = len(text.replace("\n", ""))
@@ -490,16 +491,17 @@ def ass_events(item: dict, text: str, start_s: float, end_s: float, width: int, 
 
 
 def _motion(cx: float, cy: float, height: int, base_rot: float, fa: dict, fb: dict,
-            off_x: float, off_y: float, alpha_fn) -> str:
+            off_x: float, off_y: float, alpha_fn, flip: tuple[float, float] = (1.0, 1.0)) -> str:
     """Position (offset from the centre, which grows with the scale), origin, scale, angle, alpha."""
     xa, ya = cx + fa["dx"] * height + off_x * fa["scale"], cy + fa["dy"] * height + off_y * fa["scale"]
     xb, yb = cx + fb["dx"] * height + off_x * fb["scale"], cy + fb["dy"] * height + off_y * fb["scale"]
     out = rf"\move({xa:.0f},{ya:.0f},{xb:.0f},{yb:.0f})" if (abs(xa - xb) > 0.5 or abs(ya - yb) > 0.5) else rf"\pos({xa:.0f},{ya:.0f})"
     out += rf"\org({cx + fa['dx'] * height:.0f},{cy + fa['dy'] * height:.0f})"
-    out += rf"\fscx{fa['scale'] * 100:.1f}\fscy{fa['scale'] * 100:.1f}\frz{base_rot - fa['rot']:.1f}" + alpha_fn(fa["alpha"])
+    fx, fy = flip
+    out += rf"\fscx{fa['scale'] * 100 * fx:.1f}\fscy{fa['scale'] * 100 * fy:.1f}\frz{base_rot - fa['rot']:.1f}" + alpha_fn(fa["alpha"])
     change = ""
     if abs(fa["scale"] - fb["scale"]) > 1e-3:
-        change += rf"\fscx{fb['scale'] * 100:.1f}\fscy{fb['scale'] * 100:.1f}"
+        change += rf"\fscx{fb['scale'] * 100 * fx:.1f}\fscy{fb['scale'] * 100 * fy:.1f}"
     if abs(fa["rot"] - fb["rot"]) > 1e-3:
         change += rf"\frz{base_rot - fb['rot']:.1f}"
     if abs(fa["alpha"] - fb["alpha"]) > 1e-3:
@@ -518,11 +520,13 @@ def shape_events(item: dict, start_s: float, end_s: float, width: int, height: i
     unit = style["scale"] / 100.0 * height
     half_w = float(item.get("w") or 0.3) * unit / 2
     half_h = float(item.get("h") or 0.3) * unit / 2
+    sx = -1.0 if item.get("flip_h") else 1.0
+    sy = -1.0 if item.get("flip_v") else 1.0
     parts = []
     for cmd in drawing:
         pts = cmd[1:]
         coords = " ".join(
-            f"{(pts[i] * unit + half_w) * 4:.0f} {(pts[i + 1] * unit + half_h) * 4:.0f}" for i in range(0, len(pts) - 1, 2)
+            f"{(pts[i] * sx * unit + half_w) * 4:.0f} {(pts[i + 1] * sy * unit + half_h) * 4:.0f}" for i in range(0, len(pts) - 1, 2)
         )
         parts.append(f"{cmd[0]} {coords}")
     shape = " ".join(parts)
@@ -546,7 +550,7 @@ def shape_events(item: dict, start_s: float, end_s: float, width: int, height: i
         t0, t1 = ass_time(start_s + a_ms / 1000.0), ass_time(start_s + b_ms / 1000.0)
         if t0 == t1 or fa["reveal"] <= 0:
             continue
-        tags = head + _motion(cx, cy, height, base_rot, fa, fb, 0.0, 0.0, alpha) + r"\p3"
+        tags = head + _motion(cx, cy, height, base_rot, fa, fb, 0.0, 0.0, alpha, (sx, sy)) + r"\p3"
         events.append(f"Dialogue: 0,{t0},{t1},Default,,0,0,0,,{{{tags}}}{shape}{{\\p0}}")
     return events
 

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field, asdict, fields
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QCheckBox, QColorDialog, QFrame, QSizePolicy, QToolButton,
+    QMenu, QToolTip,
 )
 from PySide6.QtCore import Qt, Signal, QRect, QRectF, QPoint, QPointF, QElapsedTimer, QTimer, QSize
 from PySide6.QtGui import (
@@ -28,7 +29,8 @@ from claynext.gui.components.shape_render import paint_shape, shape_px, shape_si
 from claynext.gui.components.text_render import caption_width, fit_caption, item_box, paint_text, wrap_text
 
 TEXT_KINDS = {"text", "caption"}
-HANDLE_KINDS = TEXT_KINDS | {"shape", "mask"}
+MEDIA_KINDS = {"logo", "image"}
+HANDLE_KINDS = TEXT_KINDS | MEDIA_KINDS | {"shape", "mask"}
 
 
 @dataclass
@@ -77,6 +79,9 @@ class OverlayItem:
     blur_on: bool = False
     blur_radius: int = 20
     lock_aspect: bool = True
+    flip_h: bool = False
+    flip_v: bool = False
+    hidden: bool = False
     start_ms: int = 0
     duration_ms: int = 0
     extra: dict = field(default_factory=dict)
@@ -119,12 +124,16 @@ _HANDLE_R = 5
 _SNAP_PCT = 2
 _ROTATE_GAP = 18
 _ROTATE_SNAP = 4.0
+_TOOL_SIZE = 22.0
+_TOOL_GAP = 6.0
+_TOOL_NAMES = ("delete", "eye", "more")
 
 
 class OverlayCanvas(QWidget):
     item_selected = Signal(object)
     items_changed = Signal()
     item_edited = Signal(object)
+    command = Signal(str)
     video_clicked = Signal()
     video_transform = Signal(dict)
     video_transform_done = Signal()
@@ -161,6 +170,7 @@ class OverlayCanvas(QWidget):
         self._preview: QWidget | None = None
         self._view_tool = "move"
         self._panning = False
+        self._tool_hot = ""
         # Project canvas area inside the full wrapper panel (letterbox is outside this).
         self._content = QRect()
 
@@ -380,11 +390,38 @@ class OverlayCanvas(QWidget):
         center = self._from_content(QPointF(item.x * fw, item.y * fh))
         return center, self._box_for(item, style, text), style, text
 
+    def _pixel_aspect(self, item: OverlayItem) -> float | None:
+        if item.kind not in MEDIA_KINDS or not item.path or not os.path.isfile(item.path):
+            return None
+        pix = self._pix.get(item.path)
+        if pix is None:
+            pix = QPixmap(item.path)
+            self._pix[item.path] = pix
+        if pix.isNull() or pix.height() <= 0:
+            return None
+        return pix.width() / float(pix.height())
+
+    def _logo_box(self, item: OverlayItem) -> QRectF:
+        """Local frame around the picture. Locked logos keep the image aspect, so the frame hugs it."""
+        rw, rh = self._frame_wh()
+        bw = max(8.0, float(item.w) * rw)
+        bh = max(8.0, float(item.h) * rh)
+        aspect = self._pixel_aspect(item)
+        if aspect and getattr(item, "lock_aspect", True):
+            box_aspect = bw / max(1.0, bh)
+            if box_aspect > aspect:
+                bw = bh * aspect
+            else:
+                bh = bw / aspect
+        return QRectF(-bw / 2.0, -bh / 2.0, bw, bh)
+
     def _box_for(self, item: OverlayItem, style: dict, text: str = "") -> QRectF:
         _fw, fh = self._frame_wh()
         if item.kind in {"shape", "mask"}:
             w, h = shape_px(style, item.w, item.h, fh)
             return QRectF(-w / 2, -h / 2, w, h)
+        if item.kind in MEDIA_KINDS:
+            return self._logo_box(item)
         return item_box(style, text or " ", fh)
 
     def aligned_position(self, item: OverlayItem, where: str, margin: float = 0.04) -> tuple[float, float]:
@@ -427,7 +464,7 @@ class OverlayCanvas(QWidget):
             return "handle_br"
         if abs(local.x() - box.left()) <= reach and abs(local.y() - box.bottom()) <= reach:
             return "handle_bl"
-        if item.kind in {"shape", "mask"}:
+        if item.kind in {"shape", "mask"} | MEDIA_KINDS:
             if abs(local.y() - box.top()) <= reach and abs(local.x()) <= reach + 8:
                 return "handle_top"
             if abs(local.y() - box.bottom()) <= reach and abs(local.x()) <= reach + 8:
@@ -437,6 +474,129 @@ class OverlayCanvas(QWidget):
             if abs(local.x() - box.right()) <= reach and abs(local.y()) <= reach + 8:
                 return "handle_right"
         return ""
+
+    def _toolbar_rects(self, item: OverlayItem) -> dict[str, QRectF]:
+        """Upright delete / eye / more buttons sitting above the selection frame."""
+        center, box, _style, _text = self._text_geom(item)
+        mapped = QTransform().translate(center.x(), center.y()).rotate(item.rotation).mapRect(box)
+        total = len(_TOOL_NAMES) * _TOOL_SIZE + (len(_TOOL_NAMES) - 1) * _TOOL_GAP
+        x = mapped.center().x() - total / 2.0
+        y = mapped.top() - 10.0 - _TOOL_SIZE
+        frame = self.content_rect()
+        if y < frame.top() + 4:
+            y = mapped.bottom() + _ROTATE_GAP + _HANDLE_R + 14
+        return {
+            name: QRectF(x + i * (_TOOL_SIZE + _TOOL_GAP), y, _TOOL_SIZE, _TOOL_SIZE)
+            for i, name in enumerate(_TOOL_NAMES)
+        }
+
+    def _tool_at(self, item: OverlayItem | None, pos: QPointF) -> str:
+        if item is None or item.id != self.selected_id:
+            return ""
+        for name, rect in self._toolbar_rects(item).items():
+            if rect.adjusted(-3, -3, 3, 3).contains(pos):
+                return name
+        return ""
+
+    def _commit(self, item: OverlayItem):
+        self.update()
+        self.item_edited.emit(item)
+        self.items_changed.emit()
+
+    def _toggle_flip(self, item: OverlayItem, axis: str):
+        if axis == "h":
+            item.flip_h = not item.flip_h
+        else:
+            item.flip_v = not item.flip_v
+        self._commit(item)
+
+    def _toggle_hidden(self, item: OverlayItem):
+        item.hidden = not item.hidden
+        self._commit(item)
+
+    def _toggle_lock(self, item: OverlayItem):
+        item.lock_aspect = not item.lock_aspect
+        self._commit(item)
+
+    def _center_item(self, item: OverlayItem):
+        item.x = 0.5
+        item.y = 0.5
+        self._commit(item)
+
+    def _reset_item(self, item: OverlayItem):
+        item.x = 0.5
+        item.y = 0.5
+        item.rotation = 0.0
+        item.opacity = 100
+        item.flip_h = False
+        item.flip_v = False
+        self._commit(item)
+
+    def _request_delete(self):
+        self.command.emit("delete")
+
+    def _open_tools_menu(self, item: OverlayItem, global_pos: QPoint):
+        menu = QMenu(self)
+
+        def act(label: str, slot, *, icon_name: str = "", checked: bool | None = None, color: str = COLOR_TEXT_MAIN):
+            action = menu.addAction(icon(icon_name, color=color, size=13), label) if icon_name else menu.addAction(label)
+            if checked is not None:
+                action.setCheckable(True)
+                action.setChecked(checked)
+            action.triggered.connect(lambda *_args, fn=slot: fn())
+            return action
+
+        act("Flip Horizontal", lambda: self._toggle_flip(item, "h"), checked=item.flip_h)
+        act("Flip Vertical", lambda: self._toggle_flip(item, "v"), checked=item.flip_v)
+        menu.addSeparator()
+        if item.kind in MEDIA_KINDS | {"shape", "mask"}:
+            act(
+                "Lock Aspect Ratio",
+                lambda: self._toggle_lock(item),
+                icon_name="lock" if item.lock_aspect else "unlock",
+                checked=item.lock_aspect,
+            )
+        act("Center", lambda: self._center_item(item), icon_name="align-center")
+        act("Reset Transform", lambda: self._reset_item(item), icon_name="refresh")
+        menu.addSeparator()
+        act("Duplicate", lambda: self.command.emit("duplicate"), icon_name="copy")
+        act("Delete", self._request_delete, icon_name="trash", color="#f87171")
+        menu.popup(global_pos)
+
+    def _run_tool(self, item: OverlayItem, name: str, global_pos: QPoint):
+        if name == "delete":
+            self._request_delete()
+        elif name == "eye":
+            self._toggle_hidden(item)
+        elif name == "more":
+            rect = self._toolbar_rects(item).get("more")
+            if rect is not None:
+                global_pos = self.mapToGlobal(rect.bottomLeft().toPoint()) + QPoint(0, 4)
+            self._open_tools_menu(item, global_pos)
+
+    def _open_item_menu(self, event):
+        pos = event.position()
+        item = self._item_at(pos.toPoint()) if self._in_content(pos) else None
+        picked = self.selected_item()
+        on_chrome = False
+        if picked is not None and picked.kind in HANDLE_KINDS:
+            on_chrome = bool(self._tool_at(picked, pos) or self._text_handle_at(picked, pos))
+        if item is None and on_chrome:
+            item = picked
+        if item is None:
+            return
+        if item.id != self.selected_id:
+            self.selected_id = item.id
+            self.item_selected.emit(item)
+            self.update()
+        self._open_tools_menu(item, event.globalPosition().toPoint())
+
+    def leaveEvent(self, event):
+        if self._tool_hot:
+            self._tool_hot = ""
+            QToolTip.hideText()
+            self.update()
+        super().leaveEvent(event)
 
     def set_video_frame(self, ratio: float | None, canvas: dict | None):
         """Where the footage sits on the canvas, for the transform handles."""
@@ -559,6 +719,8 @@ class OverlayCanvas(QWidget):
 
     def _item_at(self, pos: QPoint) -> OverlayItem | None:
         for item in reversed(self.items):
+            if item.hidden and item.id != self.selected_id:
+                continue
             if item.kind in HANDLE_KINDS:
                 center, box, _style, _text = self._text_geom(item)
                 if box.adjusted(-4, -4, 4, 4).contains(self._local(QPointF(pos), center, item.rotation)):
@@ -591,30 +753,59 @@ class OverlayCanvas(QWidget):
         self._paint_video_frame(p)
         curr_frame_img = self._current_video_frame()
         canvas_rect_f = QRectF(frame)
+        selected = None
         for item in self.items:
+            if item.hidden and item.id != self.selected_id:
+                continue
             if item.kind in TEXT_KINDS:
                 center, box, style, shown = self._text_geom(item)
-                if shown.strip():
+                if shown.strip() and not item.hidden:
+                    p.save()
+                    self._apply_flip(p, item, center)
                     paint_text(p, style, shown, center, fh, item.rotation, self._frame_for(item, style))
+                    p.restore()
                 if item.id == self.selected_id:
                     self._paint_text_chrome(p, item, center, box)
+                    selected = item
                 continue
             if item.kind in {"shape", "mask"}:
                 center, box, style, _text = self._text_geom(item)
-                paint_shape(
-                    p,
-                    style,
-                    item.shape,
-                    (box.width(), box.height()),
-                    center,
-                    fh,
-                    item.rotation,
-                    self._frame_for(item, style),
-                    bg_image=curr_frame_img,
-                    canvas_rect=canvas_rect_f,
-                )
+                if not item.hidden:
+                    p.save()
+                    self._apply_flip(p, item, center)
+                    paint_shape(
+                        p,
+                        style,
+                        item.shape,
+                        (box.width(), box.height()),
+                        center,
+                        fh,
+                        item.rotation,
+                        self._frame_for(item, style),
+                        bg_image=curr_frame_img,
+                        canvas_rect=canvas_rect_f,
+                    )
+                    p.restore()
                 if item.id == self.selected_id:
                     self._paint_text_chrome(p, item, center, box)
+                    selected = item
+                continue
+            if item.kind in MEDIA_KINDS:
+                center, box, _style, _shown = self._text_geom(item)
+                if not item.hidden:
+                    p.save()
+                    p.translate(center)
+                    p.rotate(item.rotation)
+                    if item.flip_h or item.flip_v:
+                        p.scale(-1.0 if item.flip_h else 1.0, -1.0 if item.flip_v else 1.0)
+                    p.setOpacity(max(0.08, item.opacity / 100.0))
+                    self._paint_media(p, item, box)
+                    p.restore()
+                if item.id == self.selected_id:
+                    self._paint_text_chrome(p, item, center, box)
+                    selected = item
+                continue
+            if item.hidden:
                 continue
             rect = self._rect_for(item)
             p.save()
@@ -624,11 +815,35 @@ class OverlayCanvas(QWidget):
             p.setOpacity(max(0.08, item.opacity / 100.0))
             self._paint_item(p, item, rect)
             p.restore()
-            if item.id == self.selected_id:
-                p.setPen(QPen(QColor("#38bdf8"), 1.4, Qt.PenStyle.DashLine))
-                p.setBrush(Qt.BrushStyle.NoBrush)
-                p.drawRoundedRect(rect.adjusted(-2, -2, 2, 2), 6, 6)
+        if selected is not None:
+            p.setClipping(False)
+            self._paint_toolbar(p, selected)
         p.end()
+
+    def _apply_flip(self, p: QPainter, item: OverlayItem, center: QPointF):
+        if item.flip_h or item.flip_v:
+            p.translate(center)
+            p.scale(-1.0 if item.flip_h else 1.0, -1.0 if item.flip_v else 1.0)
+            p.translate(-center)
+
+    def _paint_toolbar(self, p: QPainter, item: OverlayItem):
+        for name, rect in self._toolbar_rects(item).items():
+            hot = name == self._tool_hot
+            p.setPen(QPen(QColor(COLOR_ACCENT_CYAN if hot else COLOR_BORDER), 1))
+            p.setBrush(QColor(COLOR_BG_CARD_HOVER if hot else COLOR_BG_CARD))
+            p.drawRoundedRect(rect, 6, 6)
+            if name == "delete":
+                glyph, color = "trash", "#f87171"
+            elif name == "eye":
+                glyph, color = ("eye-off" if item.hidden else "eye"), COLOR_TEXT_MAIN
+            else:
+                glyph, color = "more", COLOR_TEXT_MAIN
+            pix = icon(glyph, color=color, size=14).pixmap(QSize(14, 14))
+            p.drawPixmap(
+                QPointF(rect.center().x() - pix.width() / pix.devicePixelRatio() / 2.0,
+                        rect.center().y() - pix.height() / pix.devicePixelRatio() / 2.0),
+                pix,
+            )
 
     def _paint_text_chrome(self, p: QPainter, item: OverlayItem, center: QPointF, box: QRectF):
         snap_x, snap_y = self._snap
@@ -644,14 +859,19 @@ class OverlayCanvas(QWidget):
         p.save()
         p.translate(center)
         p.rotate(item.rotation)
-        p.setPen(QPen(QColor(COLOR_TEXT_MAIN), 1.2))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRect(box)
+        if item.kind in MEDIA_KINDS:
+            p.setPen(QPen(QColor(COLOR_ACCENT_CYAN), 1.5, Qt.PenStyle.DashLine))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(box, 8, 8)
+        else:
+            p.setPen(QPen(QColor(COLOR_TEXT_MAIN), 1.2))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(box)
         p.setPen(QPen(QColor(COLOR_BG_DARK), 1))
         p.setBrush(QColor(COLOR_TEXT_MAIN))
         for corner in (box.topLeft(), box.topRight(), box.bottomRight(), box.bottomLeft()):
             p.drawEllipse(corner, _HANDLE_R, _HANDLE_R)
-        if item.kind in {"shape", "mask"}:
+        if item.kind in {"shape", "mask"} | MEDIA_KINDS:
             for mid_x, mid_y, pw, ph in (
                 (0, box.top(), 10, 4),
                 (0, box.bottom(), 10, 4),
@@ -670,6 +890,35 @@ class OverlayCanvas(QWidget):
             p.setPen(QColor(COLOR_TEXT_MAIN))
             p.drawText(QRectF(center.x() - 30, center.y() + box.bottom() + _ROTATE_GAP + 10, 60, 16),
                        Qt.AlignmentFlag.AlignCenter, f"{item.rotation:.0f}°")
+
+    def _paint_media(self, p: QPainter, item: OverlayItem, box: QRectF):
+        """Draw a logo or image so it fills its resize frame."""
+        if item.path and os.path.isfile(item.path):
+            pix = self._pix.get(item.path)
+            if pix is None:
+                pix = QPixmap(item.path)
+                self._pix[item.path] = pix
+            if not pix.isNull():
+                mode = (
+                    Qt.AspectRatioMode.KeepAspectRatio
+                    if getattr(item, "lock_aspect", True)
+                    else Qt.AspectRatioMode.IgnoreAspectRatio
+                )
+                scaled = pix.scaled(
+                    max(1, int(box.width())),
+                    max(1, int(box.height())),
+                    mode,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                target = QRectF(
+                    box.center().x() - scaled.width() / 2.0,
+                    box.center().y() - scaled.height() / 2.0,
+                    scaled.width(),
+                    scaled.height(),
+                )
+                p.drawPixmap(target, scaled, QRectF(scaled.rect()))
+                return
+        self._paint_item(p, item, box.toRect())
 
     def _paint_item(self, p: QPainter, item: OverlayItem, rect: QRect):
         color = QColor(item.color)
@@ -725,6 +974,10 @@ class OverlayCanvas(QWidget):
                 # Hand tool at 100% zoom — don't steal Move selection.
                 event.accept()
                 return
+        if event.button() == Qt.MouseButton.RightButton:
+            self._open_item_menu(event)
+            event.accept()
+            return
         if event.button() != Qt.MouseButton.LeftButton:
             event.ignore()
             return
@@ -733,6 +986,11 @@ class OverlayCanvas(QWidget):
             return
         pos = event.position()
         picked = self.selected_item()
+        tool = self._tool_at(picked, pos)
+        if tool and picked is not None:
+            self._run_tool(picked, tool, event.globalPosition().toPoint())
+            event.accept()
+            return
         handle = self._text_handle_at(picked, pos) if picked and picked.kind in HANDLE_KINDS else ""
         if handle:
             center, box, _style, _text = self._text_geom(picked)
@@ -744,6 +1002,8 @@ class OverlayCanvas(QWidget):
             lock = getattr(picked, "lock_aspect", True)
             if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
                 lock = not lock
+            media_box = self._logo_box(picked) if picked.kind in MEDIA_KINDS else None
+            pix_aspect = self._pixel_aspect(picked) if picked.kind in MEDIA_KINDS else None
             self._drag_start = {
                 "start_dist": max(1.0, (vec.x() ** 2 + vec.y() ** 2) ** 0.5),
                 "start_angle": math.degrees(math.atan2(vec.y(), vec.x())),
@@ -755,6 +1015,9 @@ class OverlayCanvas(QWidget):
                 "lock": lock,
                 "local_x": local_pos.x(),
                 "local_y": local_pos.y(),
+                "box_w": media_box.width() if media_box is not None else 0.0,
+                "box_h": media_box.height() if media_box is not None else 0.0,
+                "pix_aspect": pix_aspect or aspect,
             }
             self.update()
             event.accept()
@@ -832,6 +1095,25 @@ class OverlayCanvas(QWidget):
                 self.update()
             return
         picked = self.selected_item()
+        tool = self._tool_at(picked, event.position())
+        if tool != self._tool_hot:
+            self._tool_hot = tool
+            if tool == "delete":
+                tip = "Delete"
+            elif tool == "eye":
+                tip = "Show" if picked is not None and picked.hidden else "Hide"
+            elif tool == "more":
+                tip = "Flip and more"
+            else:
+                tip = ""
+            if tip:
+                QToolTip.showText(event.globalPosition().toPoint(), tip, self)
+            else:
+                QToolTip.hideText()
+            self.update()
+        if tool:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            return
         handle = self._text_handle_at(picked, event.position()) if picked and picked.kind in HANDLE_KINDS else ""
         hit = self._item_at(event.position().toPoint())
         corner = self._video_corner_at(event.position()) if self._video_edit else -1
@@ -946,10 +1228,44 @@ class OverlayCanvas(QWidget):
 
             self.item_edited.emit(item)
 
+        elif item.kind in MEDIA_KINDS:
+            self._resize_media(item, local_pos, vec, start)
+
         else:
             dist = max(1.0, (vec.x() ** 2 + vec.y() ** 2) ** 0.5)
             item.scale = int(max(SCALE_RANGE[0], min(SCALE_RANGE[1], round(start["start_scale"] * dist / start_dist))))
             self.item_edited.emit(item)
+
+    def _resize_media(self, item: OverlayItem, local_pos: QPointF, vec: QPointF, start: dict):
+        """Resize a logo or image from its frame. Locked aspect keeps the picture's shape."""
+        rw, rh = self._frame_wh()
+        lock = bool(start.get("lock", True))
+        aspect = float(start.get("pix_aspect") or start.get("aspect") or 1.0)
+        box_w = max(8.0, float(start.get("box_w") or 36))
+        box_h = max(8.0, float(start.get("box_h") or 24))
+        start_dist = max(1.0, float(start.get("start_dist") or 1.0))
+
+        def apply(pw: float, ph: float):
+            item.w = round(min(2.0, max(0.02, pw / max(1.0, rw))), 3)
+            item.h = round(min(2.0, max(0.02, ph / max(1.0, rh))), 3)
+
+        mode = self._drag_mode
+        if mode in ("handle_tl", "handle_tr", "handle_br", "handle_bl"):
+            if lock:
+                dist = max(1.0, (vec.x() ** 2 + vec.y() ** 2) ** 0.5)
+                ratio = dist / start_dist
+                apply(box_w * ratio, box_h * ratio)
+            else:
+                apply(max(8.0, 2.0 * abs(local_pos.x())), max(8.0, 2.0 * abs(local_pos.y())))
+        elif mode in ("handle_left", "handle_right"):
+            pw = max(8.0, 2.0 * abs(local_pos.x()))
+            ph = pw / aspect if lock and aspect > 0 else box_h
+            apply(pw, ph)
+        elif mode in ("handle_top", "handle_bottom"):
+            ph = max(8.0, 2.0 * abs(local_pos.y()))
+            pw = ph * aspect if lock and aspect > 0 else box_w
+            apply(pw, ph)
+        self.item_edited.emit(item)
 
     def keyPressEvent(self, event):
         key = event.key()
@@ -962,7 +1278,7 @@ class OverlayCanvas(QWidget):
             event.accept()
             return
         if key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
-            self.remove_selected()
+            self._request_delete()
             return
         super().keyPressEvent(event)
 
@@ -1162,7 +1478,7 @@ class OverlayInspector(QWidget):
         size_row.setContentsMargins(0, 0, 0, 0)
         size_row.setSpacing(6)
         self.spin_w = ScrubSpinBox()
-        self.spin_w.setRange(2, 100)
+        self.spin_w.setRange(2, 200)
         self.spin_w.setPrefix("W ")
         self.spin_w.setSuffix("%")
         self.spin_w.setMaximumWidth(16777215)
@@ -1170,7 +1486,7 @@ class OverlayInspector(QWidget):
         self.spin_w.valueChanged.connect(self._on_w_changed)
 
         self.spin_h = ScrubSpinBox()
-        self.spin_h.setRange(2, 100)
+        self.spin_h.setRange(2, 200)
         self.spin_h.setPrefix("H ")
         self.spin_h.setSuffix("%")
         self.spin_h.setMaximumWidth(16777215)
@@ -1276,7 +1592,7 @@ class OverlayInspector(QWidget):
         if not self._block:
             if self.btn_lock_ratio.isChecked() and self._aspect_ratio > 0:
                 self._block = True
-                new_h = max(2, min(100, int(round(new_w / self._aspect_ratio))))
+                new_h = max(2, min(200, int(round(new_w / self._aspect_ratio))))
                 self.spin_h.setValue(new_h)
                 self._block = False
             elif self.spin_h.value() > 0:
@@ -1287,7 +1603,7 @@ class OverlayInspector(QWidget):
         if not self._block:
             if self.btn_lock_ratio.isChecked() and self._aspect_ratio > 0:
                 self._block = True
-                new_w = max(2, min(100, int(round(new_h * self._aspect_ratio))))
+                new_w = max(2, min(200, int(round(new_h * self._aspect_ratio))))
                 self.spin_w.setValue(new_w)
                 self._block = False
             elif new_h > 0:

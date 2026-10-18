@@ -231,6 +231,16 @@ class InspectorTools:
         if item:
             self.timeline.update_overlay_extra(item.id, item.to_dict())
 
+    def _on_overlay_command(self, name: str):
+        if name == "delete":
+            self._remove_selected_overlay()
+            return
+        if name == "duplicate":
+            item = self.overlay.selected_item()
+            if item is not None:
+                self.timeline.canvas.selected_ids = {item.id}
+            self.timeline.canvas.duplicate_selected()
+
     def _on_overlay_edited(self, item):
         if getattr(self, "_syncing_overlays", False) or item is None:
             return
