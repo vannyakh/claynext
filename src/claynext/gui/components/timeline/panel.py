@@ -8,7 +8,7 @@ import numpy as np
 from PySide6.QtCore import Qt, Signal, QSize, QThreadPool, QPoint, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider, QComboBox,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider,
     QScrollArea, QSizePolicy, QFrame, QSplitter, QToolButton, QMenu, QButtonGroup,
     QFileDialog,
 )
@@ -39,6 +39,7 @@ from claynext.gui.components.timeline.lane_rail import LaneRail
 from claynext.gui.components.timeline.models import TimelineClip
 from claynext.gui.components.timeline.recorder import VoiceRecorder
 from claynext.gui.components.timeline.ruler import TimelineRuler
+from claynext.gui.components.timeline.sequence_bar import SequenceBar
 from claynext.gui.components.timeline.scrub_tip import TimelineScrubTip
 from claynext.gui.components.timeline.track_menu import TrackMenuHandlers, open_track_menu
 
@@ -79,27 +80,19 @@ class TimelinePanel(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
+        self.sequences = SequenceBar(self)
+        self.sequences.picked.connect(self._on_composition)
+
         tools = QFrame()
         tools.setObjectName("timeline_tools")
         row = QHBoxLayout(tools)
         row.setContentsMargins(8, 2, 8, 2)
         row.setSpacing(6)
 
-        # ── Left: Composition, History, Tool Modes & Clip Actions ──
+        # ── Left: History, Tool Modes & Clip Actions ──
         left_box = QHBoxLayout()
         left_box.setContentsMargins(0, 0, 0, 0)
         left_box.setSpacing(4)
-
-        self.comp = QComboBox()
-        self.comp.setObjectName("timeline_comp")
-        self.comp.setMinimumWidth(168)
-        self.comp.setToolTip("Switch generated dub")
-        self.comp.currentIndexChanged.connect(self._on_composition)
-        self.comp.hide()
-        left_box.addWidget(self.comp)
-        self._comp_sep = self._tool_sep()
-        self._comp_sep.hide()
-        left_box.addWidget(self._comp_sep)
 
         undo_tip = f"Undo ({QKeySequence(QKeySequence.StandardKey.Undo).toString(QKeySequence.SequenceFormat.NativeText)})"
         redo_tip = f"Redo ({QKeySequence(QKeySequence.StandardKey.Redo).toString(QKeySequence.SequenceFormat.NativeText)})"
@@ -1445,21 +1438,7 @@ class TimelinePanel(QWidget):
             self._rebuild_rail()
 
     def set_compositions(self, names: list[str], index: int = 0):
-        self.comp.blockSignals(True)
-        self.comp.clear()
-        self.comp.addItems(names)
-        if names and index >= 0:
-            self.comp.setCurrentIndex(max(0, min(index, len(names) - 1)))
-            self.comp.show()
-            self._comp_sep.show()
-        elif names:
-            self.comp.setCurrentIndex(-1)
-            self.comp.show()
-            self._comp_sep.show()
-        else:
-            self.comp.hide()
-            self._comp_sep.hide()
-        self.comp.blockSignals(False)
+        self.sequences.set_names(names, index)
 
     def _on_composition(self, index: int):
         if index >= 0:

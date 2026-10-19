@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from claynext.models.dub_project import list_presets
-from claynext.gui.views.studio.constants import LAYOUT_META_KEY, SETTINGS_KEY
+from claynext.gui.views.studio.constants import LAYOUT_META_KEY, SETTINGS_KEY, TIMELINE_STAGE_KEY
 
 _PANEL_KEYS = ("shelf", "preview", "props", "log")
 
@@ -27,15 +27,24 @@ class WorkspaceTools:
             ("preview", "Video Preview", True),
             ("props", "Properties", True),
             ("log", "Activity Log", False),
+            ("sequences", "Sequences", True),
         ):
             act = QAction(label, self)
             act.setCheckable(True)
             act.setChecked(default_on)
-            act.toggled.connect(lambda checked, k=key: self.workspace.set_visible(k, checked))
+            act.toggled.connect(lambda checked, k=key: self._set_panel_visible(k, checked))
             menu.addAction(act)
             self._panel_actions[key] = act
         self._panels_menu = menu
         return menu
+
+    def _set_panel_visible(self, key: str, visible: bool):
+        if key == "sequences":
+            stage = getattr(self, "timeline_stage", None)
+            if stage is not None:
+                stage.set_visible(key, visible)
+            return
+        self.workspace.set_visible(key, visible)
 
     def install_window_menus(self, menu_bar: QMenuBar):
         file_menu = None
@@ -338,6 +347,16 @@ class WorkspaceTools:
 
         if hasattr(self, "_sync_timeline_visibility"):
             self._sync_timeline_visibility()
+        stage = getattr(self, "timeline_stage", None)
+        if stage is not None:
+            raw = self._settings().value(TIMELINE_STAGE_KEY)
+            data = bytes(raw) if isinstance(raw, (QByteArray, bytes, bytearray)) and raw else b""
+            if data:
+                stage.restore_state(data)
+            dock = stage.dock("sequences")
+            if dock is not None:
+                self._place_sequences(stage.host.dockWidgetArea(dock))
+            self._show_sequences(bool(getattr(self.timeline.sequences, "_names", None)))
         self._sync_panel_actions()
         self._layout_ready = True
         self._pending_dock_state = None
@@ -360,6 +379,9 @@ class WorkspaceTools:
             return
         settings = self._settings()
         settings.setValue(SETTINGS_KEY, QByteArray(self.workspace.save_state()))
+        stage = getattr(self, "timeline_stage", None)
+        if stage is not None:
+            settings.setValue(TIMELINE_STAGE_KEY, QByteArray(stage.save_state()))
         meta = {
             "panels": self._panel_visibility(),
             "timeline_open": bool(getattr(self, "_timeline_open", False)),
@@ -382,6 +404,11 @@ class WorkspaceTools:
         self.workspace.set_visible("log", False)
         for key in ("shelf", "preview", "props"):
             self.workspace.set_visible(key, True)
+        stage = getattr(self, "timeline_stage", None)
+        if stage is not None:
+            stage.reset_layout()
+            self._place_sequences(Qt.DockWidgetArea.TopDockWidgetArea)
+            self._show_sequences(bool(getattr(self.timeline.sequences, "_names", None)))
         self._sync_panel_actions()
         self._layout_ready = True
         self._save_layout()
@@ -391,7 +418,8 @@ class WorkspaceTools:
             return
         for key, act in self._panel_actions.items():
             act.blockSignals(True)
-            dock = self.workspace.dock(key)
+            host = getattr(self, "timeline_stage", None) if key == "sequences" else self.workspace
+            dock = host.dock(key) if host is not None else None
             visible = bool(dock and not dock.isHidden())
             act.setChecked(visible)
             act.blockSignals(False)

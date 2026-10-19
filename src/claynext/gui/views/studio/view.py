@@ -149,7 +149,24 @@ class StudioView(
         host.setCorner(Qt.Corner.TopRightCorner, Qt.DockWidgetArea.TopDockWidgetArea)
         host.setCorner(Qt.Corner.BottomLeftCorner, Qt.DockWidgetArea.BottomDockWidgetArea)
         host.setCorner(Qt.Corner.BottomRightCorner, Qt.DockWidgetArea.BottomDockWidgetArea)
-        host.setCentralWidget(self.timeline)
+        self.timeline_stage = DockWorkspace(self)
+        self.timeline_stage.setObjectName("timeline_stage")
+        self.timeline_stage.host.setCentralWidget(self.timeline)
+        self.timeline_stage.add_panel(
+            "sequences", "Sequences", self.timeline.sequences,
+            Qt.DockWidgetArea.TopDockWidgetArea, closable=False,
+        )
+        self.timeline.sequences.presence_changed.connect(self._show_sequences)
+        seq_dock = self.timeline_stage.dock("sequences")
+        if seq_dock is not None:
+            seq_dock.setToolTip("Drag Sequences to the right edge to split it beside the timeline")
+            seq_dock.dockLocationChanged.connect(self._place_sequences)
+            seq_dock.topLevelChanged.connect(self._float_sequences)
+        self._place_sequences(Qt.DockWidgetArea.TopDockWidgetArea)
+        self.timeline_stage.save_default_layout()
+        self.timeline_stage.set_visible("sequences", False)
+        self.timeline_stage.layout_changed.connect(self._on_layout_changed)
+        host.setCentralWidget(self.timeline_stage)
 
         self.workspace.add_panel(
             "shelf", "Studio Library & Setup", self.shelf, Qt.DockWidgetArea.TopDockWidgetArea,
@@ -177,6 +194,49 @@ class StudioView(
         self.shelf.tab_changed.connect(lambda *_: self._save_layout())
         self._build_panels_menu()
         self._bind_space_play()
+
+    def _place_sequences(self, area):
+        """A top dock stays a short row. Left or right becomes a column."""
+        vertical = area in (
+            Qt.DockWidgetArea.LeftDockWidgetArea,
+            Qt.DockWidgetArea.RightDockWidgetArea,
+        )
+        bar = self.timeline.sequences
+        bar.set_follow_size(False)
+        bar.set_vertical(vertical)
+        dock = self.timeline_stage.dock("sequences")
+        if dock is None:
+            return
+        limit = 16777215
+        if vertical:
+            dock.setProperty("dock_min_w", 180)
+            dock.setProperty("dock_max_w", 420)
+            dock.setMinimumWidth(180)
+            dock.setMaximumWidth(420)
+            dock.setMinimumHeight(120)
+            dock.setMaximumHeight(limit)
+        else:
+            dock.setProperty("dock_min_w", None)
+            dock.setProperty("dock_max_w", None)
+            dock.setMinimumWidth(0)
+            dock.setMaximumWidth(limit)
+            dock.setMinimumHeight(0)
+            dock.setMaximumHeight(80)
+
+    def _float_sequences(self, floating: bool):
+        self.timeline.sequences.set_follow_size(bool(floating))
+        if floating:
+            dock = self.timeline_stage.dock("sequences")
+            if dock is not None:
+                dock.setMaximumHeight(16777215)
+                dock.setMaximumWidth(16777215)
+
+    def _show_sequences(self, show: bool):
+        if not hasattr(self, "timeline_stage"):
+            return
+        if not bool(getattr(self, "_timeline_open", True)):
+            show = False
+        self.timeline_stage.set_visible("sequences", bool(show))
 
     def _on_studio_action(self, action: str):
         """Route timeline Studio tools menu actions."""

@@ -112,7 +112,7 @@ class OverlayItem:
 def default_item(kind: str) -> OverlayItem:
     presets = {
         "text": OverlayItem(id=uuid.uuid4().hex[:10], kind="text", x=0.5, y=0.35, w=0.5, h=0.12, text="Title", font_size=28, color="#fbbf24", bold=True),
-        "caption": OverlayItem(id=uuid.uuid4().hex[:10], kind="caption", x=0.5, y=0.84, w=0.7, h=0.10, text="Caption", font_size=18, color="#f8fafc", live=True, bg_on=True, bg_opacity=47),
+        "caption": OverlayItem(id=uuid.uuid4().hex[:10], kind="caption", x=0.5, y=0.84, w=0.7, h=0.10, text="Caption", font_size=10, color="#f8fafc", live=True, bg_on=True, bg_opacity=47),
         "logo": OverlayItem(id=uuid.uuid4().hex[:10], kind="logo", x=0.88, y=0.10, w=0.14, h=0.14, text="LOGO", font_size=14, color="#ffffff"),
         "image": OverlayItem(id=uuid.uuid4().hex[:10], kind="image", x=0.22, y=0.18, w=0.22, h=0.22, text="Image", font_size=12, color="#e2e8f0"),
         "shape": OverlayItem(id=uuid.uuid4().hex[:10], kind="shape", w=shape_size("rect")[0], h=shape_size("rect")[1], text="Element"),

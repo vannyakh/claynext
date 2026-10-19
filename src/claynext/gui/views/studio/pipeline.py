@@ -887,6 +887,9 @@ class PipelineTools:
     def _sync_timeline_visibility(self):
         # Timeline stays visible by default; View → Timeline can still hide it.
         show = bool(getattr(self, "_timeline_open", True))
+        stage = getattr(self, "timeline_stage", None)
+        if stage is not None:
+            stage.setVisible(show)
         self.timeline.setVisible(show)
         if show:
             self.timeline.setMinimumHeight(160)

@@ -515,7 +515,7 @@ class CanvasEdit:
             ov.setdefault("w", 0.14 if kind in {"logo", "image"} else 0.62)
             ov.setdefault("h", 0.14 if kind in {"logo", "image"} else 0.12)
             ov.setdefault("color", "#f8fafc")
-            ov.setdefault("font_size", 20)
+            ov.setdefault("font_size", 10 if kind == "caption" else 20)
             ov.setdefault("opacity", 100)
             ov.setdefault("rotation", 0)
             ov.setdefault("live", kind == "caption")

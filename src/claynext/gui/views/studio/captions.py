@@ -595,7 +595,7 @@ class CaptionTools:
         self.chk_caption_fit = self._caption_check(
             place,
             "Auto centre · fit width",
-            "Centre captions and auto-size font to the width frame from Dub Captions",
+            "Centre captions. Font stays at the chosen size and shrinks if a line is wider than the frame",
             self.store.get_setting("dub", "caption_fit", "1") == "1",
             self._on_caption_fit,
         )
@@ -607,7 +607,7 @@ class CaptionTools:
         width = max(CAPTION_WIDTH_RANGE[0], min(CAPTION_WIDTH_RANGE[1], width))
         self.lbl_caption_width, self.spin_caption_width = self._caption_spin(
             "Width", CAPTION_WIDTH_RANGE[0], CAPTION_WIDTH_RANGE[1], width, "%",
-            "Caption frame width — text wraps and font auto-sizes to fill it",
+            "Caption frame width — text wraps inside it",
         )
         self.spin_caption_width.valueChanged.connect(self._on_caption_width)
 
@@ -622,12 +622,12 @@ class CaptionTools:
         self.spin_caption_y.valueChanged.connect(self._on_caption_y)
 
         try:
-            size = int(self.store.get_setting("dub", "caption_size", "16"))
+            size = int(self.store.get_setting("dub", "caption_size", "10"))
         except ValueError:
-            size = 16
-        size = max(12, min(48, size))
+            size = 10
+        size = max(6, min(48, size))
         self.lbl_caption_size, self.spin_caption_size = self._caption_spin(
-            "Font Size", 12, 48, size, "",
+            "Font Size", 6, 48, size, "",
             "Manual font size when auto-fit is off",
         )
         self.spin_caption_size.valueChanged.connect(self._on_caption_size)
@@ -749,9 +749,7 @@ class CaptionTools:
         if fit:
             style["x"] = 0.5
             style["align"] = "center"
-            style["font_size"] = 24
-        elif hasattr(self, "spin_caption_size"):
-            style["font_size"] = self.spin_caption_size.value()
+        style["font_size"] = self.spin_caption_size.value() if hasattr(self, "spin_caption_size") else 10
         if hasattr(self, "spin_caption_y"):
             style["y"] = self.spin_caption_y.value() / 100.0
         return clean_text_style(style) | {

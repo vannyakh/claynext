@@ -3,6 +3,7 @@ from __future__ import annotations
 
 SETTINGS_KEY = "studio_view/dock_state_v18"
 LAYOUT_META_KEY = "studio_view/layout_meta_v18"
+TIMELINE_STAGE_KEY = "studio_view/timeline_stage_v1"
 DUB_ACCENT = "#a855f7"
 # Studio shelf (library / script / captions) resize bounds
 SHELF_MIN_W = 320

@@ -235,17 +235,17 @@ def _caption_inner_w(style: dict, max_w: float) -> float:
     return max(0.05, max_w - pad)
 
 
-# Auto caption size ignores the stored font_size and fills the dub width frame.
-_CAPTION_AUTO_MIN = 12
+# Auto caption size starts at the chosen font size and only shrinks to stay in the frame.
+_CAPTION_AUTO_MIN = 6
 _CAPTION_AUTO_MAX = 48
 _CAPTION_AUTO_MAX_H = 0.24  # tallest caption block as a fraction of canvas height
 
 
 def fit_caption(style: dict, text: str, max_w: float, max_h: float | None = None) -> tuple[dict, str]:
-    """Auto-size + wrap so the caption fills the dub width frame without overflowing.
+    """Wrap the caption and shrink it only when it overflows the frame.
 
-    Stored ``font_size`` is ignored — the largest size that fits ``max_w`` (and
-    ``max_h``) wins. Returns ``(fitted_style, wrapped_text)``.
+    The chosen ``font_size`` is the size on screen. A long line may go smaller
+    so it stays inside ``max_w`` and ``max_h``. Returns ``(fitted_style, wrapped_text)``.
     """
     style = clean_text_style(dict(style))
     raw = text or ""
@@ -264,7 +264,9 @@ def fit_caption(style: dict, text: str, max_w: float, max_h: float | None = None
     def fits(width: float, height: float) -> bool:
         return width <= max_w + slack and height <= height_cap + slack
 
-    lo, hi = _CAPTION_AUTO_MIN, _CAPTION_AUTO_MAX
+    chosen = int(style.get("font_size") or 10)
+    chosen = max(_CAPTION_AUTO_MIN, min(_CAPTION_AUTO_MAX, chosen))
+    lo, hi = _CAPTION_AUTO_MIN, chosen
     best_st, best_lines, _, _ = layout(lo)
     while lo <= hi:
         mid = (lo + hi) // 2

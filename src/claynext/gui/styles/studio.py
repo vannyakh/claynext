@@ -214,12 +214,39 @@ QPushButton#text_cat_pill:checked {{
     min-height: 32px;
     max-height: 36px;
 }}
-#timeline_comp {{
-    min-height: 22px;
-    max-height: 24px;
-    padding: 1px 8px;
+#sequence_bar {{
+    background-color: {COLOR_BG_SIDEBAR};
+    border-bottom: 1px solid {COLOR_BORDER};
+}}
+#sequence_scroll, #sequence_host {{
+    background: transparent;
+    border: none;
+}}
+QPushButton#sequence_chip {{
+    background-color: {COLOR_BG_DARK};
+    color: {COLOR_TEXT_SUB};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 4px;
+    padding: 2px 12px;
     font-size: 11px;
-    font-weight: 400;
+    font-weight: 500;
+    min-height: 22px;
+    max-height: 26px;
+    text-align: left;
+}}
+QPushButton#sequence_chip:hover {{
+    background-color: {COLOR_BG_CARD_HOVER};
+    color: {COLOR_TEXT_MAIN};
+}}
+QPushButton#sequence_chip:checked {{
+    background-color: {wash};
+    border-color: {accent};
+    color: {COLOR_TEXT_MAIN};
+}}
+#sequence_bar[flow="column"] QPushButton#sequence_chip {{
+    min-height: 28px;
+    max-height: 32px;
+    padding: 4px 12px;
 }}
 #timeline_meta {{
     color: {COLOR_TEXT_MUTED};
