@@ -1,11 +1,12 @@
 """CapCut-style text and shape properties: Basic (content, font, style, transform, stroke, box, shadow) and Animation."""
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtCore import QPoint, QRectF, QSize, Qt, QThreadPool, Signal
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QColorDialog, QFontDialog, QGridLayout, QHBoxLayout, QLabel,
-    QPushButton, QSizePolicy, QStackedWidget, QToolButton, QVBoxLayout, QWidget,
+    QButtonGroup, QCheckBox, QColorDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
+    QListWidget, QListWidgetItem, QPushButton, QSizePolicy, QStackedWidget, QToolButton,
+    QVBoxLayout, QWidget,
 )
 
 from claynext.constants.theme_constants import COLOR_BORDER, COLOR_PRIMARY, COLOR_TEXT_MUTED
@@ -17,8 +18,227 @@ from claynext.models.text_style import (
 from claynext.gui.components.controls.section import CollapsibleSection
 from claynext.gui.components.controls.scrub_spin import ScrubSpinBox
 from claynext.gui.components.controls.tabs import SegmentTabs
+from claynext.gui.components.inspector.google_fonts import (
+    family_for, fetch_google_fonts, google_font_names, register_google_fonts,
+)
 from claynext.gui.components.render.shape import BLUR_SHAPES, SHAPES, shape_icon, shape_size
 from claynext.gui.components.render.text import anim_icon, preset_icon
+from claynext.gui.worker import Worker
+
+_fonts_loading = False
+
+
+class _FontMenu(QFrame):
+    """Dark list that opens under the font field."""
+
+    picked = Signal(int)
+
+    def __init__(self, names: list[str], current: int, owner: QWidget):
+        super().__init__(owner, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        self.setObjectName("font_menu")
+        self._done = False
+        sheet = owner.window().styleSheet()
+        if sheet:
+            self.setStyleSheet(sheet)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(4, 4, 4, 4)
+        lay.setSpacing(0)
+        self.view = QListWidget()
+        self.view.setObjectName("font_menu_list")
+        self.view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.view.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+        self.view.setUniformItemSizes(True)
+        for name in names:
+            item = QListWidgetItem(name)
+            face = QFont(family_for(name))
+            face.setPixelSize(13)
+            item.setFont(face)
+            item.setSizeHint(QSize(200, 28))
+            self.view.addItem(item)
+        if 0 <= current < self.view.count():
+            self.view.setCurrentRow(current)
+        self.view.itemClicked.connect(self._choose)
+        self.view.itemActivated.connect(self._choose)
+        rows = min(14, max(1, self.view.count()))
+        self.view.setFixedHeight(rows * 28 + 4)
+        lay.addWidget(self.view)
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        try:
+            owner = self.parent()
+            if isinstance(owner, FontSelect):
+                owner._set_open(False)
+        except RuntimeError:
+            return
+
+    def _choose(self, item: QListWidgetItem) -> None:
+        if self._done:
+            return
+        self._done = True
+        self.picked.emit(self.view.row(item))
+        self.close()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        current = self.view.currentItem()
+        if current is not None:
+            self.view.scrollToItem(current)
+        self.view.setFocus()
+
+
+class FontSelect(QFrame):
+    """Font field with the same rounded box as Font size. Khmer faces are listed first."""
+
+    currentTextChanged = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("font_field")
+        self.setFixedHeight(30)
+        self.setFixedWidth(148)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setToolTip("Khmer Google Fonts, then Latin")
+        self._names: list[str] = []
+        self._index = -1
+        self._menu: _FontMenu | None = None
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        self._name = QLabel()
+        self._name.setObjectName("font_field_name")
+        self._name.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(self._name, 1)
+        rail = QWidget()
+        rail.setObjectName("font_field_rail")
+        rail.setFixedWidth(18)
+        rail_l = QVBoxLayout(rail)
+        rail_l.setContentsMargins(0, 0, 0, 0)
+        rail_l.setSpacing(0)
+        self._chevron = QToolButton()
+        self._chevron.setObjectName("font_field_chevron")
+        self._chevron.setAutoRaise(True)
+        self._chevron.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._chevron.setFixedSize(16, 28)
+        self._chevron.setIconSize(QSize(9, 9))
+        self._chevron.setIcon(icon("chevron-down", color="#9fb0c3", size=9))
+        rail_l.addWidget(self._chevron, 0, Qt.AlignmentFlag.AlignCenter)
+        row.addWidget(rail)
+        for widget in (self._name, rail, self._chevron):
+            widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
+        register_google_fonts()
+        self.addItems(google_font_names())
+        self.apply_faces()
+        self._queue_download()
+
+    def wheelEvent(self, event):
+        event.ignore()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.showPopup()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def addItems(self, names: list[str]) -> None:
+        self._names.extend(names)
+        if self._index < 0 and self._names:
+            self._index = 0
+            self._sync_label()
+
+    def count(self) -> int:
+        return len(self._names)
+
+    def itemText(self, index: int) -> str:
+        return self._names[index]
+
+    def findText(self, text: str) -> int:
+        try:
+            return self._names.index(text)
+        except ValueError:
+            return -1
+
+    def insertItem(self, index: int, text: str) -> None:
+        self._names.insert(index, text)
+
+    def currentText(self) -> str:
+        if self._index < 0 or self._index >= len(self._names):
+            return ""
+        return self._names[self._index]
+
+    def setCurrentIndex(self, index: int) -> None:
+        if index < 0 or index >= len(self._names) or index == self._index:
+            self._sync_label()
+            return
+        self._index = index
+        self._sync_label()
+        if not self.signalsBlocked():
+            self.currentTextChanged.emit(self.currentText())
+
+    def setCurrentText(self, text: str) -> None:
+        index = self.findText(text)
+        if index >= 0:
+            self.setCurrentIndex(index)
+
+    def showPopup(self) -> None:
+        if self._menu is not None:
+            self._menu.close()
+        menu = _FontMenu(self._names, self._index, self)
+        menu.picked.connect(self.setCurrentIndex)
+        self._menu = menu
+        width = max(220, self.width())
+        menu.setFixedWidth(width)
+        origin = self.mapToGlobal(QPoint(self.width() - width, self.height() + 4))
+        menu.move(origin)
+        self._set_open(True)
+        menu.show()
+
+    def apply_faces(self) -> None:
+        """Draw the closed field in the selected Google Font."""
+        self._sync_label()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._sync_label()
+
+    def _sync_label(self) -> None:
+        name = self.currentText()
+        face = QFont(family_for(name) if name else "")
+        face.setPixelSize(12)
+        face.setBold(False)
+        face.setItalic(False)
+        self._name.setFont(face)
+        room = max(24, self._name.width() - 8)
+        self._name.setText(QFontMetrics(face).elidedText(name, Qt.TextElideMode.ElideRight, room))
+        self._name.setToolTip(name)
+
+    def _set_open(self, open: bool) -> None:
+        try:
+            self.setProperty("open", open)
+            self.style().unpolish(self)
+            self.style().polish(self)
+        except RuntimeError:
+            return
+
+    def _queue_download(self) -> None:
+        global _fonts_loading
+        if _fonts_loading:
+            return
+        _fonts_loading = True
+        worker = Worker(fetch_google_fonts)
+        worker.signals.result.connect(self._on_fonts)
+        worker.signals.error.connect(lambda *_args: None)
+        QThreadPool.globalInstance().start(worker)
+
+    def _on_fonts(self, paths: list[str]) -> None:
+        register_google_fonts(paths)
+        self.apply_faces()
+
 
 _ANIM_SLOTS = (("anim_in", "In", ANIM_IN), ("anim_out", "Out", ANIM_OUT), ("anim_loop", "Loop", ANIM_LOOP))
 _ALIGN_TO_CANVAS = (
@@ -235,14 +455,14 @@ class TextInspector(QWidget):
         if shape:
             self._build_shape(content)
         else:
-            content.addWidget(self._label("Font"))
-            self.btn_font = QPushButton("Arial")
-            self.btn_font.setObjectName("dub_setting_field")
-            self.btn_font.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.btn_font.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            self.btn_font.setToolTip("Choose a font")
-            self.btn_font.clicked.connect(self._pick_font)
-            content.addWidget(self.btn_font)
+            font_row = QHBoxLayout()
+            font_row.setContentsMargins(0, 0, 0, 0)
+            font_row.setSpacing(8)
+            font_row.addWidget(self._label("Font"), 1)
+            self.font_select = FontSelect()
+            self.font_select.currentTextChanged.connect(self._use_font)
+            font_row.addWidget(self.font_select, 0, Qt.AlignmentFlag.AlignRight)
+            content.addLayout(font_row)
             self.spin_size = self._spin_row(content, "Font size", *FONT_RANGE, "font_size")
             pattern = QHBoxLayout()
             pattern.setSpacing(6)
@@ -638,36 +858,36 @@ class TextInspector(QWidget):
 
     # ── edits ──────────────────────────────────────────────────────
     def _show_font(self, family: str) -> None:
-        if not hasattr(self, "btn_font"):
+        if not hasattr(self, "font_select"):
             return
-        family = str(family or "Arial")
-        self.btn_font.setText(family)
-        face = QFont(family)
-        face.setPointSize(13)
-        self.btn_font.setFont(face)
+        family = str(family or "")
+        box = self.font_select
+        box.blockSignals(True)
+        index = box.findText(family)
+        if index < 0:
+            for row in range(box.count()):
+                if family_for(box.itemText(row)) == family:
+                    index = row
+                    break
+        if index < 0 and family:
+            box.insertItem(box.count(), family)
+            index = box.count() - 1
+        if index >= 0:
+            box.setCurrentIndex(index)
+        box.apply_faces()
+        box.blockSignals(False)
 
-    def _pick_font(self) -> None:
-        """Open the standard font dialog and keep the caption style in step with it."""
-        current = QFont(str(self._style.get("font") or "Arial"))
-        current.setPointSize(max(1, int(self._style.get("font_size") or 16)))
-        current.setBold(bool(self._style.get("bold")))
-        current.setItalic(bool(self._style.get("italic")))
-        current.setUnderline(bool(self._style.get("underline")))
-        ok, font = QFontDialog.getFont(
-            current, self, "Font", QFontDialog.FontDialogOption.ScalableFonts,
-        )
-        if not ok:
+    def _use_font(self, name: str) -> None:
+        """Apply the Google Font family. Size and pattern toggles stay as they are."""
+        if self._block or not name:
             return
-        self._style["font"] = font.family() or current.family()
-        picked = font.pointSize()
-        if picked > 0:
-            self._style["font_size"] = picked
-        self._style["bold"] = font.bold()
-        self._style["italic"] = font.italic()
-        self._style["underline"] = font.underline()
+        family = family_for(name)
+        if family == self._style.get("font"):
+            return
+        self._style["font"] = family
         self._style["preset"] = ""
         self._style = clean_text_style(self._style)
-        self._sync_widgets()
+        self.font_select.apply_faces()
         self._emit()
 
     def _emit(self, *_):

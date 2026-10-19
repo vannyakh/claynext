@@ -1579,6 +1579,57 @@ QPushButton#dub_props_ghost_btn:pressed {{
 #dub_setting_field:disabled {{
     color: {COLOR_TEXT_MUTED};
 }}
+#font_field {{
+    background-color: {COLOR_BG_DARK};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 8px;
+}}
+#font_field:hover,
+#font_field[open="true"] {{
+    border-color: {accent};
+}}
+#font_field_name {{
+    background: transparent;
+    border: none;
+    color: {COLOR_TEXT_MAIN};
+    padding: 0 6px;
+    font-size: 12px;
+}}
+#font_field_rail {{
+    background: transparent;
+    border: none;
+    border-left: 1px solid {COLOR_BORDER}88;
+}}
+#font_field_chevron {{
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+}}
+#font_menu {{
+    background-color: {COLOR_BG_CARD};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 8px;
+}}
+#font_menu_list {{
+    background: transparent;
+    border: none;
+    outline: none;
+    color: {COLOR_TEXT_MAIN};
+    padding: 2px;
+}}
+#font_menu_list::item {{
+    border-radius: 4px;
+    padding: 4px 8px;
+    color: {COLOR_TEXT_MAIN};
+}}
+#font_menu_list::item:hover {{
+    background: {COLOR_BG_CARD_HOVER};
+}}
+#font_menu_list::item:selected {{
+    background: {wash};
+    color: {COLOR_TEXT_MAIN};
+}}
 #scrub_spin {{
     background-color: {COLOR_BG_DARK};
     border: 1px solid {COLOR_BORDER};

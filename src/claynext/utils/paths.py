@@ -29,6 +29,7 @@ PRESET_DIR = DATA_DIR / "presets" / "studio"
 PROJECT_DIR = DATA_DIR / "projects"
 VOICEOVER_DIR = PROJECT_DIR / "voiceover"
 LOGS_DIR = DATA_DIR / "logs"
+FONT_DIR = DATA_DIR / "fonts" / "google"
 
 DATA_DIRS = (
     DATA_DIR,
@@ -43,6 +44,7 @@ DATA_DIRS = (
     PROJECT_DIR,
     VOICEOVER_DIR,
     LOGS_DIR,
+    FONT_DIR,
 )
 
 
