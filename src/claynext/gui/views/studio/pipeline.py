@@ -292,13 +292,14 @@ class PipelineTools:
         if not path or not hasattr(self, "timeline"):
             return False
         canvas = self.timeline.canvas
-        abspath = os.path.abspath(path)
+        target = os.path.normcase(os.path.abspath(path))
+        current_media = os.path.normcase(os.path.abspath(canvas.media_path or ""))
         on_track = any(
             clip.kind == "video"
-            and os.path.abspath(str(clip.extra.get("path") or "")) == abspath
+            and os.path.normcase(os.path.abspath(str(clip.extra.get("path") or ""))) == target
             for clip in canvas.clips
         )
-        return on_track and os.path.abspath(canvas.media_path or "") == abspath
+        return on_track and current_media == target
 
     def _ensure_source_sequence(self, path: str) -> None:
         """Probe the movie off the interface thread, then place it on Source."""
@@ -307,7 +308,7 @@ class PipelineTools:
         if getattr(self, "_merge_open", False):
             self._queue_merge_source(path)
             return
-        abspath = os.path.abspath(path)
+        abspath = os.path.normcase(os.path.abspath(path))
         if self._source_already_on_track(abspath):
             return
         if getattr(self, "_source_seq_path", "") == abspath:
@@ -349,7 +350,8 @@ class PipelineTools:
     def _apply_source_sequence(self, path: str, duration_ms: int, token: int) -> None:
         if token != int(getattr(self, "_source_seq_token", 0)):
             return
-        if getattr(self, "_source_seq_path", "") == path:
+        norm_path = os.path.normcase(os.path.abspath(path))
+        if getattr(self, "_source_seq_path", "") == norm_path:
             self._source_seq_path = ""
         if not path or not os.path.isfile(path) or not hasattr(self, "timeline"):
             return

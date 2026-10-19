@@ -22,6 +22,7 @@ from claynext.adapters.ffmpeg_service import (
     dynamic_duck_audio,
     ensure_speech_bed,
     fit_duration,
+    make_silence,
     master_voiceover_track,
     mix_wavs,
     compose_overlays,
@@ -312,22 +313,48 @@ def _speak_lines(
         if tag and text_to_speak and not has_expression_tags(text_to_speak):
             text_to_speak = f"{tag} {text_to_speak}"
         raw_mp3 = str(job / f"seg_{idx + 1:04d}.mp3")
-        TTSEngine.synthesize(text_to_speak, voice, raw_mp3)
         start = float(item.get("start_sec") or timestamp_to_sec(item.get("start", "")))
         end = float(item.get("end_sec") or timestamp_to_sec(item.get("end", "")))
         slot = max(0.15, end - start) if end > start else 2.0
         fitted = str(job / f"seg_{idx + 1:04d}_fit.wav")
-        if sync_mode == "natural":
-            min_t, max_t = 1.0, 1.0
-        elif sync_mode == "subtle":
-            min_t, max_t = 0.85, 1.25
+
+        spoken = False
+        clean_text = text_to_speak.strip()
+        if clean_text:
+            for attempt in range(2):
+                if control is not None:
+                    control.checkpoint()
+                try:
+                    TTSEngine.synthesize(clean_text, voice, raw_mp3)
+                    spoken = os.path.isfile(raw_mp3) and os.path.getsize(raw_mp3) > 100
+                    if spoken:
+                        break
+                except Exception:
+                    if attempt == 0:
+                        import time
+                        time.sleep(0.25)
+
+        if spoken:
+            if sync_mode == "natural":
+                min_t, max_t = 1.0, 1.0
+            elif sync_mode == "subtle":
+                min_t, max_t = 0.85, 1.25
+            else:
+                min_t, max_t = 0.65, 1.85
+            try:
+                fit_duration(raw_mp3, fitted, slot, min_tempo=min_t, max_tempo=max_t, pad_or_trim=True)
+            except Exception:
+                make_silence(fitted, slot)
         else:
-            min_t, max_t = 0.65, 1.85
-        fit_duration(raw_mp3, fitted, slot, min_tempo=min_t, max_tempo=max_t, pad_or_trim=True)
-        if not render and vocal_master:
-            fitted = master_voiceover_track(
-                fitted, str(job / f"seg_{idx + 1:04d}_master.wav"), volume_boost=voiceover_boost,
-            )
+            make_silence(fitted, slot)
+
+        if not render and vocal_master and os.path.isfile(fitted):
+            try:
+                fitted = master_voiceover_track(
+                    fitted, str(job / f"seg_{idx + 1:04d}_master.wav"), volume_boost=voiceover_boost,
+                )
+            except Exception:
+                pass
         item["audio_path"] = fitted
         item["start_ms"] = int(start * 1000)
         item["voice_id"] = voice

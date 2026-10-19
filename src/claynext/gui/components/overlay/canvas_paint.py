@@ -132,6 +132,8 @@ class CanvasPaint:
         if selected is not None:
             p.setClipping(False)
             self._paint_toolbar(p, selected)
+        if getattr(self, "_capture_zone_active", False):
+            self._paint_capture_zone(p)
         p.end()
 
     def _apply_flip(self, p: QPainter, item: OverlayItem, center: QPointF):
@@ -244,3 +246,101 @@ class CanvasPaint:
         p.setFont(font)
         p.setPen(color)
         p.drawText(rect.adjusted(8, 4, -8, -4), Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, text or item.kind)
+
+    def _capture_zone_rect(self) -> QRectF | None:
+        """Return the current capture zone in canvas pixels."""
+        frame = self.content_rect()
+        if frame.isEmpty():
+            return None
+        zone = getattr(self, "_capture_zone", None) or {"x": 0.05, "y": 0.72, "w": 0.90, "h": 0.20}
+        fw = float(frame.width())
+        fh = float(frame.height())
+        zx = frame.left() + float(zone.get("x", 0.05)) * fw
+        zy = frame.top() + float(zone.get("y", 0.72)) * fh
+        zw = float(zone.get("w", 0.90)) * fw
+        zh = float(zone.get("h", 0.20)) * fh
+        return QRectF(zx, zy, zw, zh)
+
+    def _paint_capture_zone(self, p: QPainter):
+        """Paint the video subtitle capture zone overlay with interactive key point handles."""
+        z_rect = self._capture_zone_rect()
+        if z_rect is None:
+            return
+        frame = self.content_rect()
+        fw = float(frame.width())
+        zone = getattr(self, "_capture_zone", {}) or {}
+
+        p.save()
+        p.setClipping(False)
+
+        # 1. Darken the non-selected area outside the capture zone (letterbox mask)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(0, 0, 0, 90))
+        zx, zy, zw, zh = z_rect.x(), z_rect.y(), z_rect.width(), z_rect.height()
+        # Top
+        p.drawRect(QRectF(frame.left(), frame.top(), fw, max(0.0, zy - frame.top())))
+        # Bottom
+        p.drawRect(QRectF(frame.left(), zy + zh, fw, max(0.0, frame.bottom() - (zy + zh))))
+        # Left
+        p.drawRect(QRectF(frame.left(), zy, max(0.0, zx - frame.left()), zh))
+        # Right
+        p.drawRect(QRectF(zx + zw, zy, max(0.0, frame.right() - (zx + zw)), zh))
+
+        # 2. Draw capture box boundary
+        pen = QPen(QColor("#38bdf8"), 1.8, Qt.PenStyle.DashLine)
+        p.setPen(pen)
+        p.setBrush(QColor(56, 189, 248, 22))  # subtle tint inside zone
+        p.drawRect(z_rect)
+
+        # 3. Cinema viewfinder brackets at corners
+        bracket_len = min(16.0, zw / 4.0, zh / 4.0)
+        p.setPen(QPen(QColor("#00f0ff"), 3.0, Qt.PenStyle.SolidLine))
+        # Top-Left
+        p.drawLine(QPointF(zx, zy), QPointF(zx + bracket_len, zy))
+        p.drawLine(QPointF(zx, zy), QPointF(zx, zy + bracket_len))
+        # Top-Right
+        p.drawLine(QPointF(zx + zw, zy), QPointF(zx + zw - bracket_len, zy))
+        p.drawLine(QPointF(zx + zw, zy), QPointF(zx + zw, zy + bracket_len))
+        # Bottom-Left
+        p.drawLine(QPointF(zx, zy + zh), QPointF(zx + bracket_len, zy + zh))
+        p.drawLine(QPointF(zx, zy + zh), QPointF(zx, zy + zh - bracket_len))
+        # Bottom-Right
+        p.drawLine(QPointF(zx + zw, zy + zh), QPointF(zx + zw - bracket_len, zy + zh))
+        p.drawLine(QPointF(zx + zw, zy + zh), QPointF(zx + zw, zy + zh - bracket_len))
+
+        # 4. Key Point Tracker Handles (4 corners, 4 edges, 1 center)
+        handle_r = 5.0
+        p.setPen(QPen(QColor("#080c12"), 1.5))
+        p.setBrush(QColor("#38bdf8"))
+        for pt in (z_rect.topLeft(), z_rect.topRight(), z_rect.bottomLeft(), z_rect.bottomRight()):
+            p.drawEllipse(pt, handle_r, handle_r)
+
+        # Edge midpoints
+        p.setBrush(QColor("#a855f7"))
+        mid_top = QPointF(zx + zw / 2.0, zy)
+        mid_bot = QPointF(zx + zw / 2.0, zy + zh)
+        mid_left = QPointF(zx, zy + zh / 2.0)
+        mid_right = QPointF(zx + zw, zy + zh / 2.0)
+        for pt in (mid_top, mid_bot, mid_left, mid_right):
+            p.drawRoundedRect(QRectF(pt.x() - 4.5, pt.y() - 4.5, 9, 9), 2, 2)
+
+        # Center target anchor
+        center = z_rect.center()
+        p.setPen(QPen(QColor("#38bdf8"), 1.5))
+        p.setBrush(QColor(56, 189, 248, 60))
+        p.drawEllipse(center, 9, 9)
+        p.drawLine(QPointF(center.x() - 6, center.y()), QPointF(center.x() + 6, center.y()))
+        p.drawLine(QPointF(center.x(), center.y() - 6), QPointF(center.x(), center.y() + 6))
+
+        # 5. Floating Badge & Coordinate HUD
+        badge_text = f"🎯 Subtitle Tracker · Y: {int(zone.get('y', 0.72)*100)}% - {int((zone.get('y', 0.72) + zone.get('h', 0.20))*100)}% | W: {int(zone.get('w', 0.90)*100)}%"
+        p.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        badge_y = zy - 24 if zy >= frame.top() + 28 else zy + zh + 6
+        badge_rect = QRectF(zx, badge_y, min(zw, 320.0), 20)
+        p.setPen(QPen(QColor("#233348"), 1))
+        p.setBrush(QColor(14, 20, 30, 220))
+        p.drawRoundedRect(badge_rect, 4, 4)
+        p.setPen(QColor("#e7ecf3"))
+        p.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, badge_text)
+
+        p.restore()

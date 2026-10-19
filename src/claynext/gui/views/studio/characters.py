@@ -1,27 +1,48 @@
-"""Characters shelf: create a cast and keep names found in the script."""
+"""Characters shelf: AI cast analysis, role profiling, voice audition, and character management."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel,
-    QLineEdit, QScrollArea, QToolButton, QVBoxLayout, QWidget,
+    QLineEdit, QPushButton, QScrollArea, QToolButton, QVBoxLayout, QWidget,
 )
 
 from claynext.gui.icons import icon
 from claynext.gui.components.shell.shelf_header import make_shelf_button, make_shelf_header
 
+# Vibrant accent palette for character avatars
+_AVATAR_PALETTE = [
+    "#8b5cf6",  # Purple
+    "#06b6d4",  # Cyan
+    "#10b981",  # Emerald
+    "#f59e0b",  # Amber
+    "#ec4899",  # Pink
+    "#3b82f6",  # Blue
+    "#14b8a6",  # Teal
+    "#e11d48",  # Rose
+]
+
+_ROLE_COLORS = {
+    "Lead": ("#a855f7", "rgba(168, 85, 247, 0.18)"),
+    "Co-Star": ("#38bdf8", "rgba(56, 189, 248, 0.18)"),
+    "Supporting": ("#34d399", "rgba(52, 211, 153, 0.18)"),
+    "Minor": ("#94a3b8", "rgba(148, 163, 184, 0.12)"),
+    "Narrator": ("#fbbf24", "rgba(251, 191, 36, 0.18)"),
+}
+
 
 class _CharacterDialog(QDialog):
-    """Name, gender, and TTS voice for one character."""
+    """Name, gender, role, and TTS voice for one character with live audition."""
 
     def __init__(self, voices: list[dict], current: dict | None = None, parent=None):
         super().__init__(parent)
+        self._parent_ref = parent
         current = current or {}
         self.setWindowTitle("Edit character" if current.get("name") else "New character")
         self.setModal(True)
-        self.setMinimumWidth(320)
+        self.setMinimumWidth(360)
         lay = QVBoxLayout(self)
-        lay.setSpacing(8)
+        lay.setSpacing(10)
 
         name_label = QLabel("Name")
         name_label.setObjectName("asr_field_label")
@@ -29,6 +50,15 @@ class _CharacterDialog(QDialog):
         self.name.setObjectName("dub_setting_field")
         self.name.setPlaceholderText("Character name")
         self.name.setText(str(current.get("name") or ""))
+
+        role_label = QLabel("Role")
+        role_label.setObjectName("asr_field_label")
+        self.role = QComboBox()
+        self.role.setObjectName("asr_option_combo")
+        self.role.addItems(["Lead", "Co-Star", "Supporting", "Minor", "Narrator"])
+        current_role = str(current.get("role") or "Supporting")
+        r_idx = self.role.findText(current_role)
+        self.role.setCurrentIndex(r_idx if r_idx >= 0 else 2)
 
         gender_label = QLabel("Gender")
         gender_label.setObjectName("asr_field_label")
@@ -40,29 +70,44 @@ class _CharacterDialog(QDialog):
 
         voice_label = QLabel("TTS voice")
         voice_label.setObjectName("asr_field_label")
+        voice_box = QHBoxLayout()
+        voice_box.setSpacing(6)
         self.voice = QComboBox()
         self.voice.setObjectName("asr_option_combo")
         self.voice.addItem("Match gender", "")
         pick = 0
         want = str(current.get("voice_id") or "")
-        for voice in voices:
-            label = str(voice.get("label") or voice.get("name") or "")
-            vid = str(voice.get("id") or "")
+        for v in voices:
+            label = str(v.get("label") or v.get("name") or "")
+            vid = str(v.get("id") or "")
             if not label or not vid:
                 continue
-            gender = str(voice.get("gender") or "")
+            gender = str(v.get("gender") or "")
             text = f"{label} · {gender}" if gender and gender != "Unknown" else label
             self.voice.addItem(text, vid)
             if vid == want:
                 pick = self.voice.count() - 1
         self.voice.setCurrentIndex(pick)
+        voice_box.addWidget(self.voice, 1)
+
+        self.btn_audition = QToolButton()
+        self.btn_audition.setObjectName("media_lib_icon_btn")
+        self.btn_audition.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_audition.setIcon(icon("play", color="#38bdf8", size=14))
+        self.btn_audition.setToolTip("Audition selected voice")
+        self.btn_audition.setFixedSize(30, 30)
+        self.btn_audition.clicked.connect(self._audition_selected_voice)
+        voice_box.addWidget(self.btn_audition)
 
         lay.addWidget(name_label)
         lay.addWidget(self.name)
+        lay.addWidget(role_label)
+        lay.addWidget(self.role)
         lay.addWidget(gender_label)
         lay.addWidget(self.gender)
         lay.addWidget(voice_label)
-        lay.addWidget(self.voice)
+        lay.addLayout(voice_box)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
@@ -70,9 +115,17 @@ class _CharacterDialog(QDialog):
         buttons.rejected.connect(self.reject)
         lay.addWidget(buttons)
 
+    def _audition_selected_voice(self):
+        vid = str(self.voice.currentData() or "")
+        if not vid:
+            return
+        if hasattr(self._parent_ref, "_preview_voice"):
+            self._parent_ref._preview_voice(vid)
+
     def values(self) -> dict:
         return {
             "name": self.name.text().strip(),
+            "role": self.role.currentText() or "Supporting",
             "gender": self.gender.currentText() or "Unknown",
             "voice_id": str(self.voice.currentData() or ""),
         }
@@ -84,18 +137,25 @@ class CharacterTools:
     def _build_character_panel(self) -> QWidget:
         self._cast_extra = list(getattr(self, "_cast_extra", []) or [])
         self._cast_signature = None
+        self._ai_cast_worker = None
         panel = QWidget()
         panel.setObjectName("character_panel")
         root = QVBoxLayout(panel)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
+
+        self.btn_ai_cast = make_shelf_button(
+            "AI Cast", tip="✨ AI Cast: Auto-detect character names, roles, gender & best voices", icon_name="sparkles", icon_color="#a855f7"
+        )
+        self.btn_ai_cast.clicked.connect(self._run_ai_cast_analysis)
+
         self.btn_character_add = make_shelf_button(
             "", tip="Create a character", icon_name="plus",
         )
         self.btn_character_add.clicked.connect(self._create_character)
-        root.addWidget(make_shelf_header("Characters", self.btn_character_add))
+        root.addWidget(make_shelf_header("Characters", self.btn_ai_cast, self.btn_character_add))
 
-        self.character_hint = QLabel("Create the cast, or run a dub and names from the transcript appear here.")
+        self.character_hint = QLabel("AI detects names, dialogue roles & matches neural voices for each character.")
         self.character_hint.setObjectName("dub_panel_hint")
         self.character_hint.setWordWrap(True)
         root.addWidget(self.character_hint)
@@ -112,11 +172,74 @@ class CharacterTools:
         scroll.setWidget(host)
         root.addWidget(scroll, 1)
 
-        self.character_empty = QLabel("No characters yet")
+        self.character_empty = QLabel("No characters yet · Click '✨ AI Cast' or '+' to add")
         self.character_empty.setObjectName("transcript_empty_title")
         self.character_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.character_list.insertWidget(0, self.character_empty)
         return panel
+
+    def _run_ai_cast_analysis(self) -> None:
+        """Run AI Character Cast Analysis across all dialogue segments."""
+        segs = getattr(self, "_segments", []) or []
+        if not segs:
+            if hasattr(self, "log"):
+                self.log.warn("Load media or script first to run AI Cast Analysis")
+            return
+        if getattr(self, "_ai_cast_worker", None) is not None:
+            return
+
+        lang = self._voice_lang() if hasattr(self, "_voice_lang") else ""
+        lead, co_star = "", ""
+        if hasattr(self, "_primary_voices"):
+            lead, co_star = self._primary_voices()
+        else:
+            lead = getattr(self, "combo_voice", None) and self.combo_voice.currentData() or ""
+            co_star = getattr(self, "combo_voice_sec", None) and self.combo_voice_sec.currentData() or lead
+
+        if hasattr(self, "table_spinner"):
+            self.table_spinner.start()
+        if hasattr(self, "log"):
+            self.log.info("✨ AI Cast Analysis starting · analyzing dialogue turns & roles…")
+
+        from claynext.models.gender_voices import ai_analyze_movie_cast
+        from claynext.gui.worker import Worker
+
+        def _job(progress_callback=None):
+            return ai_analyze_movie_cast(
+                list(segs),
+                lang=lang,
+                primary_voice=str(lead or ""),
+                secondary_voice=str(co_star or lead or ""),
+                progress_callback=progress_callback,
+            )
+
+        worker = Worker(_job)
+        worker.signals.result.connect(self._on_ai_cast_ready)
+        worker.signals.error.connect(self._on_ai_cast_error)
+        worker.signals.finished.connect(self._on_ai_cast_finished)
+        self._ai_cast_worker = worker
+        self.thread_pool.start(worker)
+
+    def _on_ai_cast_ready(self, result: dict) -> None:
+        if not isinstance(result, dict):
+            return
+        self._segments = list(result.get("segments") or self._segments)
+        self._cast_signature = None
+        if hasattr(self, "_fill_table"):
+            self._fill_table(self._segments)
+        self._refresh_character_list()
+        count = int(result.get("count") or 0)
+        if hasattr(self, "log"):
+            self.log.success(f"✨ AI Cast complete: {count} characters profiled with distinct neural voices")
+
+    def _on_ai_cast_error(self, err: Exception, _stack: str = "") -> None:
+        if hasattr(self, "log"):
+            self.log.warn(f"AI Cast error · {err}")
+
+    def _on_ai_cast_finished(self) -> None:
+        self._ai_cast_worker = None
+        if hasattr(self, "table_spinner"):
+            self.table_spinner.stop()
 
     def _character_rows(self) -> list[dict]:
         rows: dict[str, dict] = {}
@@ -131,6 +254,7 @@ class CharacterTools:
                 row = {
                     "name": name,
                     "gender": "Unknown",
+                    "role": str(seg.get("character_role") or "Supporting"),
                     "voice_id": "",
                     "lines": 0,
                     "expression": "",
@@ -138,6 +262,8 @@ class CharacterTools:
                 }
                 rows[name] = row
             row["lines"] += 1
+            if seg.get("character_role"):
+                row["role"] = str(seg.get("character_role"))
             gender = str(seg.get("gender") or "")
             if gender and gender != "Unknown":
                 row["gender"] = gender
@@ -154,6 +280,7 @@ class CharacterTools:
             rows[name] = {
                 "name": name,
                 "gender": str(extra.get("gender") or "Unknown"),
+                "role": str(extra.get("role") or "Supporting"),
                 "voice_id": str(extra.get("voice_id") or ""),
                 "lines": 0,
                 "expression": "",
@@ -166,7 +293,7 @@ class CharacterTools:
             return
         rows = self._character_rows()
         signature = tuple(
-            (row["name"], row["gender"], row["voice_id"], row["lines"], row["expression"])
+            (row["name"], row["gender"], row.get("role", ""), row["voice_id"], row["lines"], row["expression"])
             for row in rows
         )
         if signature == getattr(self, "_cast_signature", None):
@@ -194,12 +321,44 @@ class CharacterTools:
         card = QFrame()
         card.setObjectName("character_row")
         lay = QHBoxLayout(card)
-        lay.setContentsMargins(10, 8, 8, 8)
-        lay.setSpacing(8)
+        lay.setContentsMargins(8, 8, 8, 8)
+        lay.setSpacing(10)
+
+        # Avatar initial circle
+        avatar_color = _AVATAR_PALETTE[abs(hash(row["name"])) % len(_AVATAR_PALETTE)]
+        initial = (row["name"][:1] if row["name"] else "C").upper()
+        avatar = QLabel(initial)
+        avatar.setFixedSize(28, 28)
+        avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        avatar.setStyleSheet(
+            f"background-color: {avatar_color}; color: #ffffff; "
+            f"border-radius: 14px; font-size: 13px; font-weight: bold;"
+        )
+        lay.addWidget(avatar)
+
+        # Middle info column
         text = QVBoxLayout()
         text.setSpacing(2)
+
+        # Top line: Name + Role Badge
+        top_row = QHBoxLayout()
+        top_row.setSpacing(6)
         title = QLabel(row["name"])
         title.setObjectName("character_name")
+        top_row.addWidget(title)
+
+        role = str(row.get("role") or "Supporting")
+        fg, bg = _ROLE_COLORS.get(role, ("#94a3b8", "rgba(148, 163, 184, 0.12)"))
+        role_badge = QLabel(role.upper())
+        role_badge.setStyleSheet(
+            f"color: {fg}; background-color: {bg}; border-radius: 3px; "
+            f"padding: 1px 5px; font-size: 9px; font-weight: 700; letter-spacing: 0.5px;"
+        )
+        top_row.addWidget(role_badge)
+        top_row.addStretch(1)
+        text.addLayout(top_row)
+
+        # Subtitle: Gender · Voice · Lines · Expression
         gender = row["gender"] or "Unknown"
         bits = [gender]
         if voice_label:
@@ -207,22 +366,36 @@ class CharacterTools:
         count = int(row["lines"])
         bits.append(f"{count} line" if count == 1 else f"{count} lines")
         if row.get("expression"):
-            bits.append(str(row["expression"]))
+            bits.append(f"🎭 {row['expression']}")
         meta = QLabel(" · ".join(bits))
         meta.setObjectName("character_meta")
-        text.addWidget(title)
         text.addWidget(meta)
         lay.addLayout(text, 1)
 
+        # Audition button
+        play = QToolButton()
+        play.setObjectName("media_lib_icon_btn")
+        play.setCursor(Qt.CursorShape.PointingHandCursor)
+        play.setIcon(icon("play", color="#38bdf8", size=14))
+        play.setToolTip(f"Audition voice for {row['name']}")
+        play.setFixedSize(28, 28)
+        if row["voice_id"]:
+            play.clicked.connect(lambda _=False, vid=row["voice_id"]: self._preview_voice(vid) if hasattr(self, "_preview_voice") else None)
+        else:
+            play.setEnabled(False)
+        lay.addWidget(play)
+
+        # Edit button
         edit = QToolButton()
         edit.setObjectName("media_lib_icon_btn")
         edit.setCursor(Qt.CursorShape.PointingHandCursor)
         edit.setIcon(icon("settings", color="#e7ecf3", size=14))
-        edit.setToolTip("Edit name, gender, and voice")
+        edit.setToolTip("Edit name, gender, role, and voice")
         edit.setFixedSize(28, 28)
         edit.clicked.connect(lambda _=False, name=row["name"]: self._edit_character(name))
         lay.addWidget(edit)
 
+        # Remove button (if not part of active script)
         if not row["in_script"]:
             remove = QToolButton()
             remove.setObjectName("media_lib_icon_btn")
@@ -288,6 +461,7 @@ class CharacterTools:
             seg["speaker"] = new_name
             seg["character"] = new_name
             seg["gender"] = values["gender"]
+            seg["character_role"] = values.get("role", "Supporting")
             seg["gender_manual"] = True
             if values["voice_id"]:
                 seg["tts_voice_hint"] = values["voice_id"]

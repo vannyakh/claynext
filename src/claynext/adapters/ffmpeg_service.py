@@ -296,14 +296,17 @@ def fit_duration(
         if pad_or_trim:
             fade_st = max(0.0, target - 0.06)
             args += [
-                "-filter:a", f"afade=t=out:st={fade_st:.3f}:d=0.06",
+                "-filter:a", f"afade=t=in:st=0:d=0.012,afade=t=out:st={fade_st:.3f}:d=0.06",
                 "-ar", "48000", "-ac", "2",
                 "-c:a", "pcm_s16le",
                 "-t", f"{target:.3f}",
                 dst,
             ]
         else:
-            args += ["-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", dst]
+            args += [
+                "-filter:a", "afade=t=in:st=0:d=0.012",
+                "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", dst
+            ]
         proc = run_ffmpeg(args)
     else:
         # Tempo clamp via DubbingAdapter → Rust align-speed; Python fallback.
@@ -316,12 +319,13 @@ def fit_duration(
         except Exception:
             tempo = max(min_tempo, min(max_tempo, ratio))
         # Build atempo filter chain (atempo filter accepts values in [0.5, 2.0])
+        filters = ["afade=t=in:st=0:d=0.012"]
         if tempo > 2.0:
-            filters = [f"atempo=2.0", f"atempo={tempo / 2.0:.4f}"]
+            filters += [f"atempo=2.0", f"atempo={tempo / 2.0:.4f}"]
         elif tempo < 0.5:
-            filters = [f"atempo=0.5", f"atempo={tempo / 0.5:.4f}"]
+            filters += [f"atempo=0.5", f"atempo={tempo / 0.5:.4f}"]
         else:
-            filters = [f"atempo={tempo:.4f}"]
+            filters += [f"atempo={tempo:.4f}"]
 
         args = ["-y", "-i", src]
         if pad_or_trim:

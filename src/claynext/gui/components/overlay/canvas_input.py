@@ -104,6 +104,14 @@ class CanvasInput:
             event.accept()
             return
         pos = event.position()
+        if getattr(self, "_capture_zone_active", False):
+            zh = self._zone_handle_at(pos)
+            if zh:
+                self._zone_drag = zh
+                self._zone_drag_start = (QPointF(pos), dict(getattr(self, "_capture_zone", {})))
+                event.accept()
+                return
+
         picked = self.selected_item()
         tool = self._tool_at(picked, pos)
         if tool and picked is not None:
@@ -204,6 +212,10 @@ class CanvasInput:
             self._sync_tool_cursor()
             event.accept()
             return
+        if getattr(self, "_zone_drag", ""):
+            self._drag_zone(event.position())
+            event.accept()
+            return
         if self._video_drag:
             self._drag_video(event.position())
             return
@@ -254,10 +266,32 @@ class CanvasInput:
             self.setCursor(diag)
         elif self._video_edit and rect is not None and rect.contains(event.position()):
             self.setCursor(Qt.CursorShape.SizeAllCursor)
+        elif getattr(self, "_capture_zone_active", False):
+            zh = self._zone_handle_at(event.position())
+            if zh in ("tl", "br"):
+                self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+            elif zh in ("tr", "bl"):
+                self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+            elif zh in ("t", "b"):
+                self.setCursor(Qt.CursorShape.SizeVerCursor)
+            elif zh in ("l", "r"):
+                self.setCursor(Qt.CursorShape.SizeHorCursor)
+            elif zh in ("move", "center"):
+                self.setCursor(Qt.CursorShape.SizeAllCursor)
+            else:
+                self.unsetCursor()
         else:
             self.unsetCursor()
 
     def mouseReleaseEvent(self, event):
+        if getattr(self, "_zone_drag", ""):
+            self._zone_drag = ""
+            self.unsetCursor()
+            self.update()
+            if hasattr(self, "capture_zone_changed"):
+                self.capture_zone_changed.emit(dict(getattr(self, "_capture_zone", {})))
+            event.accept()
+            return
         if self._panning:
             self._end_pan()
             event.accept()
@@ -400,3 +434,99 @@ class CanvasInput:
             self._request_delete()
             return
         super().keyPressEvent(event)
+
+    def _zone_handle_at(self, pos: QPointF) -> str:
+        """Hit test for capture zone handles (corners, edges, center, interior)."""
+        if not getattr(self, "_capture_zone_active", False):
+            return ""
+        z_rect = self._capture_zone_rect() if hasattr(self, "_capture_zone_rect") else None
+        if z_rect is None:
+            return ""
+        zx, zy, zw, zh = z_rect.x(), z_rect.y(), z_rect.width(), z_rect.height()
+        r = 11.0
+        # Corners
+        if (pos - z_rect.topLeft()).manhattanLength() <= r:
+            return "tl"
+        if (pos - z_rect.topRight()).manhattanLength() <= r:
+            return "tr"
+        if (pos - z_rect.bottomLeft()).manhattanLength() <= r:
+            return "bl"
+        if (pos - z_rect.bottomRight()).manhattanLength() <= r:
+            return "br"
+        # Edges
+        mid_top = QPointF(zx + zw / 2.0, zy)
+        if (pos - mid_top).manhattanLength() <= r:
+            return "t"
+        mid_bot = QPointF(zx + zw / 2.0, zy + zh)
+        if (pos - mid_bot).manhattanLength() <= r:
+            return "b"
+        mid_left = QPointF(zx, zy + zh / 2.0)
+        if (pos - mid_left).manhattanLength() <= r:
+            return "l"
+        mid_right = QPointF(zx + zw, zy + zh / 2.0)
+        if (pos - mid_right).manhattanLength() <= r:
+            return "r"
+        # Center anchor
+        if (pos - z_rect.center()).manhattanLength() <= 14.0:
+            return "center"
+        # Inside box
+        if z_rect.contains(pos):
+            return "move"
+        return ""
+
+    def _drag_zone(self, pos: QPointF):
+        """Update capture zone geometry during handle drag."""
+        start_pos, start_zone = getattr(self, "_zone_drag_start", (pos, {}))
+        frame = self.content_rect()
+        fw = max(1.0, float(frame.width()))
+        fh = max(1.0, float(frame.height()))
+        dx = (pos.x() - start_pos.x()) / fw
+        dy = (pos.y() - start_pos.y()) / fh
+        zone = dict(start_zone)
+        drag = getattr(self, "_zone_drag", "")
+
+        if drag in ("move", "center"):
+            zone["x"] = max(0.0, min(1.0 - zone["w"], start_zone.get("x", 0.05) + dx))
+            zone["y"] = max(0.0, min(1.0 - zone["h"], start_zone.get("y", 0.72) + dy))
+        elif drag == "tl":
+            new_x = max(0.0, min(start_zone["x"] + start_zone["w"] - 0.05, start_zone["x"] + dx))
+            new_y = max(0.0, min(start_zone["y"] + start_zone["h"] - 0.04, start_zone["y"] + dy))
+            zone["w"] = (start_zone["x"] + start_zone["w"]) - new_x
+            zone["h"] = (start_zone["y"] + start_zone["h"]) - new_y
+            zone["x"] = new_x
+            zone["y"] = new_y
+        elif drag == "tr":
+            new_y = max(0.0, min(start_zone["y"] + start_zone["h"] - 0.04, start_zone["y"] + dy))
+            zone["w"] = max(0.05, min(1.0 - start_zone["x"], start_zone["w"] + dx))
+            zone["h"] = (start_zone["y"] + start_zone["h"]) - new_y
+            zone["y"] = new_y
+        elif drag == "bl":
+            new_x = max(0.0, min(start_zone["x"] + start_zone["w"] - 0.05, start_zone["x"] + dx))
+            zone["w"] = (start_zone["x"] + start_zone["w"]) - new_x
+            zone["h"] = max(0.04, min(1.0 - start_zone["y"], start_zone["h"] + dy))
+            zone["x"] = new_x
+        elif drag == "br":
+            zone["w"] = max(0.05, min(1.0 - start_zone["x"], start_zone["w"] + dx))
+            zone["h"] = max(0.04, min(1.0 - start_zone["y"], start_zone["h"] + dy))
+        elif drag == "t":
+            new_y = max(0.0, min(start_zone["y"] + start_zone["h"] - 0.04, start_zone["y"] + dy))
+            zone["h"] = (start_zone["y"] + start_zone["h"]) - new_y
+            zone["y"] = new_y
+        elif drag == "b":
+            zone["h"] = max(0.04, min(1.0 - start_zone["y"], start_zone["h"] + dy))
+        elif drag == "l":
+            new_x = max(0.0, min(start_zone["x"] + start_zone["w"] - 0.05, start_zone["x"] + dx))
+            zone["w"] = (start_zone["x"] + start_zone["w"]) - new_x
+            zone["x"] = new_x
+        elif drag == "r":
+            zone["w"] = max(0.05, min(1.0 - start_zone["x"], start_zone["w"] + dx))
+
+        zone["x"] = round(zone["x"], 4)
+        zone["y"] = round(zone["y"], 4)
+        zone["w"] = round(zone["w"], 4)
+        zone["h"] = round(zone["h"], 4)
+        self._capture_zone = zone
+        self.update()
+        if hasattr(self, "capture_zone_changed"):
+            self.capture_zone_changed.emit(dict(self._capture_zone))
+

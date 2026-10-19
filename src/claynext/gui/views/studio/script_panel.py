@@ -18,6 +18,8 @@ from claynext.gui.components.controls.fields import SearchField, SelectField
 from claynext.gui.components.shell.shelf_header import make_shelf_button, make_shelf_header
 from claynext.gui.components.controls.spinner import Spinner
 from claynext.gui.components.controls.table_fit import fit_or_scroll
+from claynext.models.dubbing_service import timestamp_to_sec
+from claynext.models.translate_service import TranslateEngine
 from claynext.utils.job_control import JobControl
 
 
@@ -244,11 +246,15 @@ class ScriptPanelTools:
         actions_menu.setToolTipsVisible(True)
         self._script_actions_menu = actions_menu
         self.btn_script_actions.setMenu(actions_menu)
-        actions_menu.aboutToShow.connect(self._fill_script_actions_menu)
+        self.btn_frame_capture = make_shelf_button(
+            "Frame OCR", tip="✨ Frame OCR: Auto-detect subtitles from video frames with custom capture zone", icon_name="video", icon_color="#38bdf8",
+        )
+        self.btn_frame_capture.clicked.connect(self._open_frame_ocr_scanner)
 
         self.script_header = make_shelf_header(
             "Script",
             self.lbl_script_count,
+            self.btn_frame_capture,
             self.btn_script_import,
             self.btn_script_export,
             self.btn_script_regen,
@@ -538,8 +544,10 @@ class ScriptPanelTools:
         )
         voice = str(seg.get("tts_voice_hint") or seg.get("voice_id") or "")
         expr = str(seg.get("expression") or "")
+        role = str(seg.get("character_role") or "")
         char_item.setToolTip(
             speaker
+            + (f" [{role}]" if role else "")
             + (f"\nVoice: {voice}" if voice else "")
             + (f"\nExpression: {expr}" if expr else "")
         )
@@ -586,11 +594,50 @@ class ScriptPanelTools:
         font = dub_item.font()
         font.setBold(True)
         dub_item.setFont(font)
+
+        # Calculate speech quota / pacing feedback for studio preview
+        tip = f"Dubbed translation:\n{dub}" if dub else "No dubbed line yet."
+        if dub:
+            start_sec = float(seg.get("start_sec") or timestamp_to_sec(str(seg.get("start") or "")))
+            end_sec = float(seg.get("end_sec") or timestamp_to_sec(str(seg.get("end") or "")))
+            dur = max(0.15, end_sec - start_sec) if end_sec > start_sec else float(seg.get("duration_sec") or 2.0)
+            lang = getattr(self, "_voice_lang", lambda: "Khmer")()
+            quota = seg.get("recommended_syllables")
+            if not isinstance(quota, dict) or not quota.get("target"):
+                # Fast in-memory quota calculation (no IPC / subprocess)
+                rate = 3.6 if "Khmer" in lang else 3.5
+                beats = dur * rate
+                target_beats = max(1, int(round(beats * 0.90)))
+                quota = {
+                    "min": max(1, int(round(beats * 0.60))),
+                    "target": target_beats,
+                    "max": max(target_beats, int(round(beats))),
+                }
+                seg["recommended_syllables"] = quota
+            units = seg.get("spoken_units")
+            if units is None:
+                units = TranslateEngine.spoken_units_fast(dub, lang)
+                seg["spoken_units"] = units
+            tgt = quota.get("target", 1)
+            mx = quota.get("max", tgt)
+            mn = quota.get("min", max(1, int(round(tgt * 0.7))))
+
+            if units == 0:
+                pacing_msg = "Empty"
+            elif mn <= units <= mx:
+                pacing_msg = f"★ Cinema Fit ({units}/{tgt} beats · optimal pace)"
+            elif units < mn:
+                pacing_msg = f"~ Relaxed Speech ({units}/{tgt} beats · brief)"
+            elif units <= int(round(mx * 1.25)):
+                pacing_msg = f"~ Slight Stretch ({units}/{tgt} beats)"
+            else:
+                pacing_msg = f"⚠ Fast Speech ({units}/{tgt} beats · will rush to fit slot)"
+            tip = f"Dubbed translation:\n{dub}\n\n⏱ Slot: {dur:.2f}s | Beats: {units}/{tgt} ({pacing_msg})"
+
         if seg.get("pending"):
             dub_item.setBackground(QBrush(QColor(168, 85, 247, 48)))
-            dub_item.setToolTip("Pending version. Accept to keep it, or Reverse to restore the previous line.")
-        else:
-            dub_item.setToolTip(f"Dubbed translation:\n{dub}")
+            tip += "\n\nPending version. Accept to keep it, or Reverse to restore the previous line."
+        dub_item.setToolTip(tip)
         self.table.setItem(row, 5, dub_item)
 
     def _patch_script_rows(self, segments: list) -> bool:
@@ -856,31 +903,35 @@ class ScriptPanelTools:
             if hasattr(self, "script_view_filter")
             else "all"
         ) or "all"
-        for row, seg in enumerate(self._segments):
-            if row >= self.table.rowCount():
-                break
-            hide = False
-            name = str(seg.get("speaker") or "").strip()
-            dub = str(seg.get("translated_text") or "").strip()
-            if character not in (None, "all") and name != character:
-                hide = True
-            if not hide and view == "pending" and not seg.get("pending"):
-                hide = True
-            elif not hide and view == "dubbed" and not dub:
-                hide = True
-            elif not hide and view == "source" and dub:
-                hide = True
-            if q and not hide:
-                blob = " ".join([
-                    name,
-                    str(seg.get("original_text") or seg.get("text") or ""),
-                    dub,
-                    str(seg.get("start") or ""),
-                    str(seg.get("gender") or ""),
-                ]).lower()
-                if q not in blob:
+        self.table.setUpdatesEnabled(False)
+        try:
+            for row, seg in enumerate(self._segments):
+                if row >= self.table.rowCount():
+                    break
+                hide = False
+                name = str(seg.get("speaker") or "").strip()
+                dub = str(seg.get("translated_text") or "").strip()
+                if character not in (None, "all") and name != character:
                     hide = True
-            self.table.setRowHidden(row, hide)
+                if not hide and view == "pending" and not seg.get("pending"):
+                    hide = True
+                elif not hide and view == "dubbed" and not dub:
+                    hide = True
+                elif not hide and view == "source" and dub:
+                    hide = True
+                if q and not hide:
+                    blob = " ".join([
+                        name,
+                        str(seg.get("original_text") or seg.get("text") or ""),
+                        dub,
+                        str(seg.get("start") or ""),
+                        str(seg.get("gender") or ""),
+                    ]).lower()
+                    if q not in blob:
+                        hide = True
+                self.table.setRowHidden(row, hide)
+        finally:
+            self.table.setUpdatesEnabled(True)
         self._update_script_meta()
 
     def _focus_script_search(self):
@@ -916,4 +967,14 @@ class ScriptPanelTools:
         self.empty_hint.setText("Dub a movie from Tasks, or")
         if hasattr(self, "btn_empty_retry"):
             self.btn_empty_retry.setVisible(False)
+
+    def _open_frame_ocr_scanner(self):
+        from claynext.gui.views.studio.frame_ocr_dialog import FrameOcrDialog
+        dlg = getattr(self, "_frame_ocr_dlg", None)
+        if dlg is None or not dlg.isVisible():
+            dlg = FrameOcrDialog(self, parent=self)
+            self._frame_ocr_dlg = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
 

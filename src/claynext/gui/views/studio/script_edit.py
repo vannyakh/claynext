@@ -282,6 +282,9 @@ class ScriptEditTools:
         act_auto_all = gender_menu.addAction("Auto-detect all · best voices")
         act_auto_all.triggered.connect(lambda: self._autodetect_genders(None, all_lines=True))
 
+        act_ai_cast = menu.addAction("✨ AI Cast & Character Analysis")
+        act_ai_cast.triggered.connect(self._run_ai_cast_analysis)
+
         regen_label = "Regenerate translation" if n == 1 else f"Regenerate {n} lines"
         regen = menu.addAction(regen_label)
         regen.setEnabled(self._script_worker is None)

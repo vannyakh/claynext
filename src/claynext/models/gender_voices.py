@@ -16,14 +16,58 @@ _FEMALE_HINTS = (
     "female", "woman", "girl", "lady", "she", "her", "hers", "mrs", "miss", "ms",
     "mother", "mom", "mum", "wife", "daughter", "sister", "aunt", "grandma",
     "sreymom", "hoaimy", "ava", "nanami", "sunhi", "xiaoxiao", "bella", "luna",
-    "rosie", "kiki", "她", "小姐", "女士", "妈妈", "姐姐", "妹妹", "娘",
+    "rosie", "kiki", "sarah", "mary", "elena", "emily", "anna", "emma", "olivia",
+    "sophia", "mia", "charlotte", "amelia", "harper", "evelyn", "abigail", "alice",
+    "grace", "chloe", "victoria", "claire", "lucy", "lily", "zoe", "stella",
+    "她", "小姐", "女士", "妈妈", "姐姐", "妹妹", "娘", "娘娘", "皇后", "太后", "贵妃",
+    "皇贵妃", "公主", "郡主", "格格", "夫人", "姑娘", "闺女", "千金", "丫鬟", "侍女",
+    "嬷嬷", "姑姑", "姨娘", "姨妈", "大娘", "大婶", "婆婆", "师姐", "师妹", "师娘",
+    "媳妇", "内子", "娘子", "母亲", "娘亲", "阿娘", "奶奶", "姥姥", "外婆", "表姐",
+    "堂妹", "女侠", "仙女", "仙子", "圣女", "女官", "才人", "美人", "贵人", "答应",
+    "常在", "臣妾", "民女", "妾身", "奴婢", "奴家", "小女", "本宫", "为娘", "愚妹",
 )
 _MALE_HINTS = (
     "male", "man", "boy", "gentleman", "he", "him", "his", "mr", "sir",
     "father", "dad", "husband", "son", "brother", "uncle", "grandpa",
     "piseth", "andrew", "namminh", "jasper", "bruno", "hugo", "leo",
-    "他", "先生", "爸爸", "哥哥", "弟弟", "爷",
+    "john", "peter", "david", "michael", "james", "robert", "william",
+    "richard", "joseph", "thomas", "charles", "daniel", "matthew",
+    "anthony", "mark", "donald", "steven", "paul", "joshua", "arthur",
+    "kenneth", "kevin", "brian", "george", "edward", "ronald", "timothy",
+    "jason", "jeffrey", "ryan", "jacob", "gary", "nicholas", "eric", "jonathan",
+    "marcus", "alex", "bruce", "jack", "sam", "tony", "steve", "tom",
+    "他", "先生", "爸爸", "哥哥", "弟弟", "爷", "通判", "官员", "属官", "大人",
+    "下官", "微臣", "末将", "在下", "卑职", "草民", "贫僧", "老衲", "老夫", "老朽",
+    "朕", "孤", "本王", "寡人", "为父", "愚兄", "小弟", "知府", "巡抚", "总督",
+    "丞相", "宰相", "太守", "县令", "尚书", "侍郎", "知县", "提督", "都督", "将军",
+    "统领", "侍卫", "校尉", "捕头", "差役", "师爷", "太医", "国师", "道长", "方丈",
+    "和尚", "法师", "王爷", "侯爷", "公公", "中官", "圣上", "陛下", "皇上", "皇阿玛",
+    "殿下", "公子", "少爷", "老爷", "少主", "庄主", "掌门", "大侠", "少侠", "仁兄",
+    "兄台", "贤弟", "兄长", "大哥", "二哥", "师兄", "师弟", "师父", "相公", "郎君",
+    "夫君", "丈夫", "岳父", "丈人", "父亲", "爹爹", "阿爹", "叔叔", "伯伯", "舅舅",
+    "表哥", "堂兄", "小生", "秀才", "举人", "状元", "教头",
 )
+
+_MALE_CHINESE_CUES = {
+    "下官", "微臣", "末将", "在下", "卑职", "草民", "贫僧", "老衲", "老夫", "老朽",
+    "朕", "孤", "本王", "寡人", "为父", "愚兄", "通判", "知府", "巡抚", "总督",
+    "丞相", "宰相", "太守", "县令", "尚书", "侍郎", "知县", "提督", "都督", "将军",
+    "统领", "侍卫", "校尉", "捕头", "差役", "师爷", "太医", "国师", "道长", "方丈",
+    "和尚", "法师", "王爷", "侯爷", "公公", "中官", "圣上", "陛下", "皇上", "皇阿玛",
+    "殿下", "公子", "少爷", "老爷", "少主", "庄主", "掌门", "大侠", "少侠", "仁兄",
+    "兄台", "贤弟", "兄长", "师兄", "师弟", "师父", "相公", "郎君", "夫君", "丈夫",
+    "岳父", "丈人", "爹爹", "阿爹", "叔叔", "伯伯", "舅舅", "表哥", "堂兄", "小生",
+    "秀才", "举人", "状元", "教头", "大人", "属官", "官员",
+}
+
+_FEMALE_CHINESE_CUES = {
+    "臣妾", "民女", "妾身", "奴婢", "奴家", "小女", "本宫", "为娘", "愚妹", "娘娘",
+    "皇后", "太后", "贵妃", "皇贵妃", "公主", "郡主", "格格", "夫人", "姑娘", "闺女",
+    "千金", "丫鬟", "侍女", "嬷嬷", "姑姑", "姨娘", "姨妈", "大娘", "大婶", "婆婆",
+    "师姐", "师妹", "师娘", "媳妇", "内子", "娘子", "娘亲", "阿娘", "奶奶", "姥姥",
+    "外婆", "表姐", "堂妹", "女侠", "仙女", "仙子", "圣女", "女官", "才人", "美人",
+    "贵人", "答应", "常在", "小姐", "女士", "妈妈", "姐姐", "妹妹",
+}
 
 
 def normalize_gender(value: Any) -> str:
@@ -74,10 +118,13 @@ def infer_gender_from_text(text: str) -> str:
 
 def infer_gender_from_speaker(speaker: str) -> str:
     name = str(speaker or "").strip()
+    if is_generic_speaker(name):
+        return "Unknown"
     low = name.lower()
-    if any(h in low for h in ("female", "woman", "girl", "lady", "sreymom", "ava")):
+    tokens = set(re.findall(r"\w+", low))
+    if any(h in tokens or h in low for h in _FEMALE_HINTS if len(h) >= 3):
         return "Female"
-    if any(h in low for h in ("male", "man", "boy", "piseth", "andrew")):
+    if any(h in tokens or h in low for h in _MALE_HINTS if len(h) >= 3):
         return "Male"
     # WhisperX / pyannote SPEAKER_00 / SPEAKER_01 — no reliable gender; leave Unknown.
     return "Unknown"
@@ -115,7 +162,7 @@ def detect_segment_gender(seg: dict[str, Any], *, honor_manual: bool = True) -> 
 
 
 _GENERIC_SPEAKER = re.compile(
-    r"^(?:character|speaker|unknown|spk|speaker)[\s_\-]?\d*$",
+    r"^(?:character|speaker|unknown|spk|voice)[\s_\-]?\d*$",
     re.IGNORECASE,
 )
 _INTRO = re.compile(
@@ -124,18 +171,55 @@ _INTRO = re.compile(
     re.IGNORECASE,
 )
 _VOCATIVE = re.compile(r"^([A-Z][\w'’\-]{1,16})[,，]\s")
+_VOCATIVE_TAIL = re.compile(r"[,，]\s*([A-Z][\w'’\-]{1,16})[!?\.。！？]*$")
+_VOCATIVE_MID = re.compile(
+    r"(?:^|[\.!?。！？\s])(?:yes|no|oh|ah|hey|wait|well|listen|look|hello|hi|thanks|thank you|sorry)[,，]\s*([A-Z][\w'’\-]{1,16})\b",
+    re.IGNORECASE,
+)
+
+_TITLES = (
+    r"Detective|Doctor|Dr\.|Captain|Capt\.|Officer|Professor|Prof\.|Sergeant|Sgt\.|"
+    r"Lieutenant|Lt\.|Agent|Inspector|Commander|Chief|Mr\.|Mrs\.|Miss|Ms\.|Lord|Lady|"
+    r"Father|Brother|Sister|Master|Uncle|Aunt|Grandpa|Grandma|Judge|Mayor|President|King|Queen"
+)
+_TITLED_NAME = re.compile(rf"\b({_TITLES})\s+([A-Z][\w'’\-]{{1,18}})\b", re.IGNORECASE)
+_KINSHIP_NAME = re.compile(
+    r"\b(?:my\s+(?:husband|wife|son|daughter|brother|sister|dad|mom|father|mother|partner|boss|uncle|aunt))\s*,?\s*([A-Z][\w'’\-]{1,18})\b",
+    re.IGNORECASE,
+)
+_CHINESE_TITLES = (
+    r"(?:总|队长|警官|主任|局长|教授|医生|老师|律师|师傅|大哥|大姐|小姐|大叔|阿姨|爷爷|奶奶|老板|会长|司令)"
+)
+_CHINESE_TITLED_NAME = re.compile(rf"([\u4e00-\u9fff]{{1,2}})({_CHINESE_TITLES})")
+
+_NON_NAMES = {
+    "wait", "look", "listen", "stop", "please", "thanks", "thank", "sorry",
+    "hello", "hi", "bye", "goodbye", "yeah", "yes", "no", "okay", "ok", "right",
+    "well", "oh", "ah", "hey", "man", "dude", "bro", "guys", "everyone", "somebody",
+    "nobody", "anyone", "today", "tomorrow", "yesterday", "nothing", "something",
+    "maybe", "actually", "suddenly", "here", "there", "where", "when", "what", "why",
+    "how", "who", "which", "come", "go", "help", "sure", "fine", "never", "always",
+    "again", "now", "then", "just", "see", "watch", "tell", "say", "know", "think",
+    "good", "bad", "great", "god", "lord", "damn", "shit", "fuck", "hold", "take",
+    "leave", "back", "away", "ready", "remember", "forget", "believe", "careful",
+}
+
 _EXPR_CUES = (
-    ("laugh", ("haha", "ha ha", "laugh", "lol", "哈哈", "呵呵", "嘿嘿")),
-    ("sigh", ("sigh", "唉")),
-    ("whisper", ("whisper", "小声", "悄悄")),
-    ("sad", ("sob", "cry", "呜", "哭")),
-    ("shout", ("shut up", "滚", "闭嘴")),
-    ("gasp", ("gasp",)),
+    ("laugh", ("haha", "ha ha", "hehe", "laugh", "lol", "chuckle", "giggle", "哈哈", "呵呵", "嘿嘿", "笑")),
+    ("whisper", ("whisper", "psst", "quietly", "shh", "hush", "小声", "悄悄", "嘘")),
+    ("sigh", ("sigh", "phew", "alas", "唉", "叹气")),
+    ("gasp", ("gasp", "whoa", "oh my god", "my god", "天哪", "哇", "倒吸")),
+    ("sad", ("sob", "cry", "crying", "tears", "please don't", "呜", "哭", "流泪", "求求你")),
+    ("shout", ("shut up", "get out", "stop it", "run!", "watch out!", "look out!", "滚", "闭嘴", "快跑", "小心")),
+    ("angry", ("damn it", "bastard", "how dare you", "curse", "可恶", "混蛋", "竟敢", "气死")),
+    ("excited", ("amazing", "incredible", "fantastic", "we did it", "hurray", "太棒了", "太好了", "成功了")),
+    ("calm", ("relax", "calm down", "breathe", "it's okay", "别紧张", "冷静", "放轻松")),
 )
 
 
 def is_generic_speaker(name: str) -> bool:
-    return bool(_GENERIC_SPEAKER.match(str(name or "").strip()))
+    clean = str(name or "").strip()
+    return not clean or bool(_GENERIC_SPEAKER.match(clean))
 
 
 def detect_line_expression(text: str) -> str:
@@ -159,16 +243,34 @@ def expression_tag(expression: str) -> str:
         "shout": "[shout]",
         "angry": "[angry]",
         "gasp": "[gasp]",
+        "excited": "[excited]",
+        "calm": "[calm]",
     }.get(str(expression or "").strip().lower(), "")
     return token
+
+
+def _is_valid_character_name(candidate: str) -> bool:
+    clean = str(candidate or "").strip(" ,，.。!！？?\"'’`")
+    if not clean or len(clean) < 2 or len(clean) > 24:
+        return False
+    if clean.casefold() in _NON_NAMES:
+        return False
+    if is_generic_speaker(clean):
+        return False
+    # Avoid numbers or code symbols
+    if any(char.isdigit() for char in clean):
+        return False
+    return True
 
 
 def apply_character_cast(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Name each speaker from the transcript and mark the line's expression.
 
-    A self-introduction wins. A name spoken at the start of a line is given to
-    the other person in that turn. Generic labels such as Character 1 stay when
-    the lines never say a name.
+    Analyzes multi-turn dialogue context:
+    - Self-introductions ("My name is John")
+    - Titled address ("Detective Miller", "Captain Jack", "李警官")
+    - Sentence-start and sentence-end vocatives ("Hey Sarah,", "Where are you, Peter?")
+    - Turn alternation: direct address is linked to the adjacent conversational partner.
     """
     if not segments:
         return segments
@@ -183,16 +285,21 @@ def apply_character_cast(segments: list[dict[str, Any]]) -> list[dict[str, Any]]
 
     intros: dict[str, Counter[str]] = {sp: Counter() for sp in speakers}
     addressed: dict[str, Counter[str]] = {sp: Counter() for sp in speakers}
+
     for index, seg in enumerate(segments):
         speaker = str(seg.get("speaker") or "")
         text = str(seg.get("text") or seg.get("original_text") or "").strip()
+        if not text:
+            continue
+
+        # 1. Self-introduction
         intro = _INTRO.search(text)
         if intro:
-            intros[speaker][intro.group(1).strip(" ,，.。")] += 2
-        call = _VOCATIVE.match(text)
-        if not call:
-            continue
-        called = call.group(1).strip()
+            candidate = intro.group(1).strip(" ,，.。")
+            if _is_valid_character_name(candidate):
+                intros[speaker][candidate] += 5
+
+        # Adjacent conversation partner
         other = ""
         if index + 1 < len(segments):
             nxt = str(segments[index + 1].get("speaker") or "")
@@ -202,8 +309,50 @@ def apply_character_cast(segments: list[dict[str, Any]]) -> list[dict[str, Any]]
             prev = str(segments[index - 1].get("speaker") or "")
             if prev and prev != speaker:
                 other = prev
-        if other:
-            addressed[other][called] += 1
+
+        if not other:
+            continue
+
+        # 2. Titled address ("Detective Miller")
+        for match in _TITLED_NAME.finditer(text):
+            title, name_part = match.group(1), match.group(2)
+            full_titled = f"{title.rstrip('.')} {name_part}"
+            if _is_valid_character_name(name_part):
+                addressed[other][full_titled] += 4
+                addressed[other][name_part] += 2
+
+        # 3. Kinship reference ("my husband, Mark")
+        kin_match = _KINSHIP_NAME.search(text)
+        if kin_match:
+            candidate = kin_match.group(1).strip()
+            if _is_valid_character_name(candidate):
+                addressed[other][candidate] += 4
+
+        # 4. Chinese titled address ("李队长")
+        for cn_match in _CHINESE_TITLED_NAME.finditer(text):
+            cand_cn = cn_match.group(0)
+            if len(cand_cn) >= 2:
+                addressed[other][cand_cn] += 4
+
+        # 5. Leading vocative ("Elena, look at this")
+        call = _VOCATIVE.match(text)
+        if call:
+            called = call.group(1).strip()
+            if _is_valid_character_name(called):
+                addressed[other][called] += 3
+
+        # 6. Conversational vocative ("Yes, Sarah.", "Wait, John!")
+        for mid_match in _VOCATIVE_MID.finditer(text):
+            called_mid = mid_match.group(1).strip()
+            if _is_valid_character_name(called_mid):
+                addressed[other][called_mid] += 3
+
+        # 7. Trailing vocative ("What do you think, Marcus?")
+        tail = _VOCATIVE_TAIL.search(text)
+        if tail:
+            called_tail = tail.group(1).strip()
+            if _is_valid_character_name(called_tail):
+                addressed[other][called_tail] += 2
 
     used = {sp for sp in speakers if not is_generic_speaker(sp)}
     rename: dict[str, str] = {}
@@ -214,12 +363,13 @@ def apply_character_cast(segments: list[dict[str, Any]]) -> list[dict[str, Any]]
         picked = ""
         for candidate, _count in votes.most_common():
             clean = candidate.strip()
-            if clean and clean not in used and not is_generic_speaker(clean):
+            if clean and clean not in used and not is_generic_speaker(clean) and _is_valid_character_name(clean):
                 picked = clean
                 break
         if picked:
             used.add(picked)
             rename[speaker] = picked
+
     for seg in segments:
         speaker = str(seg.get("speaker") or "")
         if speaker in rename:
@@ -468,4 +618,132 @@ def apply_manual_gender(
         lang=lang,
         force_redetect=False,
     )
+
+
+def ai_analyze_movie_cast(
+    segments: list[dict[str, Any]],
+    *,
+    lang: str = "",
+    primary_voice: str = "",
+    secondary_voice: str = "",
+    target_lang: str = "",
+    progress_callback: Any = None,
+) -> dict[str, Any]:
+    """
+    AI Character Cast & Neural Voice Profiler.
+
+    1. Analyzes dialogue turns, self-introductions, vocatives, titles and honorifics.
+    2. Identifies character roles (Lead, Supporting, Minor, Narrator) based on dialogue share.
+    3. Detects emotion delivery tags ([laugh], [sigh], [whisper], etc.) per line and character.
+    4. Auto-detects gender and casts complementary, non-overlapping neural voices.
+    5. Returns enriched segments and structured character profiles for the studio shelf.
+    """
+    if not segments:
+        return {"segments": [], "characters": [], "count": 0}
+
+    def _ping(pct: int, msg: str):
+        if progress_callback:
+            try:
+                progress_callback(pct, msg)
+            except Exception:
+                pass
+
+    _ping(15, "Analyzing dialogue context, names, and titles…")
+    # Step 1: Detect and assign character names + line expressions
+    apply_character_cast(segments)
+
+    _ping(45, "Classifying character roles and delivery traits…")
+    total_lines = len(segments)
+    speaker_lines: Counter[str] = Counter()
+    speaker_durations: dict[str, float] = {}
+    speaker_exprs: dict[str, Counter[str]] = {}
+
+    for seg in segments:
+        name = str(seg.get("speaker") or "").strip() or "Character 1"
+        speaker_lines[name] += 1
+        dur = float(seg.get("duration_sec") or 0.0)
+        if dur <= 0.0:
+            from claynext.models.dubbing_service import timestamp_to_sec
+            start = timestamp_to_sec(seg.get("start", ""))
+            end = timestamp_to_sec(seg.get("end", ""))
+            dur = max(0.2, end - start) if end > start else 2.0
+        speaker_durations[name] = speaker_durations.get(name, 0.0) + dur
+
+        expr = str(seg.get("expression") or "")
+        if expr:
+            speaker_exprs.setdefault(name, Counter())[expr] += 1
+
+    # Classify roles
+    char_roles: dict[str, str] = {}
+    ranked_speakers = [name for name, _ in speaker_lines.most_common()]
+    for idx, name in enumerate(ranked_speakers):
+        count = speaker_lines[name]
+        ratio = count / max(1, total_lines)
+        if idx == 0 and ratio >= 0.20:
+            char_roles[name] = "Lead"
+        elif idx == 1 and ratio >= 0.15:
+            char_roles[name] = "Co-Star"
+        elif ratio >= 0.05 or count >= 4:
+            char_roles[name] = "Supporting"
+        else:
+            char_roles[name] = "Minor"
+
+    # Step 2: Gender and Voice Assignment
+    _ping(70, "Casting distinct neural voices per character…")
+    eff_lang = lang or target_lang or ""
+    assign_gender_and_voices(
+        segments,
+        primary_voice=primary_voice,
+        secondary_voice=secondary_voice or primary_voice,
+        lang=eff_lang,
+        force_redetect=True,
+    )
+
+    # Attach roles back onto lines
+    for seg in segments:
+        name = str(seg.get("speaker") or "").strip()
+        if name in char_roles:
+            seg["character_role"] = char_roles[name]
+
+    # Assemble structured character profiles
+    _ping(90, "Building cast profiles…")
+    characters: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for name in ranked_speakers:
+        if name in seen:
+            continue
+        seen.add(name)
+
+        # Retrieve voice and gender from assigned segments
+        voice_id = ""
+        gender = "Unknown"
+        for seg in segments:
+            if str(seg.get("speaker") or "") == name:
+                voice_id = str(seg.get("tts_voice_hint") or seg.get("voice_id") or "")
+                gender = str(seg.get("gender") or "Unknown")
+                break
+
+        expr_counter = speaker_exprs.get(name, Counter())
+        top_exprs = [e for e, _ in expr_counter.most_common(2)]
+        expr_label = ", ".join(top_exprs)
+
+        characters.append({
+            "name": name,
+            "gender": gender,
+            "role": char_roles.get(name, "Supporting"),
+            "voice_id": voice_id,
+            "lines": speaker_lines[name],
+            "expression": expr_label,
+            "duration_sec": round(speaker_durations.get(name, 0.0), 2),
+            "in_script": True,
+        })
+
+    _ping(100, f"AI Cast complete: {len(characters)} characters profiled.")
+    return {
+        "segments": segments,
+        "characters": characters,
+        "count": len(characters),
+    }
+
 

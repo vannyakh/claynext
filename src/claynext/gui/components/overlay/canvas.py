@@ -24,6 +24,7 @@ class OverlayCanvas(CanvasView, CanvasGeom, CanvasItems, CanvasPaint, CanvasInpu
     video_transform_done = Signal()
     view_tool_changed = Signal(str)
     external_drop = Signal(dict)
+    capture_zone_changed = Signal(dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -60,4 +61,28 @@ class OverlayCanvas(CanvasView, CanvasGeom, CanvasItems, CanvasPaint, CanvasInpu
         self._tool_hot = ""
         # Project canvas area inside the full wrapper panel (letterbox is outside this).
         self._content = QRect()
+        # Interactive Subtitle Capture Zone & Key Point Tracker
+        self._capture_zone_active = False
+        self._capture_zone = {"x": 0.05, "y": 0.72, "w": 0.90, "h": 0.20}
+        self._zone_drag = ""
+        self._zone_drag_start: tuple = ()
+
+    def set_capture_zone(self, zone: dict | None, active: bool = True):
+        if zone:
+            self._capture_zone.update(zone)
+        self._capture_zone_active = active
+        self.update()
+        self.capture_zone_changed.emit(dict(self._capture_zone))
+
+    def get_capture_zone(self) -> dict:
+        return dict(self._capture_zone)
+
+    def is_capture_zone_active(self) -> bool:
+        return self._capture_zone_active
+
+    def toggle_capture_zone(self) -> bool:
+        self._capture_zone_active = not self._capture_zone_active
+        self.update()
+        self.capture_zone_changed.emit(dict(self._capture_zone))
+        return self._capture_zone_active
 

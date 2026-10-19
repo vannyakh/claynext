@@ -147,6 +147,15 @@ class TranslateEngine:
         return TranslateEngine._spoken_units_py(text, target_lang)
 
     @staticmethod
+    def spoken_units_fast(text: str, target_lang: str = "") -> int:
+        """Fast in-memory syllable / beat calculation without spawning subprocesses.
+
+        Essential for GUI table rendering, tooltips, and real-time typing where
+        forking processes blocks the Qt main thread and causes UI FPS drops.
+        """
+        return TranslateEngine._spoken_units_py(text, target_lang)
+
+    @staticmethod
     def _spoken_units_py(text: str, target_lang: str = "") -> int:
         bare = []
         skipping = False

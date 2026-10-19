@@ -49,6 +49,13 @@ class ScriptJobTools:
         )
         act_asr.setEnabled(can_retry and not busy)
 
+        act_ocr = self._script_menu_action(
+            menu, "video", "Scan subtitles from video frames (OCR)…",
+            self._open_frame_ocr_scanner,
+            tip="Capture burned-in subtitles frame-by-frame with custom capture zone tracker",
+        )
+        act_ocr.setEnabled(has_source and not busy)
+
         act_tr = self._script_menu_action(
             menu, "globe", "Retry translate (all)",
             lambda: self._regenerate_rows(all_rows),
@@ -63,6 +70,13 @@ class ScriptJobTools:
                 tip="Re-translate only the selected lines",
             )
             act_tr_sel.setEnabled(not busy)
+
+        act_fit = self._script_menu_action(
+            menu, "sparkles", f"Fit to slot timing with AI ({len(selected) if selected else 'all'})",
+            lambda rows=list(selected if selected else all_rows): self._regenerate_rows(rows, force_fit=True),
+            tip="Re-phrase dialogue with AI so speaking pace fits each video scene exactly",
+        )
+        act_fit.setEnabled(n > 0 and not busy)
 
         act_tts = self._script_menu_action(
             menu, "volume", "Retry TTS (all)",
@@ -145,6 +159,11 @@ class ScriptJobTools:
             menu, "folder", "Import script…",
             lambda: self._import_script(),
             tip="Load lines from SRT, VTT, or JSON",
+        )
+        self._script_menu_action(
+            menu, "video", "Frame OCR Subtitle Scanner…",
+            self._open_frame_ocr_scanner,
+            tip="Auto-detect burned-in subtitles from video frames with custom capture zone",
         )
         act_exp = self._script_menu_action(
             menu, "download", "Export script…",
@@ -349,7 +368,7 @@ class ScriptJobTools:
         self._end_script_job()
         self.table_spinner.stop()
 
-    def _regenerate_rows(self, rows: list[int]):
+    def _regenerate_rows(self, rows: list[int], *, force_fit: bool = False):
         rows = [row for row in rows if 0 <= row < len(self._segments)]
         if not rows or self._script_worker is not None:
             return
@@ -396,9 +415,9 @@ class ScriptJobTools:
                 source_lang=source_lang,
                 translator=translator,
                 ollama_model=ollama_model,
-                fit_duration=_flag("translate_fit_duration"),
-                use_slang=_flag("translate_slang"),
-                use_expression=_flag("translate_expression"),
+                fit_duration=True if force_fit else _flag("translate_fit_duration"),
+                use_slang=True if force_fit else _flag("translate_slang"),
+                use_expression=True if force_fit else _flag("translate_expression"),
                 progress_callback=_ping,
             )
 
@@ -408,7 +427,8 @@ class ScriptJobTools:
         worker.signals.finished.connect(self._on_regen_finished)
         self._script_worker = worker
         self.thread_pool.start(worker)
-        self.log.info(f"Regenerating {len(rows)} line(s) · Esc to stop")
+        action_name = "Fitting" if force_fit else "Regenerating"
+        self.log.info(f"{action_name} {len(rows)} line(s) to slot timing · Esc to stop")
 
     def _on_regen_ready(self, result):
         rows = list(self._regen_rows)

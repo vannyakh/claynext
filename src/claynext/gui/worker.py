@@ -93,19 +93,31 @@ class Worker(QRunnable):
     @Slot()
     def run(self):
         try:
-            self.signals.started.emit()
+            try:
+                self.signals.started.emit()
+            except RuntimeError:
+                return
             res = self.fn(*self.args, **self.kwargs)
             if self._progress_pending is not None:
                 self._flush_progress(self._progress_pending)
-            self.signals.result.emit(res)
+            try:
+                self.signals.result.emit(res)
+            except RuntimeError:
+                pass
         except Exception as e:
             exc_type, exc_value, exc_tb = sys.exc_info()
             tb_str = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
-            self.signals.error.emit(str(e), tb_str)
+            try:
+                self.signals.error.emit(str(e), tb_str)
+            except RuntimeError:
+                pass
         finally:
             timer = self._progress_timer
             self._progress_timer = None
             if timer is not None:
                 timer.cancel()
-            self.signals.finished.emit()
+            try:
+                self.signals.finished.emit()
+            except RuntimeError:
+                pass
 
