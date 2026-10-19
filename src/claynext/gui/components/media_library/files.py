@@ -22,6 +22,7 @@ from claynext.gui.components.media_library.const import (
     _COL_CHECK, _COL_DUR, _COL_INDEX, _COL_NAME, _COL_PREVIEW, _COL_SIZE, _COL_TYPE,
 )
 from claynext.gui.components.media_library.jobs import _DurJob, _ThumbJob
+from claynext.gui.components.media_library.order import episode_sort_key
 
 class LibraryFiles:
     def _active_view(self) -> QWidget:
@@ -149,6 +150,32 @@ class LibraryFiles:
         self.files_changed.emit(0)
         self.status_message.emit(f"Cleared {n} file(s)")
         self.file_selected.emit("")
+
+    def order_episodes(self):
+        """Reorder videos by the episode number in each filename."""
+        videos = [
+            path for path in self._paths
+            if os.path.splitext(path)[1].lower() in VIDEO_EXTS
+        ]
+        if len(videos) < 2:
+            self.status_message.emit("Add at least two episodes to order")
+            return
+        ordered = sorted(videos, key=episode_sort_key)
+        if ordered == videos:
+            self.status_message.emit("Episodes are already in order")
+            return
+        upcoming = iter(ordered)
+        self._paths = [
+            next(upcoming) if os.path.splitext(path)[1].lower() in VIDEO_EXTS else path
+            for path in self._paths
+        ]
+        self._refresh_items()
+        self._apply_view_mode()
+        self._update_count()
+        self.files_changed.emit(len(self._paths))
+        first = os.path.basename(ordered[0])
+        last = os.path.basename(ordered[-1])
+        self.status_message.emit(f"Ordered {len(ordered)} episodes · {first} → {last}")
 
     def reveal_selected(self):
         view = self._active_view()

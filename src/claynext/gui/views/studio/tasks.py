@@ -856,8 +856,8 @@ class TaskTools:
         self._refresh_tasks()
         return task
 
-    def _task_progress(self, value: int, message: str):
-        task = self._task_by_id(self._active_task)
+    def _task_progress(self, value: int, message: str, task_id: int | None = None):
+        task = self._task_by_id(self._active_task if task_id is None else task_id)
         if not task or task["status"] not in _ACTIVE:
             return
         value = max(0, min(100, int(value)))
@@ -898,6 +898,28 @@ class TaskTools:
             return
         self._add_task(source, status="done", comp=comp_index)
 
+    def _fail_source(self, source: str, message: str, status: str = "failed"):
+        """Mark one movie failed. Queued movies stay queued."""
+        target = os.path.abspath(source) if source else ""
+        task = self._task_by_id(self._active_task)
+        if task and task["status"] in _ACTIVE:
+            task_source = os.path.abspath(str(task.get("source") or ""))
+            if not target or task_source == target:
+                task["status"] = status
+                task["message"] = message
+                task.pop("control", None)
+                self._active_task = -1
+                self._refresh_tasks()
+                return
+        for item in self._tasks:
+            item_source = os.path.abspath(str(item.get("source") or ""))
+            if item["status"] == "queued" and target and item_source == target:
+                item["status"] = status
+                item["message"] = message
+                item.pop("control", None)
+                break
+        self._refresh_tasks()
+
     def _fail_active_task(self, message: str, status: str = "failed"):
         """Mark only the running movie. The rest of a batch stays queued."""
         task = self._task_by_id(self._active_task)
@@ -909,13 +931,12 @@ class TaskTools:
         self._refresh_tasks()
 
     def _fail_tasks(self, message: str, status: str = "failed"):
-        task = self._task_by_id(self._active_task)
-        if task and task["status"] in _ACTIVE:
-            task["status"] = status
-            task["message"] = message
-            task.pop("control", None)
         for item in self._tasks:
-            if item["status"] == "queued":
+            if item["status"] in _ACTIVE:
+                item["status"] = status
+                item["message"] = message
+                item.pop("control", None)
+            elif item["status"] == "queued":
                 item["status"] = "cancelled"
         self._active_task = -1
         self._refresh_tasks()
@@ -1199,12 +1220,13 @@ class TaskTools:
             return
         segments = [seg for seg in task.get("live") or [] if isinstance(seg, dict) and seg]
         source = str(task.get("source") or "")
+        merging = bool(getattr(self, "_merge_open", False))
         if source and hasattr(self, "_ensure_source_sequence"):
             already = (
                 hasattr(self, "_source_already_on_track")
                 and self._source_already_on_track(source)
             )
-            if not already:
+            if merging or not already:
                 self._ensure_source_sequence(source)
         keys = None
         if hasattr(self, "_script_row_key"):
@@ -1217,14 +1239,24 @@ class TaskTools:
             and len(segments) == self.table.rowCount()
             and len(segments) == len(getattr(self, "_segments", []))
         )
-        patched = same_shape and hasattr(self, "_patch_script_rows") and self._patch_script_rows(segments)
-        if patched:
-            if hasattr(self.timeline, "sync_dialogue"):
-                self.timeline.sync_dialogue(segments)
+        self._skip_dialogue_sync = merging
+        try:
+            patched = same_shape and hasattr(self, "_patch_script_rows") and self._patch_script_rows(segments)
+            if patched:
+                if merging and hasattr(self.timeline, "place_source_dialogue"):
+                    pass
+                elif hasattr(self.timeline, "sync_dialogue"):
+                    self.timeline.sync_dialogue(segments)
+                else:
+                    self.timeline.set_dialogue(segments)
             else:
-                self.timeline.set_dialogue(segments)
-        else:
-            self._fill_table(segments)
+                self._fill_table(segments)
+        finally:
+            self._skip_dialogue_sync = False
+        if merging and source and hasattr(self.timeline, "place_source_dialogue"):
+            offset = int(getattr(self, "_merge_offsets", {}).get(os.path.abspath(source), 0))
+            shifted = self._shift_segments(segments, offset) if hasattr(self, "_shift_segments") else segments
+            self.timeline.place_source_dialogue(shifted, source)
         self._live_paint_keys = keys
         self._scroll_live_row(task)
 

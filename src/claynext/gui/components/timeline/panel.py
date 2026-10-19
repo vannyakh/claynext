@@ -1744,6 +1744,74 @@ class TimelinePanel(QWidget):
         self.setUpdatesEnabled(True)
         self.canvas.update()
 
+    def append_master(self, path: str, duration_ms: int = 0, start_ms: int | None = None) -> int:
+        """Lay another movie onto the master track, after the movies already there."""
+        start = self.canvas.append_master(path, duration_ms, start_ms)
+        if int(getattr(self, "_sequence_load", 0)):
+            return start
+        self._rebuild_rail()
+        self._refresh_meta()
+        self.ruler.update()
+        if path:
+            self._load_wave(os.path.abspath(path))
+        self.clips_changed.emit()
+        return start
+
+    def drop_master(self, path: str) -> None:
+        """Remove a movie whose dub failed so the next one can follow the last good cut."""
+        self.canvas.drop_master(path)
+        if int(getattr(self, "_sequence_load", 0)):
+            return
+        self._rebuild_rail()
+        self._refresh_meta()
+        self.ruler.update()
+        self.clips_changed.emit()
+
+    def repack_masters(self) -> dict[str, int]:
+        """Close gaps left when a movie in a merged sequence fails."""
+        deltas = self.canvas.repack_masters()
+        if int(getattr(self, "_sequence_load", 0)):
+            return deltas
+        self._rebuild_rail()
+        self._refresh_meta()
+        self.ruler.update()
+        self.clips_changed.emit()
+        return deltas
+
+    def replace_masters(self, rows: list[dict]) -> None:
+        self.canvas.replace_masters(rows)
+        if int(getattr(self, "_sequence_load", 0)):
+            return
+        self._rebuild_rail()
+        self._refresh_meta()
+        self.ruler.update()
+        for row in rows or []:
+            path = str(row.get("path") or "") if isinstance(row, dict) else ""
+            if path and os.path.isfile(path):
+                self._load_wave(os.path.abspath(path))
+        self.clips_changed.emit()
+
+    def export_masters(self) -> list[dict]:
+        return [
+            {
+                "path": str(clip.extra.get("path") or ""),
+                "start_ms": int(clip.start_ms),
+                "duration_ms": int(clip.duration_ms),
+                "file_ms": int(clip.extra.get("file_ms") or clip.duration_ms),
+                "label": clip.label,
+            }
+            for clip in self.canvas.master_clips()
+        ]
+
+    def place_source_dialogue(self, segments: list[dict], source: str) -> None:
+        """Voice lines for one movie. Lines already on the sequence from other movies stay."""
+        tracks = len(self.canvas.tracks)
+        self.canvas.place_source_dialogue(segments, source)
+        if len(self.canvas.tracks) != tracks:
+            self._rebuild_rail()
+        self._refresh_meta()
+        self._load_missing_voice_waves()
+
     def set_media(self, path: str, duration_ms: int = 0):
         path = os.path.abspath(path) if path else ""
         current = os.path.abspath(self.canvas.media_path) if self.canvas.media_path else ""

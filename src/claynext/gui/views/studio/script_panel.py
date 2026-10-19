@@ -593,7 +593,7 @@ class ScriptPanelTools:
             self._fit_script_rows()
         self._refresh_character_filter()
         self._apply_script_filters()
-        if hasattr(self, "timeline"):
+        if hasattr(self, "timeline") and not getattr(self, "_skip_dialogue_sync", False):
             self.timeline.set_dialogue(self._segments)
 
     def _fit_script_rows(self):

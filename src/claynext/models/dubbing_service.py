@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import hashlib
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable, Dict
 
@@ -219,6 +221,95 @@ def _try_demucs(wav_path: str, out_dir: Path, ping: Callable) -> tuple[str | Non
         return None, None
 
 
+def _tts_workers(requested: int | None) -> int:
+    if requested is not None and int(requested) > 0:
+        return max(1, int(requested))
+    try:
+        from claynext.adapters.cpu import get_cpu_adapter
+
+        return max(1, int(get_cpu_adapter().hardware_plan().get("tts_workers") or 1))
+    except Exception:
+        return 1
+
+
+def _speak_lines(
+    translated: list[dict],
+    *,
+    job: Path,
+    voice_id: str,
+    sync_mode: str,
+    render: bool,
+    vocal_master: bool,
+    voiceover_boost: float,
+    workers: int,
+    control,
+    share: Callable,
+    ping: Callable,
+) -> list[tuple[str, int]]:
+    """Speak every line. Several lines run at once when the machine has the cores."""
+    pending = [
+        (idx, item)
+        for idx, item in enumerate(translated)
+        if str(item.get("translated_text") or item.get("text") or "").strip()
+    ]
+    total = max(1, len(pending))
+    placed: list[tuple[str, int]] = []
+    lock = threading.Lock()
+    done = 0
+
+    def _one(idx: int, item: dict) -> None:
+        if control is not None:
+            control.checkpoint()
+        voice = item.get("tts_voice_hint") or voice_id
+        text_to_speak = str(item.get("translated_text") or item.get("text") or "")
+        raw_mp3 = str(job / f"seg_{idx + 1:04d}.mp3")
+        TTSEngine.synthesize(text_to_speak, voice, raw_mp3)
+        start = float(item.get("start_sec") or timestamp_to_sec(item.get("start", "")))
+        end = float(item.get("end_sec") or timestamp_to_sec(item.get("end", "")))
+        slot = max(0.15, end - start) if end > start else 2.0
+        fitted = str(job / f"seg_{idx + 1:04d}_fit.wav")
+        if sync_mode == "natural":
+            min_t, max_t = 1.0, 1.0
+        elif sync_mode == "subtle":
+            min_t, max_t = 0.85, 1.25
+        else:
+            min_t, max_t = 0.65, 1.85
+        fit_duration(raw_mp3, fitted, slot, min_tempo=min_t, max_tempo=max_t, pad_or_trim=True)
+        if not render and vocal_master:
+            fitted = master_voiceover_track(
+                fitted, str(job / f"seg_{idx + 1:04d}_master.wav"), volume_boost=voiceover_boost,
+            )
+        item["audio_path"] = fitted
+        item["start_ms"] = int(start * 1000)
+        item["voice_id"] = voice
+        item["duration"] = f"{slot:.1f}s"
+        item["duration_sec"] = round(slot, 2)
+        with lock:
+            placed.append((fitted, int(start * 1000)))
+        share("clip", {"index": idx, "segment": dict(item)})
+
+    if workers <= 1 or len(pending) <= 1:
+        for n, (idx, item) in enumerate(pending):
+            speaker = item.get("speaker") or f"Line {idx + 1}"
+            ping(58 + int((n / total) * 24), f"TTS {n + 1}/{total} ({speaker})…")
+            _one(idx, item)
+            ping(58 + int(((n + 1) / total) * 24), f"Dubbed {n + 1}/{total} ({speaker})")
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_one, idx, item) for idx, item in pending]
+            try:
+                for fut in as_completed(futures):
+                    fut.result()
+                    done += 1
+                    ping(58 + int((done / total) * 24), f"Dubbed {done}/{total}")
+            except Exception:
+                if control is not None:
+                    control.cancel()
+                raise
+    placed.sort(key=lambda row: row[1])
+    return placed
+
+
 class DubbingEngine:
     @staticmethod
     def process_dubbing(
@@ -249,6 +340,7 @@ class DubbingEngine:
         translate_fit_duration: bool = True,
         translate_slang: bool = True,
         translate_expression: bool = True,
+        tts_workers: int | None = None,
     ) -> Dict[str, Any]:
         if not video_path or not os.path.isfile(video_path):
             raise FileNotFoundError("Select a video file first.")
@@ -372,46 +464,21 @@ class DubbingEngine:
 
         share("translated", [dict(seg) for seg in translated])
         # Step 4: TTS Speech Synthesis & Character Duration Fitting
-        ping(58, "Synthesizing dialogue & fitting character durations…")
-        placed: list[tuple[str, int]] = []
-        total = max(1, len(translated))
-        for idx, item in enumerate(translated):
-            voice = item.get("tts_voice_hint") or voice_id
-            raw_mp3 = str(job / f"seg_{idx + 1:04d}.mp3")
-            text_to_speak = item.get("translated_text") or item.get("text") or ""
-            if not text_to_speak.strip():
-                continue
-            speaker_label = item.get("speaker") or f"Line {idx + 1}"
-            # Checkpoint before long TTS / FFmpeg so Stop/Pause can land between lines
-            base = 58 + int((idx / total) * 24)
-            ping(base, f"TTS {idx + 1}/{total} ({speaker_label})…")
-            TTSEngine.synthesize(text_to_speak, voice, raw_mp3)
-            ping(base + 1, f"Fitting {idx + 1}/{total} ({speaker_label})…")
-
-            start = float(item.get("start_sec") or timestamp_to_sec(item.get("start", "")))
-            end = float(item.get("end_sec") or timestamp_to_sec(item.get("end", "")))
-            slot = max(0.15, end - start) if end > start else 2.0
-            fitted = str(job / f"seg_{idx + 1:04d}_fit.wav")
-            if sync_mode == "natural":
-                min_t, max_t = 1.0, 1.0
-            elif sync_mode == "subtle":
-                min_t, max_t = 0.85, 1.25
-            else:
-                min_t, max_t = 0.65, 1.85
-            fit_duration(raw_mp3, fitted, slot, min_tempo=min_t, max_tempo=max_t, pad_or_trim=True)
-            if not render and vocal_master:
-                ping(base + 2, f"Mastering {idx + 1}/{total}…")
-                fitted = master_voiceover_track(
-                    fitted, str(job / f"seg_{idx + 1:04d}_master.wav"), volume_boost=voiceover_boost,
-                )
-            placed.append((fitted, int(start * 1000)))
-            item["audio_path"] = fitted
-            item["start_ms"] = int(start * 1000)
-            item["voice_id"] = voice
-            item["duration"] = f"{slot:.1f}s"
-            item["duration_sec"] = round(slot, 2)
-            share("clip", {"index": idx, "segment": dict(item)})
-            ping(58 + int(((idx + 1) / total) * 24), f"Dubbed {idx + 1}/{total} ({speaker_label})")
+        workers = _tts_workers(tts_workers)
+        ping(58, f"Synthesizing dialogue on {workers} voice worker(s)…")
+        placed = _speak_lines(
+            translated,
+            job=job,
+            voice_id=voice_id,
+            sync_mode=sync_mode,
+            render=render,
+            vocal_master=vocal_master,
+            voiceover_boost=voiceover_boost,
+            workers=workers,
+            control=control,
+            share=share,
+            ping=ping,
+        )
 
         if not render:
             ping(96, "Building the speech-free music and effects bed…")

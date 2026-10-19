@@ -1,4 +1,4 @@
-use claynext_cpu::{compute_audio_stats, extract_waveform_peaks, resample_linear};
+use claynext_cpu::{compute_audio_stats, extract_waveform_peaks, plan_json, resample_linear};
 use std::env;
 
 fn main() {
@@ -6,6 +6,7 @@ fn main() {
     let command = args.get(1).map(|s| s.as_str()).unwrap_or("help");
 
     match command {
+        "hardware" => println!("{}", plan_json()),
         "benchmark" => {
             let samples: Vec<f32> = (0..1_000_000).map(|i| (i as f32 * 0.01).sin()).collect();
             let start = std::time::Instant::now();
@@ -25,7 +26,7 @@ fn main() {
         }
         _ => {
             eprintln!("Claynext CPU Engine Tool");
-            eprintln!("Usage: claynext-cpu benchmark");
+            eprintln!("Usage: claynext-cpu <hardware|benchmark>");
             std::process::exit(1);
         }
     }

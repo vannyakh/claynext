@@ -313,7 +313,9 @@ class CanvasPaint:
         rect = self.clip_rect(clip)
         selected = clip.id in self.selected_ids
         is_video = clip.kind == "video" and (clip.extra.get("master") or clip.extra.get("path"))
-        if is_video and self._frames:
+        strip_path = str(clip.extra.get("path") or "")
+        own_strip = not strip_path or strip_path == self.media_path
+        if is_video and self._frames and own_strip:
             self._paint_filmstrip(p, clip, rect, selected)
             return
         p.save()

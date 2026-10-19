@@ -4,6 +4,7 @@ Adapters Layer: Bridges Python PySide6 application to native Rust multimedia cor
 from __future__ import annotations
 
 from claynext.adapters.ai import AiAdapter, get_ai_adapter
+from claynext.adapters.cpu import CpuAdapter, get_cpu_adapter
 from claynext.adapters.dubbing import DubbingAdapter, get_dubbing_adapter
 from claynext.adapters.events import EngineEventAdapter, get_event_adapter
 from claynext.adapters.ffmpeg_adapter import FFmpegAdapter, get_ffmpeg_adapter
@@ -32,6 +33,7 @@ from claynext.adapters.timeline import TimelineAdapter, get_timeline_adapter
 
 __all__ = [
     "AiAdapter",
+    "CpuAdapter",
     "DubbingAdapter",
     "EngineEventAdapter",
     "FFmpegAdapter",
@@ -50,6 +52,7 @@ __all__ = [
     "ensure_playback_file",
     "ensure_proxy_render",
     "get_ai_adapter",
+    "get_cpu_adapter",
     "get_dubbing_adapter",
     "get_event_adapter",
     "get_ffmpeg_adapter",

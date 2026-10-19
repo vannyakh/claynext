@@ -153,16 +153,16 @@ class StartLocalizeDialog(QDialog):
         head.setObjectName("start_dub_sources_head")
         lay.addWidget(head)
 
-        self.radio_separate = QRadioButton("Separate episodes")
+        self.radio_separate = QRadioButton("Dedicated")
         self.radio_separate.setObjectName("dub_switch")
         self.radio_separate.setToolTip(
-            "Localize each episode as its own task and script. Best when episodes stay separate."
+            "Create a sequence for each selected movie and run a dub job for each one."
         )
-        self.radio_merge = QRadioButton("Merge to one movie")
+        self.radio_merge = QRadioButton("Merge movie")
         self.radio_merge.setObjectName("dub_switch")
         self.radio_merge.setToolTip(
-            "Join episodes in order first, then run one transcription/translate/speak pass "
-            "and land one combined movie on the timeline."
+            "Dub each selected movie on its own job, then lay them in order "
+            "on one sequence's master track."
         )
         self._batch_group = QButtonGroup(self)
         self._batch_group.addButton(self.radio_separate)

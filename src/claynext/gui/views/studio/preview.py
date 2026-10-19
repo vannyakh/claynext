@@ -205,6 +205,15 @@ class PreviewTools:
         if resume is None:
             resume = self.timeline.canvas.playhead_ms
         self._timeline_resume_ms = None
+        if len(self.timeline.canvas.master_clips()) > 1:
+            self._bind_master_player(int(resume or 0))
+            stems = self._current_stems() if hasattr(self, "_current_stems") else {}
+            self.preview.set_stems(str(stems.get("bed") or ""), str(stems.get("dialogue") or ""))
+            self._apply_timeline_gains()
+            self._apply_preview_canvas()
+            self._sync_preview_overlays(force=True)
+            self._sync_player_header()
+            return
         if getattr(self.preview, "_path", "") != media:
             self.preview.load(media)
             self.preview.seek_ms(resume)
@@ -301,17 +310,53 @@ class PreviewTools:
         if self._player_mode != "timeline":
             return
         if hasattr(self, "timeline") and self.timeline.has_footage() and ms > 0:
-            self.timeline.set_duration_ms(ms)
+            # A merged sequence has several masters. The player reports one file, not the whole track.
+            if len(self.timeline.canvas.master_clips()) <= 1:
+                self.timeline.set_duration_ms(ms)
             self._sync_master_transport()
 
-    def _master_bounds(self) -> tuple[int, int, int] | None:
-        """Timeline start, file in-point, and length. Always the current master, even when it is the whole file."""
+    def _loaded_master_clip(self):
         if not hasattr(self, "timeline"):
             return None
-        clip = self.timeline.canvas.master_clip()
+        loaded = os.path.abspath(getattr(self.preview, "_path", "") or "")
+        if not loaded:
+            return self.timeline.canvas.master_clip()
+        for clip in self.timeline.canvas.master_clips():
+            path = os.path.abspath(str(clip.extra.get("path") or ""))
+            if path == loaded:
+                return clip
+        return self.timeline.canvas.master_clip()
+
+    def _master_bounds(self) -> tuple[int, int, int] | None:
+        """Timeline start, file in-point, and length of the master currently in the player."""
+        if not hasattr(self, "timeline"):
+            return None
+        clip = self._loaded_master_clip()
         if clip is None or clip.duration_ms <= 0:
             return None
         return int(clip.start_ms), int(clip.extra.get("in_ms") or 0), int(clip.duration_ms)
+
+    def _bind_master_player(self, ms: int, *, resume_play: bool = False) -> None:
+        """Load whichever master movie sits under this timeline time."""
+        if not hasattr(self, "timeline"):
+            return
+        clip = self.timeline.canvas.master_at(ms) or self.timeline.canvas.master_clip()
+        if clip is None:
+            return
+        path = str(clip.extra.get("path") or "") or self.timeline.canvas.media_path
+        loaded = os.path.abspath(getattr(self.preview, "_path", "") or "")
+        if path and os.path.abspath(path) != loaded:
+            self.preview.load(path)
+        inn = int(clip.extra.get("in_ms") or 0)
+        self.preview.seek_ms(max(0, inn + int(ms) - int(clip.start_ms)))
+        if hasattr(self, "playback"):
+            self.playback.set_window(inn, int(clip.duration_ms))
+        if not resume_play:
+            return
+        if getattr(self.preview, "_source_ready", False):
+            self.preview.player.play()
+        else:
+            self.preview._pending_play = True
 
     def _file_ms_for_timeline(self, ms: int) -> int:
         bounds = self._master_bounds()
@@ -348,7 +393,10 @@ class PreviewTools:
             self._timeline_resume_ms = ms
             self.show_timeline_player()
         self._hold_playhead = True
-        self.preview.seek_ms(self._file_ms_for_timeline(ms))
+        if len(self.timeline.canvas.master_clips()) > 1:
+            self._bind_master_player(ms)
+        else:
+            self.preview.seek_ms(self._file_ms_for_timeline(ms))
         self._reset_clip_lanes()
         self._sync_voice_clip(ms)
         self._sync_preview_overlays()
@@ -378,10 +426,10 @@ class PreviewTools:
     def _sync_voice_clip(self, ms: int):
         if not hasattr(self, "timeline"):
             return
-        bounds = self._master_bounds()
+        span = self.timeline.canvas.master_span() if hasattr(self, "timeline") else None
         outside = False
-        if bounds is not None:
-            start, _inn, dur = bounds
+        if span is not None:
+            start, dur = span
             outside = ms < start or ms >= start + dur
         for take, lane in self._clip_lanes.items():
             clip = None if outside else self.timeline.canvas.voice_clip_at(ms, take=take)
@@ -494,8 +542,16 @@ class PreviewTools:
         else:
             bounds = self._master_bounds()
             if bounds is not None and self._main_playing():
-                _start, inn, dur = bounds
+                start, inn, dur = bounds
                 if ms >= inn + dur:
+                    masters = self.timeline.canvas.master_clips()
+                    nxt = next((clip for clip in masters if clip.start_ms >= start + dur - 40), None)
+                    if nxt is not None and nxt is not self._loaded_master_clip():
+                        self._bind_master_player(nxt.start_ms, resume_play=True)
+                        self.timeline.set_playhead_ms(nxt.start_ms)
+                        self._sync_preview_overlays()
+                        self._sync_voice_clip(nxt.start_ms)
+                        return
                     self.preview.player.pause()
                     self.preview.seek_ms(max(inn, inn + dur - 1))
                     ms = max(inn, inn + dur - 1)

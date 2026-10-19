@@ -13,6 +13,14 @@ from claynext.gui.views.studio.captions import is_managed_caption
 from claynext.utils.config import OUTPUTS_DIR
 
 
+def _format_cue(seconds: float) -> str:
+    ms = int(round(max(0.0, float(seconds)) * 1000))
+    hours, rem = divmod(ms, 3_600_000)
+    minutes, rem = divmod(rem, 60_000)
+    secs, milli = divmod(rem, 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{milli:03d}"
+
+
 class PipelineTools:
     """Background dubbing job and the finished file."""
 
@@ -57,18 +65,21 @@ class PipelineTools:
 
         # Environment preflight runs in StartLocalizeDialog before Accept.
 
-        # Batch: merge episodes into one movie (single process), or dedicated tasks (default).
-        if len(sources) >= 2 and opts.get("batch_mode") == "merge":
-            self._start_merged_episode_dub(sources)
-            return
+        # Dedicated: one sequence and one job per movie.
+        # Merge: one sequence, a job per movie, then each movie lands on the master track.
+        layout = "merge" if len(sources) >= 2 and opts.get("batch_mode") == "merge" else "separate"
+        self._begin_dub_jobs(sources, layout=layout)
 
-        self._begin_dub_jobs(sources)
-        if len(sources) > 1:
-            self.log.info(f"Batch dub · {len(sources)} dedicated episode tasks")
-
-    def _begin_dub_jobs(self, sources: list[str]):
+    def _begin_dub_jobs(self, sources: list[str], layout: str = "separate"):
         """Queue sources and launch the first dub job."""
-        self._dub_queue = sources[1:]
+        self._batch_layout = "merge" if layout == "merge" and len(sources) >= 2 else "separate"
+        self._merge_open = self._batch_layout == "merge"
+        self._merge_offsets = {}
+        self._merge_comp_index = -1
+        self._batch_failed = []
+        self._flight = {}
+        self._batch_stopping = False
+        self._dub_queue = list(sources)
         self.set_dub_source(sources[0])
         self._queue_tasks(sources)
         self._clear_error()
@@ -76,62 +87,21 @@ class PipelineTools:
         self._set_busy(True)
         if hasattr(self, "workspace"):
             self._focus_script_shelf()
-        self._launch_dub_job()
-
-    def _start_merged_episode_dub(self, sources: list[str]):
-        """Order → concat episodes → one dub pass / one timeline movie."""
-        from PySide6.QtWidgets import QDialog
-        import time
-
-        from claynext.adapters.ffmpeg_service import concat_videos
-        from claynext.gui.views.studio.merge import MergeOrderDialog
-
-        order = MergeOrderDialog(
-            sources,
-            self,
-            window_title="Merge episodes",
-            title_text="Episode order",
-            hint_text=(
-                "Drag to set order. Episodes merge into one movie, then a single "
-                "transcription → translate → speak pass fills the timeline."
-            ),
-            accept_label="Merge & dub",
+        plan = self._load_hardware_plan()
+        self.log.info(
+            f"Hardware · {plan['logical_cores']} threads · {plan['physical_cores']} cores · "
+            f"{plan['dub_jobs']} movies at once · {plan['tts_workers']} voice workers"
         )
-        if order.exec() != QDialog.DialogCode.Accepted:
+        if self._merge_open:
+            self._detach_other_sequence()
+            self.log.info(
+                f"Merge movie · {len(sources)} jobs · one sequence · master track"
+            )
+            self._measure_merge_sources(sources)
             return
-        ordered = order.ordered_paths()
-        if len(ordered) < 2:
-            self._show_error("Merge", "Need at least two episodes to merge.")
-            return
-
-        dest = str(OUTPUTS_DIR / f"merged_episodes_{int(time.time())}.mp4")
-        self._clear_error()
-        self._set_busy(True)
-        if hasattr(self, "_set_script_loading"):
-            self._set_script_loading(True, "Merging…", "Joining episodes into one movie")
-        self.log.info(f"Merging {len(ordered)} episodes → one movie before dub")
-
-        worker = Worker(concat_videos, ordered, dest)
-        worker.signals.progress.connect(self._on_progress)
-        worker.signals.result.connect(self._on_episode_merge_ready)
-        worker.signals.error.connect(self._on_episode_merge_error)
-        self._worker = worker
-        self.thread_pool.start(worker)
-
-    def _on_episode_merge_ready(self, path: str):
-        if not path or not os.path.isfile(path):
-            self._set_busy(False)
-            self._show_error("Merge failed", "Merged movie was not created.")
-            return
-        self.log.success(f"Merged episodes · {os.path.basename(path)}")
-        if hasattr(self, "media_lib"):
-            self.media_lib.add_files([path], select_last=True)
-        self._begin_dub_jobs([path])
-
-    def _on_episode_merge_error(self, message: str, _tb: str = ""):
-        self._set_busy(False)
-        self._show_error("Merge failed", message or "Could not merge episodes.")
-        self.log.error(f"Episode merge failed · {message}")
+        if len(sources) > 1:
+            self.log.info(f"Dedicated · {len(sources)} sequences · one job each")
+        self._launch_next_or_finish()
 
     def _start_dub_defaults(self) -> dict:
         try:
@@ -331,6 +301,9 @@ class PipelineTools:
         """Probe the movie off the interface thread, then place it on Source."""
         if not path or not os.path.isfile(path) or not hasattr(self, "timeline"):
             return
+        if getattr(self, "_merge_open", False):
+            self._queue_merge_source(path)
+            return
         abspath = os.path.abspath(path)
         if self._source_already_on_track(abspath):
             return
@@ -392,6 +365,65 @@ class PipelineTools:
             self.timeline.sync_dialogue(segments)
         self.log.info(f"Source sequence · {os.path.basename(path)}")
 
+    def _queue_merge_source(self, path: str) -> None:
+        """Place this movie at the end of the one merge sequence. Do not replace the master."""
+        if not path or not os.path.isfile(path) or not hasattr(self, "timeline"):
+            return
+        abspath = os.path.abspath(path)
+        offsets = getattr(self, "_merge_offsets", None)
+        if not isinstance(offsets, dict):
+            offsets = {}
+            self._merge_offsets = offsets
+        existing = next(
+            (
+                clip for clip in self.timeline.canvas.master_clips()
+                if os.path.abspath(str(clip.extra.get("path") or "")) == abspath
+            ),
+            None,
+        )
+        if existing is not None:
+            offsets.setdefault(abspath, int(existing.start_ms))
+            return
+        offset = 0
+        span = self.timeline.canvas.master_span()
+        if span:
+            offset = int(span[0] + span[1])
+        offsets[abspath] = offset
+        token = int(getattr(self, "_merge_seq_token", 0)) + 1
+        self._merge_seq_token = token
+
+        def probe(progress_callback=None):
+            from claynext.adapters.ffmpeg_adapter import get_ffmpeg_adapter
+            return int(get_ffmpeg_adapter().duration(abspath) * 1000)
+
+        worker = Worker(probe)
+        worker.signals.result.connect(
+            lambda ms, media=abspath, at=offset, seq=token: self._apply_merge_source(
+                media, int(ms or 0), at, seq,
+            )
+        )
+        worker.signals.error.connect(
+            lambda *_err, media=abspath, at=offset, seq=token: self._apply_merge_source(
+                media, 1000, at, seq,
+            )
+        )
+        self.thread_pool.start(worker)
+
+    def _apply_merge_source(self, path: str, duration_ms: int, start_ms: int, token: int) -> None:
+        if token != int(getattr(self, "_merge_seq_token", 0)):
+            return
+        if not path or not os.path.isfile(path) or not hasattr(self, "timeline"):
+            return
+        self.timeline.append_master(path, duration_ms, start_ms)
+        self._timeline_open = True
+        if hasattr(self, "_sync_timeline_visibility"):
+            self._sync_timeline_visibility()
+        name = os.path.basename(path)
+        if start_ms <= 0:
+            self.log.info(f"Master · {name}")
+        else:
+            self.log.info(f"Master · {name} at {start_ms / 1000:.1f}s")
+
     def _detach_other_sequence(self) -> None:
         """Keep the open sequence saved, then leave the timeline free for this source."""
         index = int(getattr(self, "_composition_index", -1))
@@ -418,12 +450,125 @@ class PipelineTools:
         if names:
             self.timeline.set_compositions(names, -1)
 
+    def _load_hardware_plan(self) -> dict:
+        from claynext.adapters.cpu import get_cpu_adapter
+
+        plan = dict(get_cpu_adapter().hardware_plan())
+        try:
+            cap = int(self.store.get_setting("studio", "worker_threads", "0") or 0)
+        except (TypeError, ValueError):
+            cap = 0
+        if cap > 0:
+            plan["dub_jobs"] = max(1, min(int(plan.get("dub_jobs") or 1), cap))
+            plan["tts_workers"] = max(1, min(int(plan.get("tts_workers") or 1), cap))
+        self._hardware_plan = plan
+        return plan
+
+    def _batch_width(self) -> int:
+        plan = getattr(self, "_hardware_plan", None)
+        if not isinstance(plan, dict):
+            plan = self._load_hardware_plan()
+        return max(1, int(plan.get("dub_jobs") or 1))
+
+    def _measure_merge_sources(self, sources: list[str]) -> None:
+        """Read every movie length off the UI thread, then lay them on the master in order."""
+        self.log.info(f"Measuring {len(sources)} movies…")
+
+        def work(progress_callback=None):
+            from claynext.adapters.ffmpeg_adapter import get_ffmpeg_adapter
+
+            ff = get_ffmpeg_adapter()
+            rows = []
+            total = max(1, len(sources))
+            for index, path in enumerate(sources):
+                ms = int(float(ff.duration(path) or 0) * 1000)
+                rows.append((os.path.abspath(path), max(1000, ms)))
+                if progress_callback:
+                    progress_callback(int((index + 1) * 100 / total), os.path.basename(path))
+            return rows
+
+        worker = Worker(work)
+        worker.signals.result.connect(self._on_merge_measured)
+        worker.signals.error.connect(lambda msg, _tb: self._on_merge_measure_failed(str(msg)))
+        self.thread_pool.start(worker)
+
+    def _on_merge_measured(self, rows) -> None:
+        if not isinstance(rows, list):
+            self._launch_next_or_finish()
+            return
+        offset = 0
+        self._merge_offsets = {}
+        for path, ms in rows:
+            if not path:
+                continue
+            self._merge_offsets[path] = offset
+            self.timeline.append_master(path, int(ms), offset)
+            offset += int(ms)
+        self.log.info(f"Master laid out · {len(self._merge_offsets)} movies · {offset / 1000:.1f}s")
+        self._launch_next_or_finish()
+
+    def _on_merge_measure_failed(self, message: str) -> None:
+        self.log.warn(f"Could not measure movies · {message}")
+        self._launch_next_or_finish()
+
+    def _release_slot(self, path: str, task_id: int | None) -> None:
+        flight = getattr(self, "_flight", None)
+        if isinstance(flight, dict) and path:
+            flight.pop(os.path.abspath(path), None)
+        if path:
+            self.selected_file = path
+        if task_id is not None:
+            self._active_task = task_id
+
+    def _cancel_inflight(self) -> None:
+        flight = getattr(self, "_flight", None)
+        if not isinstance(flight, dict):
+            return
+        for slot in list(flight.values()):
+            task = self._task_by_id(int(slot.get("task_id") or -1))
+            control = task.get("control") if task else None
+            if control is not None:
+                control.cancel()
+
+    def _halt_batch(self) -> None:
+        if getattr(self, "_batch_stopping", False):
+            return
+        self._batch_stopping = True
+        self._cancel_inflight()
+        self._dub_queue = []
+        self._merge_open = False
+        self._set_busy(False)
+        self._fail_tasks("Stopped", status="cancelled")
+        self.log.info("Dub stopped")
+
+    def _finish_job(self, path: str, task_id: int, res) -> None:
+        self._release_slot(path, task_id)
+        self._on_complete(res)
+
+    def _fail_job(self, path: str, task_id: int, message: str, stack: str) -> None:
+        self._release_slot(path, task_id)
+        if str(message) == "Dub stopped" or getattr(self, "_batch_stopping", False):
+            task = self._task_by_id(task_id)
+            if task and task.get("status") in {"running", "paused"}:
+                task["status"] = "cancelled"
+                task["message"] = "Stopped"
+                task.pop("control", None)
+                self._refresh_tasks()
+            self._halt_batch()
+            return
+        self._on_error(message, stack)
+
     def _launch_dub_job(self):
         from claynext.gui.views.studio.tasks import LiveBridge
 
-        # The other movie's sequence stays in its composition. This dub shows the new source.
-        self._detach_other_sequence()
-        self._ensure_source_sequence(self.selected_file)
+        owns_script = not bool(getattr(self, "_flight", None))
+        headless = not owns_script and not getattr(self, "_merge_open", False)
+        # Dedicated swaps to a fresh sequence. Merge keeps the one sequence and appends.
+        if getattr(self, "_merge_open", False):
+            self._queue_merge_source(self.selected_file)
+        elif not headless:
+            self._detach_other_sequence()
+            self._ensure_source_sequence(self.selected_file)
 
         # Don't let a script TTS/translate retry race the main dub worker
         if hasattr(self, "_cancel_script_job"):
@@ -433,14 +578,19 @@ class PipelineTools:
         control = JobControl()
         task["control"] = control
         # Own the script panel until this job's transcript list arrives.
-        self._segments = []
-        self._live_paint_keys = None
-        self._live_scroll_row = None
-        self._script_follow_task = task["id"]
-        if hasattr(self, "_set_script_loading"):
-            self._set_script_loading(True, "Transcribing…", "Reading dialogue from the movie")
-        if hasattr(self, "_fill_table"):
-            self._fill_table([])
+        # Extra movies keep the script that is already on screen.
+        if owns_script:
+            self._segments = []
+            self._live_paint_keys = None
+            self._live_scroll_row = None
+            self._script_follow_task = task["id"]
+            if hasattr(self, "_set_script_loading"):
+                self._set_script_loading(True, "Transcribing…", "Reading dialogue from the movie")
+            if hasattr(self, "_fill_table"):
+                # Clearing the script must not wipe voice lines already laid on the merge.
+                self._skip_dialogue_sync = bool(getattr(self, "_merge_open", False))
+                self._fill_table([])
+                self._skip_dialogue_sync = False
         bridge = LiveBridge()
         bridge.event.connect(lambda kind, payload, tid=task["id"]: self._on_live_event(tid, kind, payload))
         self._live_bridge = bridge
@@ -466,10 +616,13 @@ class PipelineTools:
         translate_fit = self.store.get_setting("dub", "translate_fit_duration", "1") == "1"
         translate_slang = self.store.get_setting("dub", "translate_slang", "1") == "1"
         translate_expression = self.store.get_setting("dub", "translate_expression", "1") == "1"
+        plan = getattr(self, "_hardware_plan", None) or {}
+        tts_workers = max(1, int(plan.get("tts_workers") or 1))
+        media = os.path.abspath(self.selected_file)
 
         worker = Worker(
             DubbingEngine.process_dubbing,
-            video_path=self.selected_file,
+            video_path=media,
             source_lang=source_lang,
             target_lang=lang,
             voice_id=voice_id,
@@ -479,7 +632,7 @@ class PipelineTools:
             asr_language=source_lang,
             translator=translator,
             ollama_model=ollama_model,
-            overlays=self.timeline.export_overlays(),
+            overlays=[] if not owns_script else self.timeline.export_overlays(),
             vocal_master=vocal_master,
             center_attenuation=center_att,
             voiceover_boost=vo_boost,
@@ -492,16 +645,30 @@ class PipelineTools:
             translate_fit_duration=translate_fit,
             translate_slang=translate_slang,
             translate_expression=translate_expression,
+            tts_workers=tts_workers,
         )
-        worker.signals.progress.connect(self._on_progress)
-        worker.signals.result.connect(self._on_complete)
-        worker.signals.error.connect(self._on_error)
+        worker.signals.progress.connect(
+            lambda val, msg, tid=task["id"]: self._on_progress(val, msg, tid)
+        )
+        worker.signals.result.connect(
+            lambda res, path=media, tid=task["id"]: self._finish_job(path, tid, res)
+        )
+        worker.signals.error.connect(
+            lambda msg, stack, path=media, tid=task["id"]: self._fail_job(path, tid, msg, stack)
+        )
         self._worker = worker
+        flight = getattr(self, "_flight", None)
+        if not isinstance(flight, dict):
+            flight = {}
+            self._flight = flight
+        flight[media] = {"task_id": task["id"], "worker": worker, "bridge": bridge}
         self.thread_pool.start(worker)
 
-    def _on_progress(self, val: int, msg: str):
+    def _on_progress(self, val: int, msg: str, task_id: int | None = None):
         self.log.debug(f"{val}% · {msg}")
-        self._task_progress(val, msg)
+        self._task_progress(val, msg, task_id=task_id)
+        if task_id is not None and task_id != getattr(self, "_script_follow_task", -1):
+            return
         text = str(msg or "")
         if hasattr(self, "_set_script_loading_hint"):
             self._set_script_loading_hint(text or f"{int(val)}%")
@@ -513,54 +680,267 @@ class PipelineTools:
 
     def _on_complete(self, res: dict):
         if not res:
-            self._dub_queue = []
-            self._set_busy(False)
-            self._fail_tasks("No result returned.")
-            self._show_error("Dubbing failed", "No result returned.")
+            self._skip_failed_movie("No result returned.")
+            self._launch_next_or_finish()
             return
         segs = res.get("segments") or []
         if not segs:
-            self._dub_queue = []
-            self._set_busy(False)
-            self._fail_tasks("No dubbed lines were produced.")
-            self._show_error("Dubbing failed", "No dubbed lines were produced.")
+            self._skip_failed_movie("No dubbed lines were produced.")
+            self._launch_next_or_finish()
             return
         self._error = ""
-        if hasattr(self, "workspace"):
-            self._focus_script_shelf()
         output = res.get("output_path") or ""
         count = res.get("segments_dubbed", len(segs))
-        chaining = bool(self._dub_queue)
-        self._remember_composition(
-            output,
-            segs,
-            self.selected_file,
-            self.combo_lang.currentText(),
-            self.combo_voice.currentText(),
-            bed=str(res.get("bed_path") or ""),
-            dialogue=str(res.get("dialogue_path") or ""),
-            duck=True,
-            apply=not chaining,
-        )
-        if chaining and self.chk_auto_captions.isChecked() and self._compositions:
-            self._compositions[-1]["pending_captions"] = True
-        elif self.chk_auto_captions.isChecked():
-            self._ensure_auto_captions(force=True)
-        if self.store.get_setting("dub", "export_srt", "0") == "1":
+        if getattr(self, "_merge_open", False):
+            self._fold_merge_movie(res, segs, count, output)
+            return
+        owns = int(getattr(self, "_active_task", -1)) == int(getattr(self, "_script_follow_task", -1) or -1)
+        wide = self._batch_width() > 1
+        if hasattr(self, "workspace") and owns:
+            self._focus_script_shelf()
+        if wide and not owns:
+            self._remember_composition(
+                output,
+                segs,
+                self.selected_file,
+                self.combo_lang.currentText(),
+                self.combo_voice.currentText(),
+                bed=str(res.get("bed_path") or ""),
+                dialogue=str(res.get("dialogue_path") or ""),
+                duck=True,
+                apply=False,
+                stash=False,
+                select=False,
+            )
+            if self.chk_auto_captions.isChecked() and self._compositions:
+                self._compositions[-1]["pending_captions"] = True
+        else:
+            others = bool(self._dub_queue) or (wide and bool(getattr(self, "_flight", None)))
+            apply_now = (wide and owns) or not others
+            self._remember_composition(
+                output,
+                segs,
+                self.selected_file,
+                self.combo_lang.currentText(),
+                self.combo_voice.currentText(),
+                bed=str(res.get("bed_path") or ""),
+                dialogue=str(res.get("dialogue_path") or ""),
+                duck=True,
+                apply=apply_now,
+            )
+            if not apply_now and self.chk_auto_captions.isChecked() and self._compositions:
+                self._compositions[-1]["pending_captions"] = True
+            elif self.chk_auto_captions.isChecked():
+                self._ensure_auto_captions(force=True)
+            if apply_now:
+                self._stash_composition()
+        if self.store.get_setting("dub", "export_srt", "0") == "1" and (not wide or owns):
             self._auto_export_srt_on_finish()
-        if not chaining:
-            self._stash_composition()
         self._store_project_session()
         if output:
             self.log.success(f"Dubbed {count} line(s) → {os.path.basename(output)}")
         else:
             self.log.success(f"{count} voice clip(s) on the Voice track · use Export → Render dub to make the movie")
-        if self._dub_queue:
-            self.selected_file = self._dub_queue.pop(0)
-            self.log.info(f"Auto chain next · {os.path.basename(self.selected_file)}")
-            self._launch_dub_job()
+        self._launch_next_or_finish()
+
+    def _shift_segments(self, segments: list, offset_ms: int) -> list[dict]:
+        """Move one movie's cues onto the shared sequence clock."""
+        from claynext.models.dubbing_service import timestamp_to_sec
+
+        if offset_ms == 0:
+            return [dict(seg) for seg in segments if isinstance(seg, dict)]
+        shifted: list[dict] = []
+        for seg in segments:
+            if not isinstance(seg, dict):
+                continue
+            row = dict(seg)
+            start = timestamp_to_sec(str(row.get("start") or "")) + offset_ms / 1000.0
+            end = timestamp_to_sec(str(row.get("end") or "")) + offset_ms / 1000.0
+            row["start"] = _format_cue(start)
+            row["end"] = _format_cue(end)
+            if row.get("start_ms") is not None:
+                row["start_ms"] = max(0, int(row["start_ms"]) + offset_ms)
+            shifted.append(row)
+        return shifted
+
+    def _fold_merge_movie(self, res: dict, segs: list, count: int, output: str) -> None:
+        """Dub finished for one movie. Keep the sequence and extend the master."""
+        source = os.path.abspath(self.selected_file or "")
+        try:
+            offset = int(getattr(self, "_merge_offsets", {}).get(source, 0))
+            shifted = self._shift_segments(segs, offset)
+            for row in shifted:
+                row["source"] = source
+            if hasattr(self.timeline, "place_source_dialogue"):
+                self.timeline.place_source_dialogue(shifted, source)
+            self.timeline.duck_level = self.slider_duck.value() / 100.0
+            self.timeline.duck_fade_ms = self.slider_fade_ms.value()
+            self.timeline.auto_duck(self.timeline.duck_level)
+            lang = self.combo_lang.currentText() or "Dub"
+            index = int(getattr(self, "_merge_comp_index", -1))
+            comp = self._compositions[index] if 0 <= index < len(self._compositions) else None
+            if comp is None or not comp.get("merged"):
+                self._remember_composition(
+                    output,
+                    shifted,
+                    source,
+                    lang,
+                    self.combo_voice.currentText(),
+                    bed=str(res.get("bed_path") or ""),
+                    dialogue=str(res.get("dialogue_path") or ""),
+                    duck=False,
+                    apply=False,
+                )
+                index = self._composition_index
+                self._merge_comp_index = index
+                comp = self._compositions[index]
+                comp["merged"] = True
+                comp["name"] = f"Merge · {lang}"
+                comp["sources"] = [source]
+                comp["segments"] = shifted
+                self.timeline.set_compositions(
+                    [item["name"] for item in self._compositions],
+                    index,
+                )
+            else:
+                comp["segments"] = list(comp.get("segments") or []) + shifted
+                sources = [str(item) for item in (comp.get("sources") or [])]
+                if source not in sources:
+                    sources.append(source)
+                comp["sources"] = sources
+                self._composition_index = index
+                self._link_task(index, source)
+            self._segments = list(comp.get("segments") or [])
+            if self.chk_auto_captions.isChecked():
+                self._ensure_auto_captions(force=True)
+            comp["masters"] = self.timeline.export_masters()
+            self._stash_composition()
+            if self.store.get_setting("dub", "export_srt", "0") == "1":
+                self._auto_export_srt_on_finish()
+            if output:
+                self.log.success(f"Dubbed {count} line(s) → {os.path.basename(output)}")
+            else:
+                self.log.success(f"{count} voice clip(s) on the master sequence")
+        except Exception as exc:
+            task = self._task_by_id(self._active_task) if getattr(self, "_active_task", -1) >= 0 else None
+            if task and task.get("status") in {"running", "paused"}:
+                self._skip_failed_movie(str(exc))
+            else:
+                self.log.warn(f"Sequence update failed · {exc}")
+        self._launch_next_or_finish()
+
+    def _skip_failed_movie(self, message: str) -> None:
+        """Record one failed movie and, on a merge, lift it off the master track."""
+        source = os.path.abspath(self.selected_file or "")
+        self._fail_source(source, message)
+        failed = getattr(self, "_batch_failed", None)
+        if not isinstance(failed, list):
+            failed = []
+            self._batch_failed = failed
+        failed.append((source, message))
+        name = os.path.basename(source) or "Movie"
+        if getattr(self, "_merge_open", False):
+            self._merge_seq_token = int(getattr(self, "_merge_seq_token", 0)) + 1
+            offsets = getattr(self, "_merge_offsets", None)
+            if isinstance(offsets, dict):
+                offsets.pop(source, None)
+            if source and hasattr(self.timeline, "drop_master"):
+                self.timeline.drop_master(source)
+            self.log.warn(f"Skipped · {name} · {message}")
             return
+        self.log.error(f"Dubbing failed · {name} · {message}")
+
+    def _launch_next_or_finish(self) -> None:
+        """Fill free slots from the queue. Stop, or an empty queue and flight, ends the batch."""
+        if getattr(self, "_batch_stopping", False):
+            return
+        flight = getattr(self, "_flight", None)
+        if not isinstance(flight, dict):
+            flight = {}
+            self._flight = flight
+        width = self._batch_width()
+        while len(flight) < width and self._dub_queue:
+            nxt = self._dub_queue.pop(0)
+            if not nxt or not os.path.isfile(nxt):
+                self.selected_file = nxt or ""
+                self._skip_failed_movie("File missing")
+                continue
+            self.selected_file = nxt
+            left = len(self._dub_queue) + len(flight) + 1
+            name = os.path.basename(nxt)
+            if getattr(self, "_merge_open", False):
+                self.log.info(f"Merge next · {name} · {left} left")
+            else:
+                self.log.info(f"Auto chain next · {name} · {left} left")
+            try:
+                self._launch_dub_job()
+            except Exception as exc:
+                self._skip_failed_movie(str(exc))
+        if not self._dub_queue and not flight and not getattr(self, "_batch_stopping", False):
+            self._end_batch()
+
+    def _compact_merge(self) -> None:
+        """Close gaps from skipped movies and move each movie's lines with its master clip."""
+        index = int(getattr(self, "_merge_comp_index", -1))
+        if not (0 <= index < len(getattr(self, "_compositions", []) or [])):
+            return
+        self._composition_index = index
+        deltas = self.timeline.repack_masters() if hasattr(self.timeline, "repack_masters") else {}
+        comp = self._compositions[index]
+        adjusted: list[dict] = []
+        for seg in comp.get("segments") or []:
+            if not isinstance(seg, dict):
+                continue
+            source = os.path.abspath(str(seg.get("source") or ""))
+            delta = int((deltas or {}).get(source) or 0)
+            if delta:
+                adjusted.extend(self._shift_segments([seg], delta))
+            else:
+                adjusted.append(dict(seg))
+        comp["segments"] = adjusted
+        self._segments = adjusted
+        if self.chk_auto_captions.isChecked():
+            self._ensure_auto_captions(force=True)
+        if hasattr(self.timeline, "export_masters"):
+            comp["masters"] = self.timeline.export_masters()
+        self._stash_composition()
+        self._fill_table(adjusted)
+
+    def _end_batch(self) -> None:
+        if getattr(self, "_batch_stopping", False):
+            return
+        failed = list(getattr(self, "_batch_failed", []) or [])
+        merging = bool(getattr(self, "_merge_open", False))
+        if merging:
+            self._compact_merge()
+        self._merge_open = False
+        if merging and getattr(self, "_segments", None):
+            self._fill_table(self._segments)
+            index = int(getattr(self, "_merge_comp_index", -1))
+            sources = []
+            if 0 <= index < len(self._compositions):
+                sources = list(self._compositions[index].get("sources") or [])
+            if sources:
+                note = f"Merge sequence ready · {len(sources)} movies on the master track"
+                if failed:
+                    note += f" · {len(failed)} skipped"
+                self.log.success(note)
+        self._store_project_session()
         self._set_busy(False)
+        if not failed:
+            return
+        preview = failed[:12]
+        lines = [
+            f"{os.path.basename(path) or 'Movie'} · {msg}"
+            for path, msg in preview
+        ]
+        extra = len(failed) - len(preview)
+        if extra > 0:
+            lines.append(f"… and {extra} more")
+        done = sum(1 for task in getattr(self, "_tasks", []) if task.get("status") == "done")
+        title = "Dubbing failed" if done == 0 and len(failed) == 1 else "Batch finished with failures"
+        self.log.error(f"{len(failed)} failed · {done} finished")
+        self._show_error(title, "\n".join(lines))
 
     def _auto_export_srt_on_finish(self):
         """Write a sidecar SRT without a save dialog when the Captions option is on."""
@@ -683,10 +1063,14 @@ class PipelineTools:
 
     def _remember_composition(
         self, output: str, segments: list, source: str, language: str, voice: str,
-        bed: str = "", dialogue: str = "", duck: bool = False, footage: list | None = None,
+        bed: str = "", dialogue: str = "",         duck: bool = False, footage: list | None = None,
         apply: bool = True,
+        stash: bool = True,
+        select: bool = True,
     ):
-        self._stash_composition()
+        if stash:
+            self._stash_composition()
+        previous = int(getattr(self, "_composition_index", -1))
         number = len(self._compositions) + 1
         lang = language or "Dub"
         self._compositions.append({
@@ -701,14 +1085,17 @@ class PipelineTools:
             "duck": duck,
             "footage": list(footage or []),
         })
-        self._composition_index = len(self._compositions) - 1
+        new_index = len(self._compositions) - 1
+        if select:
+            self._composition_index = new_index
+        shown = self._composition_index if select else previous
         self.timeline.set_compositions(
             [item["name"] for item in self._compositions],
-            self._composition_index,
+            shown,
         )
-        self._link_task(self._composition_index, source)
+        self._link_task(new_index, source)
         if apply:
-            self._apply_composition(self._composition_index)
+            self._apply_composition(new_index)
 
     def _on_composition_changed(self, index: int):
         if index == int(getattr(self, "_composition_index", -1)):
@@ -847,6 +1234,8 @@ class PipelineTools:
             if self._segments:
                 comp["segments"] = [dict(seg) for seg in self._segments]
             comp["duration_ms"] = int(getattr(self.timeline.canvas, "duration_ms", 0) or 0)
+            if hasattr(self.timeline, "export_masters"):
+                comp["masters"] = self.timeline.export_masters()
 
     def _apply_composition(self, index: int, *, legacy_overlays=None, legacy_fx=None, legacy_tracks=None, preview: bool = True):
         if index < 0 or index >= len(self._compositions):
@@ -865,9 +1254,13 @@ class PipelineTools:
         self._output_path = comp.get("output") or ""
         if self.act_open_out:
             self.act_open_out.setEnabled(bool(self._output_path and os.path.isfile(self._output_path)))
-        media = self._output_path if self._output_path and os.path.isfile(self._output_path) else comp.get("source") or ""
-        if media:
-            self.timeline.set_media(media, int(comp.get("duration_ms") or 0))
+        masters = comp.get("masters") if comp.get("merged") else None
+        if isinstance(masters, list) and masters and hasattr(self.timeline, "replace_masters"):
+            self.timeline.replace_masters(masters)
+        else:
+            media = self._output_path if self._output_path and os.path.isfile(self._output_path) else comp.get("source") or ""
+            if media:
+                self.timeline.set_media(media, int(comp.get("duration_ms") or 0))
         self._fill_table(comp.get("segments") or [])
         bed = str(comp.get("bed") or "")
         has_bed = bool(bed and os.path.isfile(bed))
@@ -1032,25 +1425,13 @@ class PipelineTools:
         self._sync_timeline_button()
 
     def _on_error(self, err_msg, stack):
-        if str(err_msg) == "Dub stopped":
-            self._dub_queue = []
-            self._set_busy(False)
-            self._fail_tasks("Stopped", status="cancelled")
-            self.log.info("Dub stopped")
+        if str(err_msg) == "Dub stopped" or getattr(self, "_batch_stopping", False):
+            self._halt_batch()
             return
-        self._fail_active_task(str(err_msg))
-        self.log.error(f"Dubbing failed · {err_msg}")
-        if self._dub_queue:
-            self.selected_file = self._dub_queue.pop(0)
-            left = len(self._dub_queue) + 1
-            self.log.info(f"Auto chain next · {os.path.basename(self.selected_file)} · {left} left")
-            self._launch_dub_job()
-            return
-        self._set_busy(False)
-        self._store_project_session()
-        self._show_error("Dubbing failed", str(err_msg))
+        self._skip_failed_movie(str(err_msg))
         if stack:
             self.log.debug(stack.splitlines()[-1])
+        self._launch_next_or_finish()
 
     def _set_busy(self, busy: bool):
         # The script panel spinner is only for transcription (see _launch_dub_job).

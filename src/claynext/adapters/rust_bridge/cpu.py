@@ -18,6 +18,31 @@ class RustCpuAdapter:
         return _find_binary("claynext-cpu") is not None
 
     @classmethod
+    def hardware_plan(cls) -> dict | None:
+        """Logical cores, physical cores, and how many dub jobs to run at once."""
+        binary = _find_binary("claynext-cpu")
+        if not binary:
+            return None
+        try:
+            res = _run_rust(binary, ["hardware"], timeout=8)
+            if res.returncode != 0 or not res.stdout.strip():
+                return None
+            data = json.loads(res.stdout)
+        except Exception as exc:
+            logger.debug("Rust hardware plan failed: %s", exc)
+            return None
+        if not isinstance(data, dict):
+            return None
+        try:
+            logical = int(data.get("logical_cores") or 0)
+            jobs = int(data.get("dub_jobs") or 0)
+        except (TypeError, ValueError):
+            return None
+        if logical < 1 or jobs < 1:
+            return None
+        return data
+
+    @classmethod
     def run_benchmark(cls) -> str:
         binary = _find_binary("claynext-cpu")
         if not binary:

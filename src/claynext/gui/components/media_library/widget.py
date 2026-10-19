@@ -262,6 +262,7 @@ class MediaLibraryWidget(LibraryFiles, LibrarySelect, QWidget):
         menu.setObjectName("media_lib_menu")
 
         menu.addAction("Add Files…", self.browse_add)
+        menu.addAction("Order episodes", self.order_episodes)
         menu.addAction("Deselect", self.clear_selection)
         menu.addAction("Reveal in Finder", self.reveal_selected)
         menu.addSeparator()

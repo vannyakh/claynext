@@ -281,24 +281,207 @@ class CanvasMedia:
         self._frames = pix
         self.update()
 
+    def append_master(self, path: str, duration_ms: int = 0, start_ms: int | None = None) -> int:
+        """Add another movie on the master track without replacing the ones already there."""
+        path = os.path.abspath(path) if path else ""
+        if not path:
+            return 0
+        video = self.ensure_track("video")
+        for clip in self.master_clips():
+            if os.path.abspath(str(clip.extra.get("path") or "")) == path:
+                return int(clip.start_ms)
+        if start_ms is None:
+            span = self.master_span()
+            start_ms = (span[0] + span[1]) if span else 0
+        start_ms = max(0, int(start_ms))
+        if duration_ms <= 0:
+            duration_ms = 1000 if int(getattr(self, "_quiet", 0)) else int(probe_duration(path) * 1000) or 1000
+        duration_ms = max(1000, int(duration_ms))
+        clip_id = "footage" if not self.master_clips() else f"footage-{start_ms}"
+        self.clips.append(TimelineClip(
+            id=clip_id,
+            track_id=video.id,
+            kind="video",
+            start_ms=start_ms,
+            duration_ms=duration_ms,
+            label=os.path.basename(path),
+            locked=video.locked,
+            extra={"path": path, "master": True, "auto": True, "file_ms": duration_ms},
+        ))
+        if not self.media_path:
+            self.media_path = path
+            self.media_name = os.path.basename(path)
+        self.duration_ms = max(int(self.duration_ms or 0), start_ms + duration_ms)
+        if int(getattr(self, "_quiet", 0)):
+            return start_ms
+        self._relayout()
+        self.clips_changed.emit()
+        return start_ms
+
+    def drop_master(self, path: str) -> None:
+        """Take one movie off the master track after its dub fails. Later movies close the gap."""
+        path = os.path.abspath(path) if path else ""
+        if not path:
+            return
+        self.clips = [
+            clip for clip in self.clips
+            if not (
+                clip.kind == "video"
+                and (clip.extra.get("master") or clip.id == "footage")
+                and os.path.abspath(str(clip.extra.get("path") or "")) == path
+            )
+            and not (clip.kind == "voice" and clip.extra.get("merge_source") == path)
+        ]
+        remaining = self.master_clips()
+        if remaining:
+            first = remaining[0]
+            self.media_path = str(first.extra.get("path") or "")
+            self.media_name = os.path.basename(self.media_path) if self.media_path else first.label
+            self.duration_ms = max(clip.end_ms for clip in self.clips)
+        else:
+            self.media_path = ""
+            self.media_name = ""
+            self.duration_ms = max((clip.end_ms for clip in self.clips), default=0)
+        self._relayout()
+        self.clips_changed.emit()
+
+    def repack_masters(self) -> dict[str, int]:
+        """Pull master movies together and return how many milliseconds each one moved."""
+        cursor = 0
+        deltas: dict[str, int] = {}
+        for clip in self.master_clips():
+            path = os.path.abspath(str(clip.extra.get("path") or ""))
+            delta = cursor - int(clip.start_ms)
+            if path:
+                deltas[path] = delta
+            clip.start_ms = cursor
+            if path and delta:
+                for voice in self.clips:
+                    if voice.kind == "voice" and voice.extra.get("merge_source") == path:
+                        voice.start_ms = max(0, int(voice.start_ms) + delta)
+            cursor += int(clip.duration_ms)
+        self.duration_ms = max(cursor, max((clip.end_ms for clip in self.clips), default=0))
+        if int(getattr(self, "_quiet", 0)):
+            return deltas
+        self._relayout()
+        self.clips_changed.emit()
+        return deltas
+
+    def replace_masters(self, rows: list[dict]) -> None:
+        """Rebuild the master track from saved movie clips, in order."""
+        video = self.ensure_track("video")
+        self.clips = [
+            clip for clip in self.clips
+            if not (
+                clip.track_id == video.id
+                and clip.kind == "video"
+                and (clip.extra.get("master") or clip.id == "footage")
+            )
+        ]
+        self.media_path = ""
+        self.media_name = ""
+        self.duration_ms = 0
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            path = str(row.get("path") or "")
+            if not path or not os.path.isfile(path):
+                continue
+            self.append_master(
+                path,
+                int(row.get("duration_ms") or 0),
+                int(row.get("start_ms") or 0),
+            )
+
+    def place_source_dialogue(self, segments: list[dict], source: str) -> bool:
+        """Replace only this movie's voice lines. Other movies on the sequence stay."""
+        source = os.path.abspath(source) if source else ""
+        segs = [seg for seg in (segments or []) if isinstance(seg, dict)]
+        voice = self.ensure_track("voice")
+        owned = [
+            clip for clip in self.clips
+            if clip.kind == "voice" and clip.extra.get("auto") and clip.extra.get("merge_source") == source
+        ]
+        if len(owned) != len(segs):
+            drop = {clip.id for clip in owned}
+            self.clips = [clip for clip in self.clips if clip.id not in drop]
+            for index, seg in enumerate(segs):
+                clip = self._dialogue_clip(index, seg, voice.id)
+                clip.id = f"dlg-{abs(hash(source)) % 1_000_000:06d}-{index}"
+                clip.extra["merge_source"] = source
+                self.clips.append(clip)
+            self._extend_duration()
+            self._relayout()
+            return True
+        by_id = {clip.id: clip for clip in owned}
+        changed = False
+        for index, seg in enumerate(segs):
+            fresh = self._dialogue_clip(index, seg, voice.id)
+            clip_id = f"dlg-{abs(hash(source)) % 1_000_000:06d}-{index}"
+            clip = by_id.get(clip_id)
+            if clip is None:
+                continue
+            fresh.extra["merge_source"] = source
+            same = (
+                clip.start_ms == fresh.start_ms
+                and clip.duration_ms == fresh.duration_ms
+                and clip.label == fresh.label
+                and clip.extra.get("path") == fresh.extra.get("path")
+                and clip.extra.get("text") == fresh.extra.get("text")
+            )
+            if same:
+                continue
+            clip.start_ms = fresh.start_ms
+            clip.duration_ms = fresh.duration_ms
+            clip.label = fresh.label
+            clip.locked = fresh.locked
+            clip.track_id = voice.id
+            clip.extra = fresh.extra
+            changed = True
+        if changed:
+            self._extend_duration()
+            self._relayout(notify=False)
+        return changed
+
     def source_track(self) -> TimelineTrack | None:
         """Master footage lane — the first video track."""
         return next((t for t in self.tracks if t.kind == "video"), None)
 
+    def master_clips(self) -> list[TimelineClip]:
+        """Master movies on the source track, in timeline order."""
+        source = self.source_track()
+        if source is None:
+            return []
+        masters = [
+            clip for clip in self.clips
+            if clip.track_id == source.id and clip.kind == "video"
+            and (clip.extra.get("master") or clip.id == "footage")
+        ]
+        if not masters:
+            masters = [
+                clip for clip in self.clips
+                if clip.track_id == source.id and clip.kind == "video"
+            ]
+        return sorted(masters, key=lambda clip: (clip.start_ms, clip.id != "footage"))
+
+    def master_at(self, ms: int) -> TimelineClip | None:
+        """The master movie under this timeline time."""
+        masters = self.master_clips()
+        if not masters:
+            return None
+        for clip in masters:
+            if clip.start_ms <= int(ms) < clip.end_ms:
+                return clip
+        if int(ms) >= masters[-1].end_ms:
+            return masters[-1]
+        return masters[0]
+
     def master_span(self) -> tuple[int, int] | None:
         """Start and length of the master footage, in milliseconds."""
-        source = self.source_track()
-        masters: list[TimelineClip] = []
-        if source is not None:
-            masters = [
-                c for c in self.clips
-                if c.track_id == source.id and (c.extra.get("master") or c.id == "footage")
-            ]
-            if not masters:
-                masters = [c for c in self.clips if c.track_id == source.id and c.kind == "video"]
+        masters = self.master_clips()
         if masters:
-            start = min(c.start_ms for c in masters)
-            end = max(c.end_ms for c in masters)
+            start = masters[0].start_ms
+            end = max(clip.end_ms for clip in masters)
             if end > start:
                 return start, end - start
         if self.duration_ms > 0:
@@ -307,18 +490,8 @@ class CanvasMedia:
 
     def master_clip(self) -> TimelineClip | None:
         """The footage clip preview and export follow."""
-        source = self.source_track()
-        masters: list[TimelineClip] = []
-        if source is not None:
-            masters = [
-                c for c in self.clips
-                if c.track_id == source.id and (c.extra.get("master") or c.id == "footage")
-            ]
-            if not masters:
-                masters = [c for c in self.clips if c.track_id == source.id and c.kind == "video"]
-        if not masters:
-            return None
-        return min(masters, key=lambda c: (c.start_ms, c.id != "footage"))
+        masters = self.master_clips()
+        return masters[0] if masters else None
 
     def master_window(self) -> tuple[int, int, int] | None:
         """Timeline start, file in-point, and length of the current master. None when it is the whole file."""
