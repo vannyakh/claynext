@@ -5,7 +5,8 @@ from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QColorDialog, QFontComboBox, QGridLayout, QHBoxLayout, QLabel,
-    QPushButton, QSizePolicy, QStackedWidget, QToolButton, QVBoxLayout, QWidget,
+    QPushButton, QSizePolicy, QStackedWidget, QStyledItemDelegate, QStyle, QStyleOptionViewItem,
+    QToolButton, QVBoxLayout, QWidget,
 )
 
 from claynext.constants.theme_constants import COLOR_BORDER, COLOR_PRIMARY, COLOR_TEXT_MUTED
@@ -28,6 +29,80 @@ _ALIGN_TO_CANVAS = (
 )
 
 
+class FontChoiceDelegate(QStyledItemDelegate):
+    """Draw each font name in that typeface. App stylesheets otherwise flatten the list."""
+
+    def paint(self, painter, option, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        face = _choice_font(index, opt.font)
+        opt.font = face
+        widget = opt.widget
+        style = widget.style() if widget is not None else None
+        if style is None:
+            from PySide6.QtWidgets import QApplication
+            style = QApplication.style()
+        style.drawPrimitive(QStyle.PrimitiveElement.PE_PanelItemViewItem, opt, painter, widget)
+        painter.save()
+        painter.setFont(face)
+        selected = bool(opt.state & QStyle.StateFlag.State_Selected)
+        color = opt.palette.highlightedText().color() if selected else opt.palette.text().color()
+        painter.setPen(color)
+        painter.drawText(opt.rect.adjusted(10, 0, -8, 0), Qt.AlignmentFlag.AlignVCenter, opt.text)
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        opt.font = _choice_font(index, opt.font)
+        hint = super().sizeHint(opt, index)
+        hint.setHeight(max(hint.height(), 26))
+        return hint
+
+
+def _choice_font(index, fallback: QFont) -> QFont:
+    """QFontComboBox stores the family as the row label, not as a font role."""
+    name = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
+    stored = index.data(Qt.ItemDataRole.FontRole)
+    if isinstance(stored, QFont) and stored.family():
+        face = QFont(stored)
+    else:
+        face = QFont(name or fallback.family())
+    face.setPointSize(13)
+    face.setBold(False)
+    face.setItalic(False)
+    face.setUnderline(False)
+    return face
+
+
+class FontChoiceBox(QFontComboBox):
+    """Font menu whose closed label and each option are set in that font."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("dub_setting_field")
+        self.setFontFilters(QFontComboBox.FontFilter.ScalableFonts)
+        self.setMaxVisibleItems(14)
+        view = self.view()
+        view.setItemDelegate(FontChoiceDelegate(view))
+        view.setMinimumWidth(220)
+        self.currentFontChanged.connect(self.use_family)
+
+    def setCurrentFont(self, font: QFont):
+        super().setCurrentFont(font)
+        self.use_family(font)
+
+    def use_family(self, font: QFont):
+        family = str(font.family() or "Arial").replace("\\", "").replace('"', "")
+        face = QFont(family)
+        face.setPointSize(13)
+        self.setFont(face)
+        # More specific than the window font, and it does not restyle the popup rows.
+        self.setStyleSheet(
+            f'QFontComboBox#dub_setting_field {{ font-family: "{family}"; font-size: 13px; }}'
+        )
+
+
 def _swatch_icon(color: str, side: int = 16) -> QIcon:
     pix = QPixmap(side * 2, side * 2)
     pix.setDevicePixelRatio(2.0)
@@ -45,6 +120,7 @@ class TextInspector(QWidget):
     changed = Signal()
     animation_picked = Signal(str)
     align_requested = Signal(str)
+    apply_all_requested = Signal()
 
     def __init__(self, parent=None, shape: bool = False):
         super().__init__(parent)
@@ -60,9 +136,17 @@ class TextInspector(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(10)
 
-        self.tab_bar = SegmentTabs(["Basic", "Animation"])
+        self.tab_bar = SegmentTabs(["Basic", "Animation"], size="sm", fill=True)
         self.tab_group = self.tab_bar.group
         root.addWidget(self.tab_bar)
+        self.btn_apply_all = QPushButton("Apply to all")
+        self.btn_apply_all.setObjectName("dub_props_ghost_btn")
+        self.btn_apply_all.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_apply_all.setToolTip("Copy this caption's font, color, and motion onto every caption")
+        self.btn_apply_all.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.btn_apply_all.setVisible(False)
+        self.btn_apply_all.clicked.connect(self.apply_all_requested.emit)
+        root.addWidget(self.btn_apply_all)
         self.pages = QStackedWidget()
         self.tab_bar.changed.connect(self.pages.setCurrentIndex)
         root.addWidget(self.pages)
@@ -210,8 +294,7 @@ class TextInspector(QWidget):
             self.chk_live.toggled.connect(self._emit)
             content.addWidget(self.chk_live)
             content.addWidget(self._label("Font"))
-            self.font_box = QFontComboBox()
-            self.font_box.setObjectName("dub_setting_field")
+            self.font_box = FontChoiceBox()
             self.font_box.currentFontChanged.connect(lambda f: self._set("font", f.family()))
             content.addWidget(self.font_box)
             self.spin_size = self._spin_row(content, "Font size", *FONT_RANGE, "font_size")
@@ -490,11 +573,14 @@ class TextInspector(QWidget):
         self._item = item
         self.setEnabled(item is not None)
         if item is None:
+            self.btn_apply_all.setVisible(False)
             return
         self._style = item.style()
         self._block = True
         self.chk_live.setChecked(bool(item.live))
+        caption = item.kind == "caption" and not self._shape_mode
         self.chk_live.setVisible(item.kind == "caption")
+        self.btn_apply_all.setVisible(caption)
         self.spin_x.setValue(round((float(item.x) - 0.5) * 200))
         self.spin_y.setValue(round((float(item.y) - 0.5) * 200))
         self.spin_rot.setValue(round(float(item.rotation)))

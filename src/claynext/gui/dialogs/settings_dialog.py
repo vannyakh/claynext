@@ -11,7 +11,7 @@ from PySide6.QtGui import QColor
 from claynext.utils.config import DEFAULT_CONFIG, MODELS_DIR, OUTPUTS_DIR
 from claynext.gui.icons import icon
 from claynext.gui.worker import Worker
-from claynext.models.hf_hub import get_model_registry, pull_model, is_model_downloaded
+from claynext.models.hf_hub import get_model_registry, install_model, is_model_downloaded
 from claynext.models.features import (
     DEMUCS_MODELS,
     FEATURE_SETTING_KEYS,
@@ -36,6 +36,8 @@ class SettingsDialog(QDialog):
         self._feature_cards: list[QFrame] = []
         self._feature_controls: dict[str, dict] = {}
         self._feature_installing: str | None = None
+        self._model_installing: str | None = None
+        self._model_buttons: dict[str, QPushButton] = {}
         self.init_ui()
         self._load_from_store()
 
@@ -592,13 +594,14 @@ class SettingsDialog(QDialog):
         self.edit_custom_repo = QLineEdit()
         self.edit_custom_repo.setFixedHeight(26)
         self.edit_custom_repo.setPlaceholderText("owner/repo — e.g. prithivMLmods/Common-Voice-Gender-Detection")
-        btn_pull_custom = QPushButton("Pull")
-        btn_pull_custom.setObjectName("btn_primary")
-        btn_pull_custom.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_pull_custom.setFixedSize(70, 26)
-        btn_pull_custom.clicked.connect(self._pull_custom_repo)
+        self.btn_install_custom = QPushButton("Install")
+        self.btn_install_custom.setObjectName("btn_primary")
+        self.btn_install_custom.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_install_custom.setFixedHeight(26)
+        self.btn_install_custom.setMinimumWidth(92)
+        self.btn_install_custom.clicked.connect(self._pull_custom_repo)
         pull_row.addWidget(self.edit_custom_repo, 1)
-        pull_row.addWidget(btn_pull_custom)
+        pull_row.addWidget(self.btn_install_custom)
         lay.addLayout(pull_row)
 
         self.models_table = QTableWidget()
@@ -609,11 +612,14 @@ class SettingsDialog(QDialog):
         hdr_view.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         hdr_view.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         hdr_view.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        hdr_view.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        hdr_view.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
         hdr_view.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self.models_table.setColumnWidth(4, 86)
+        self.models_table.setColumnWidth(3, 108)
+        self.models_table.setColumnWidth(4, 104)
+        self.models_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.models_table.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.models_table.verticalHeader().setVisible(False)
-        self.models_table.verticalHeader().setDefaultSectionSize(34)
+        self.models_table.verticalHeader().setDefaultSectionSize(40)
         self.models_table.setShowGrid(False)
         self.models_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.models_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -624,7 +630,7 @@ class SettingsDialog(QDialog):
         p_lay = QVBoxLayout(self.model_prog_box)
         p_lay.setContentsMargins(0, 0, 0, 0)
         p_lay.setSpacing(4)
-        self.lbl_model_prog = QLabel("Pulling model…")
+        self.lbl_model_prog = QLabel("Installing model…")
         self.lbl_model_prog.setObjectName("settings_section_hint")
         self.lbl_model_prog.setStyleSheet("color: #6366f1; font-weight: 600;")
         self.bar_model_prog = QProgressBar()
@@ -645,6 +651,8 @@ class SettingsDialog(QDialog):
             models = [m for m in models if str(m.get("category", "")).lower() == filt]
 
         self.models_table.setRowCount(0)
+        self._model_buttons = {}
+        busy = self._model_installing
         for row, item in enumerate(models):
             self.models_table.insertRow(row)
             name = QTableWidgetItem(item["name"])
@@ -659,23 +667,37 @@ class SettingsDialog(QDialog):
             size_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.models_table.setItem(row, 2, size_item)
 
-            is_down = is_model_downloaded(item["id"])
-            status_item = QTableWidgetItem("Downloaded" if is_down else "Available")
+            repo_id = item["id"]
+            is_down = is_model_downloaded(repo_id)
+            installing = busy == repo_id
+            if installing:
+                status_text, status_color = "Installing", "#6366f1"
+            elif is_down:
+                status_text, status_color = "Downloaded", "#10b981"
+            else:
+                status_text, status_color = "Available", "#64748b"
+            status_item = QTableWidgetItem(status_text)
             status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            status_item.setForeground(QColor("#10b981") if is_down else QColor("#64748b"))
+            status_item.setForeground(QColor(status_color))
             self.models_table.setItem(row, 3, status_item)
 
-            btn = QPushButton("Ready" if is_down else "Pull HF")
-            btn.setObjectName("btn_secondary" if is_down else "btn_primary")
-            btn.setEnabled(not is_down)
+            btn = QPushButton("Ready" if is_down else "Install")
+            btn.setObjectName("settings_model_btn")
+            btn.setProperty("tone", "ready" if is_down else "install")
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+            btn.setEnabled((not is_down) and not busy)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setFixedSize(70, 22)
-            btn.setStyleSheet("font-size: 11px; padding: 0;")
-            repo_id = item["id"]
+            btn.setFixedHeight(24)
+            btn.setMinimumWidth(78)
+            if installing:
+                btn.setText("…")
+                btn.setEnabled(False)
             btn.clicked.connect(lambda _=False, rid=repo_id: self._pull_repo(rid))
+            self._model_buttons[repo_id] = btn
             wrap = QWidget()
             wrap_l = QHBoxLayout(wrap)
-            wrap_l.setContentsMargins(4, 2, 6, 2)
+            wrap_l.setContentsMargins(6, 6, 8, 6)
             wrap_l.addStretch(1)
             wrap_l.addWidget(btn)
             self.models_table.setCellWidget(row, 4, wrap)
@@ -688,12 +710,17 @@ class SettingsDialog(QDialog):
         self._pull_repo(repo_id)
 
     def _pull_repo(self, repo_id: str):
+        if self._model_installing:
+            return
+        self._model_installing = repo_id
+        self.btn_install_custom.setEnabled(False)
+        self._populate_models_table()
         self.model_prog_box.show()
-        self.lbl_model_prog.setText(f"Pulling {repo_id}…")
-        self.bar_model_prog.setValue(10)
+        self.lbl_model_prog.setText(f"Installing {repo_id}…")
+        self.bar_model_prog.setValue(2)
 
         def _task(progress_callback=None):
-            return pull_model(repo_id, progress_callback=progress_callback)
+            return install_model(repo_id, progress_callback=progress_callback)
 
         worker = Worker(_task)
         worker.signals.progress.connect(self._on_model_pull_progress)
@@ -704,16 +731,25 @@ class SettingsDialog(QDialog):
     def _on_model_pull_progress(self, val: int, msg: str):
         self.bar_model_prog.setValue(val)
         self.lbl_model_prog.setText(msg)
+        repo_id = self._model_installing
+        btn = self._model_buttons.get(repo_id or "")
+        if btn is not None:
+            btn.setText(f"{max(0, min(99, int(val)))}%")
 
     def _on_model_pull_complete(self, _path):
+        self._model_installing = None
+        self.btn_install_custom.setEnabled(True)
         self.model_prog_box.hide()
         self._populate_models_table()
         self._populate_features_cards()
-        QMessageBox.information(self, "Download Complete", "Model pulled into the local cache.")
+        QMessageBox.information(self, "Installed", "Model installed into the local cache.")
 
     def _on_model_pull_error(self, err_msg, stack):
+        self._model_installing = None
+        self.btn_install_custom.setEnabled(True)
         self.model_prog_box.hide()
-        QMessageBox.critical(self, "Download Failed", f"Could not pull model:\n{err_msg}")
+        self._populate_models_table()
+        QMessageBox.critical(self, "Install failed", f"Could not install model:\n{err_msg}")
 
     # ─── Hardware ────────────────────────────────────────────────────
 

@@ -402,8 +402,10 @@ class TaskTools:
 
         self._live_timer = QTimer(self)
         self._live_timer.setSingleShot(True)
-        self._live_timer.setInterval(250)
+        self._live_timer.setInterval(280)
         self._live_timer.timeout.connect(self._render_live_task)
+        self._live_paint_keys = None
+        self._live_scroll_row = None
 
         panel = QWidget()
         panel.setObjectName("dub_tasks_panel")
@@ -1157,9 +1159,11 @@ class TaskTools:
                 self._live_return_index = self._composition_index
             self._composition_index = -1
             self._viewing_task = task["id"]
+            self._live_paint_keys = None
+            self._live_scroll_row = None
             source = task.get("source") or ""
-            if source and os.path.isfile(source) and self.timeline.canvas.media_path != source:
-                self.timeline.set_media(source)
+            if hasattr(self, "_ensure_source_sequence"):
+                self._ensure_source_sequence(source)
         self._render_live_task()
         self._timeline_open = True
         self.show_timeline_player()
@@ -1172,16 +1176,53 @@ class TaskTools:
         task = self._task_by_id(task_id)
         if not task:
             return
-        segments = [seg for seg in task.get("live") or [] if seg]
-        self._fill_table(segments)
-        row = task.get("live_clip", -1)
+        segments = [seg for seg in task.get("live") or [] if isinstance(seg, dict) and seg]
+        source = str(task.get("source") or "")
+        if source and hasattr(self, "_ensure_source_sequence"):
+            already = (
+                hasattr(self, "_source_already_on_track")
+                and self._source_already_on_track(source)
+            )
+            if not already:
+                self._ensure_source_sequence(source)
+        keys = None
+        if hasattr(self, "_script_row_key"):
+            keys = tuple(self._script_row_key(seg, i) for i, seg in enumerate(segments))
+        if keys is not None and keys == getattr(self, "_live_paint_keys", None):
+            self._scroll_live_row(task)
+            return
+        same_shape = (
+            len(segments) > 0
+            and len(segments) == self.table.rowCount()
+            and len(segments) == len(getattr(self, "_segments", []))
+        )
+        patched = same_shape and hasattr(self, "_patch_script_rows") and self._patch_script_rows(segments)
+        if patched:
+            if hasattr(self.timeline, "sync_dialogue"):
+                self.timeline.sync_dialogue(segments)
+            else:
+                self.timeline.set_dialogue(segments)
+        else:
+            self._fill_table(segments)
+        self._live_paint_keys = keys
+        self._scroll_live_row(task)
+
+    def _scroll_live_row(self, task: dict):
+        row = int(task.get("live_clip", -1) if task.get("live_clip") is not None else -1)
+        if row == getattr(self, "_live_scroll_row", None):
+            return
+        self._live_scroll_row = row
         if 0 <= row < self.table.rowCount():
-            self.table.scrollToItem(self.table.item(row, 0), QAbstractItemView.ScrollHint.PositionAtCenter)
+            item = self.table.item(row, 0)
+            if item is not None:
+                self.table.scrollToItem(item, QAbstractItemView.ScrollHint.PositionAtCenter)
 
     def _leave_live_view(self):
         if self._viewing_task < 0:
             return
         self._viewing_task = -1
+        self._live_paint_keys = None
+        self._live_scroll_row = None
         self._live_timer.stop()
         index = self._live_return_index
         self._live_return_index = -1

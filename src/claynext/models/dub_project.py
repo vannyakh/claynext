@@ -236,6 +236,19 @@ def delete_project(path: str | Path, *, delete_file: bool = True) -> bool:
     return True
 
 
+def unique_project_path(folder: str | Path, name: str) -> Path:
+    """Pick a free project file. The same name in another folder is a different file."""
+    dest = Path(folder).expanduser()
+    slug = _slug(name)
+    path = dest / f"{slug}.claynext.json"
+    if not path.is_file():
+        return path
+    number = 2
+    while (candidate := dest / f"{slug}_{number}.claynext.json").is_file():
+        number += 1
+    return candidate
+
+
 def create_blank_project(
     name: str,
     *,
@@ -246,30 +259,15 @@ def create_blank_project(
     clean = (name or "Untitled").strip() or "Untitled"
     folder = Path(save_to) if save_to else PROJECT_DIR
     folder.mkdir(parents=True, exist_ok=True)
-    path = folder / f"{_slug(clean)}.claynext.json"
-    if path.is_file():
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = folder / f"{_slug(clean)}_{stamp}.claynext.json"
+    path = unique_project_path(folder, clean)
     meta = dict(settings or {})
     meta.setdefault("name", clean)
     meta["path"] = str(path)
     meta.setdefault("save_to", str(folder))
 
-    media = str(meta.get("media") or "").strip()
-    if media and Path(media).is_file():
-        if meta.get("import_mode") == "copy":
-            import shutil
-            media_dir = folder / "media"
-            media_dir.mkdir(parents=True, exist_ok=True)
-            target_media = media_dir / Path(media).name
-            if target_media.resolve() != Path(media).resolve():
-                if not target_media.exists():
-                    try:
-                        shutil.copy2(media, target_media)
-                        media = str(target_media)
-                        meta["media"] = media
-                    except Exception:
-                        pass
+    # A new file never copies another project's media. The same name in this
+    # folder is saved as name_2, name_3, … with an empty library.
+    meta["media"] = ""
 
     language = str(meta.get("language") or meta.get("target_lang") or "").strip()
     source_language = str(meta.get("source_language") or meta.get("source_lang") or "").strip()
@@ -279,14 +277,15 @@ def create_blank_project(
         "compositions": [],
         "composition_index": -1,
         "tasks": [],
-        "media": media,
+        "media": "",
+        "library": [],
         "language": language,
         "source_language": source_language,
         "segments": [],
         "overlays": [],
         "fx": [],
         "tracks": [],
-        "footage": [{"path": media, "name": Path(media).name}] if media and Path(media).is_file() else [],
+        "footage": [],
         "takes": [],
     }
     _write(path, project_body(clean, payload))

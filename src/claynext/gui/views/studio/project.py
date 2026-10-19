@@ -41,6 +41,7 @@ class ProjectTools:
             "composition_index": getattr(self, "_composition_index", -1),
             "tasks": self._tasks_for_save(),
             "media": self.selected_file,
+            "library": self.media_lib.paths() if hasattr(self, "media_lib") else [],
             "source_language": self.combo_source_lang.currentText(),
             "language": self.combo_lang.currentText(),
             "voice": self.combo_voice.currentData() or "",
@@ -73,11 +74,42 @@ class ProjectTools:
             return {"bed": comps[index].get("bed", ""), "dialogue": comps[index].get("dialogue", "")}
         return {}
 
+    def _library_from_payload(self, data: dict) -> list[str]:
+        raw = data.get("library")
+        if isinstance(raw, list):
+            return [str(path) for path in raw if isinstance(path, str) and path]
+        paths: list[str] = []
+        media = str(data.get("media") or "")
+        if media:
+            paths.append(media)
+        for clip in data.get("footage") or []:
+            if not isinstance(clip, dict):
+                continue
+            cand = str(clip.get("path") or clip.get("media") or clip.get("file") or "")
+            if cand and cand not in paths:
+                paths.append(cand)
+        return paths
+
+    def _apply_project_library(self, data: dict) -> None:
+        if not hasattr(self, "media_lib"):
+            return
+        paths = self._library_from_payload(data)
+        media = str(data.get("media") or "")
+        select = os.path.abspath(media) if media and os.path.isfile(media) else None
+        self._syncing_library = True
+        try:
+            self.media_lib.set_paths(paths, select=select, quiet=True)
+            if not select:
+                self.media_lib.clear_selection()
+        finally:
+            self._syncing_library = False
+
     def _apply_tools_payload(self, data: dict):
         if not isinstance(data, dict):
             return
         self._restoring_project = True
         try:
+            self._apply_project_library(data)
             self._set_combo_text(self.combo_source_lang, data.get("source_language"))
             self._set_combo_text(self.combo_lang, data.get("language"))
             self._set_combo_text(self.combo_model, data.get("asr_model"))
@@ -101,6 +133,13 @@ class ProjectTools:
                     self.set_dub_source(media)
                 self.timeline.set_media(media)
                 self.show_timeline_player()
+            else:
+                self.selected_file = ""
+                self._source_preview_path = ""
+                self._media_info = {}
+                self._project["media"] = ""
+                if hasattr(self, "preview"):
+                    self.preview.clear()
             segments = data.get("segments")
             if isinstance(segments, list) and segments:
                 self._fill_table(segments)
@@ -148,6 +187,14 @@ class ProjectTools:
                     self.timeline.apply_fx(legacy_fx)
                 self._stash_composition()
             else:
+                self._compositions = []
+                self._composition_index = -1
+                self._segments = []
+                self._output_path = ""
+                self._fill_table([])
+                if hasattr(self, "timeline"):
+                    self.timeline.clear()
+                    self.timeline.replace_overlay_clips([])
                 self._sync_timeline_visibility()
             self._refresh_project_info()
             self._sync_preview_overlays(force=True)

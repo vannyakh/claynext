@@ -295,6 +295,32 @@ QTableWidget#settings_api_keys_table::item:selected {{
     background: {wash};
     color: {COLOR_TEXT_MAIN};
 }}
+QTableWidget#settings_models_table QPushButton#settings_model_btn {{
+    min-height: 24px;
+    max-height: 24px;
+    min-width: 78px;
+    padding: 0 10px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 6px;
+}}
+QTableWidget#settings_models_table QPushButton#settings_model_btn[tone="install"] {{
+    background-color: {primary};
+    color: #ffffff;
+    border: none;
+}}
+QTableWidget#settings_models_table QPushButton#settings_model_btn[tone="install"]:hover {{
+    background-color: {primary};
+}}
+QTableWidget#settings_models_table QPushButton#settings_model_btn[tone="install"]:disabled {{
+    background-color: #2a3350;
+    color: #8b93a7;
+}}
+QTableWidget#settings_models_table QPushButton#settings_model_btn[tone="ready"] {{
+    background-color: #1a2230;
+    color: {COLOR_TEXT_MUTED};
+    border: 1px solid {COLOR_BORDER};
+}}
 QTableWidget#settings_models_table QHeaderView::section,
 QTableWidget#settings_api_keys_table QHeaderView::section {{
     background-color: transparent;

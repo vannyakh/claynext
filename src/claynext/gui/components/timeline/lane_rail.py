@@ -81,14 +81,14 @@ class LaneRail(QWidget):
         self.title = QLabel("Tracks")
         self.title.setObjectName("timeline_lane_title_text")
 
-        # Dub focus: Cover (video) + Voice (TTS) only — not a pro NLE track mixer
+        # Dub focus: Source, caption text, and Voice — not a pro NLE track mixer
         self.chk_dub_focus = QCheckBox("Dub")
         self.chk_dub_focus.setObjectName("timeline_dub_focus")
         self.chk_dub_focus.setChecked(True)
         self.chk_dub_focus.setCursor(Qt.CursorShape.PointingHandCursor)
         self.chk_dub_focus.setToolTip(
-            "Dub focus · show only Source (master) and Voice (TTS)\n"
-            "Uncheck to reveal overlay, audio, text, and effect lanes"
+            "Dub focus · Source, caption text, and Voice\n"
+            "Uncheck to reveal overlay, audio, and effect lanes"
         )
         self.chk_dub_focus.toggled.connect(self._on_dub_focus)
 

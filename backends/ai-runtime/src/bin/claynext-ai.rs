@@ -1,7 +1,8 @@
 use claynext_ai_runtime::{
-    align_speech_speed_result, build_dubbing_llm_prompt_from_request, build_llm_translation_prompt,
-    calculate_ducked_background_volume, chunk_subtitles_for_translation, energy_vad_chunking,
-    estimate_speech_quota, filter_ocr_results, is_rate_limit_status, parse_expression_tags,
+    align_speech_speed_result, build_dubbing_llm_prompt_from_request, build_fit_rewrite_prompt,
+    build_llm_translation_prompt, calculate_ducked_background_volume,
+    chunk_subtitles_for_translation, energy_vad_chunking, estimate_speech_quota, filter_ocr_results,
+    is_rate_limit_status, parse_expression_tags, spoken_units,
     parse_retry_after, ApiKeyItem, DubPromptRequest, InferenceDeviceConfig, NativeKeyPool, OcrBox,
     RateLimitDecision, VadConfig, WhisperConfig,
 };
@@ -112,6 +113,31 @@ fn main() {
             let quota = estimate_speech_quota(duration, lang);
             println!("{}", serde_json::to_string(&quota).unwrap_or_default());
         }
+        "spoken-units" => {
+            let raw = args.get(2).cloned().unwrap_or_else(|| "{}".to_string());
+            let value: serde_json::Value = serde_json::from_str(&raw).unwrap_or(serde_json::json!({}));
+            let lang = value.get("lang").and_then(|v| v.as_str()).unwrap_or("");
+            if let Some(texts) = value.get("texts").and_then(|v| v.as_array()) {
+                let counts: Vec<i32> = texts
+                    .iter()
+                    .map(|item| spoken_units(item.as_str().unwrap_or(""), lang))
+                    .collect();
+                println!("{}", serde_json::to_string(&counts).unwrap_or_else(|_| "[]".into()));
+            } else {
+                let text = value.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                println!("{}", spoken_units(text, lang));
+            }
+        }
+        "build-fit-prompt" => {
+            let raw = args.get(2).cloned().unwrap_or_else(|| "{}".to_string());
+            let value: serde_json::Value = serde_json::from_str(&raw).unwrap_or(serde_json::json!({}));
+            let lang = value
+                .get("target_lang")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Khmer");
+            let lines = value.get("lines").cloned().unwrap_or(serde_json::json!([]));
+            print!("{}", build_fit_rewrite_prompt(&lines, lang));
+        }
         "build-dub-prompt" => {
             let raw = if args.get(2).map(|s| s.as_str()) == Some("-") {
                 let mut buf = String::new();
@@ -159,8 +185,9 @@ fn main() {
             eprintln!(
                 "Usage: claynext-ai [device | whisper-config | vad-sim | energy-vad | \
                  llm-parse-retry | llm-acquire | llm-soonest-cooldown | parse-expression-tags | \
-                 chunk-subtitles | filter-ocr | speech-quota | build-dub-prompt | \
-                 build-translate-prompt | ducked-volume | align-speed]"
+                 chunk-subtitles | filter-ocr | speech-quota | spoken-units | \
+                 build-dub-prompt | build-fit-prompt | build-translate-prompt | \
+                 ducked-volume | align-speed]"
             );
             std::process::exit(1);
         }

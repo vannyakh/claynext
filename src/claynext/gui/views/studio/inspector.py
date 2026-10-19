@@ -52,6 +52,7 @@ class InspectorTools:
         self.track_props.overlay_delete.connect(self._remove_selected_overlay)
         self.track_props.text_animation.connect(self._on_text_animation)
         self.track_props.text_align.connect(self._on_text_align)
+        self.track_props.text_inspector.apply_all_requested.connect(self._apply_caption_style_all)
         self.track_props.clear_keys.connect(self._clear_source_keys)
         self.track_props.adjust_changed.connect(self._on_adjust_changed)
         self.track_props.level_changed.connect(self._on_props_level)
@@ -260,6 +261,50 @@ class InspectorTools:
         if item:
             self.overlay.update()
         self.timeline.update_overlay_extra(target.id, target.to_dict())
+
+    def _apply_caption_style_all(self):
+        """Copy the open caption's look onto every caption, leaving each line's words and timing."""
+        editor = self.track_props.text_inspector
+        src = editor.current()
+        if src is None or getattr(src, "kind", "") != "caption":
+            return
+        editor.apply_to(src)
+        style = src.style()
+        layout = {
+            "x": float(src.x),
+            "y": float(src.y),
+            "rotation": float(src.rotation),
+            "w": float(src.w),
+            "h": float(src.h),
+            "live": bool(src.live),
+        }
+        count = 0
+        for clip in list(self.timeline.canvas.clips):
+            if clip.kind != "caption":
+                continue
+            ov = dict(clip.extra.get("overlay") or {})
+            text = str(ov.get("text") or clip.label or "")
+            start = ov.get("start_ms", clip.start_ms)
+            dur = ov.get("duration_ms", clip.duration_ms)
+            path = str(ov.get("path") or clip.extra.get("path") or "")
+            extra = ov.get("extra") if isinstance(ov.get("extra"), dict) else None
+            ov.update(style)
+            ov.update(layout)
+            ov["id"] = clip.id
+            ov["kind"] = "caption"
+            ov["text"] = text
+            ov["start_ms"] = start
+            ov["duration_ms"] = dur
+            if path:
+                ov["path"] = path
+            if extra is not None:
+                ov["extra"] = extra
+            self.timeline.update_overlay_extra(clip.id, ov)
+            count += 1
+        if count:
+            self._sync_preview_overlays(force=True)
+            if hasattr(self, "log"):
+                self.log.info(f"Caption style · {count} line{'s' if count != 1 else ''}")
 
     def _on_text_animation(self, slot: str):
         clip = self.track_props.clip

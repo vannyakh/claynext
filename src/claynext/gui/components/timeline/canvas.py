@@ -51,6 +51,7 @@ class TimelineCanvas(
         self.media_name = ""
         self.tracks: list[TimelineTrack] = [
             new_track("video"),
+            new_track("caption"),
             new_track("voice"),
         ]
         self.clips: list[TimelineClip] = []
@@ -95,5 +96,5 @@ class TimelineCanvas(
         self.rec_ms = 0
         self.tool_mode = "select"
         self.show_waveforms = True
-        self.dub_focus = True  # Cover + Voice only (movie dub workflow)
+        self.dub_focus = True  # Source, caption text, and Voice
 

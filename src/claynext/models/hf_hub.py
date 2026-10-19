@@ -296,14 +296,105 @@ def pull_model(
                 repo_id=repo_id,
                 cache_dir=str(MODELS_DIR),
                 token=token,
+                tqdm_class=_progress_tqdm(progress_callback, display_name),
             )
             if progress_callback:
-                progress_callback(100, f"Downloaded {display_name} successfully!")
+                progress_callback(100, f"Installed {display_name}")
             return str(local_path)
         except Exception as e:
             if progress_callback:
-                progress_callback(0, f"Failed to download {display_name}: {e}")
-            raise RuntimeError(f"Could not pull Hugging Face model '{repo_id}': {e}") from e
+                progress_callback(0, f"Failed to install {display_name}: {e}")
+            raise RuntimeError(f"Could not install Hugging Face model '{repo_id}': {e}") from e
+
+
+def _progress_tqdm(progress_callback, display_name: str):
+    """tqdm stand-in that reports byte progress without drawing a bar."""
+    from tqdm.auto import tqdm
+
+    class _Tqdm(tqdm):
+        def __init__(self, *args, **kwargs):
+            kwargs["disable"] = True
+            super().__init__(*args, **kwargs)
+
+        def update(self, n=1):
+            shown = super().update(n)
+            total = self.total or 0
+            if progress_callback and total > 0:
+                pct = 15 + int(min(1.0, (self.n or 0) / total) * 80)
+                progress_callback(pct, f"Installing {display_name}… {pct}%")
+            return shown
+
+    return _Tqdm
+
+
+def install_model(
+    repo_id: str,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+) -> str:
+    """Install a model in a child process. The caller only supervises progress."""
+    import subprocess
+    import sys
+
+    repo_id = (repo_id or "").strip()
+    if not repo_id:
+        raise ValueError("Missing Hugging Face repository id")
+
+    def _progress(pct: int, msg: str) -> None:
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(max(0, min(100, int(pct))), str(msg or ""))
+        except Exception:
+            pass
+
+    _progress(2, f"Starting install · {repo_id}")
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    cmd = [sys.executable, "-m", "claynext.models.hf_hub", "--install", repo_id]
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    )
+    path = ""
+    error = ""
+    assert proc.stdout is not None
+    for raw in proc.stdout:
+        line = raw.strip()
+        if line.startswith("PROGRESS\t"):
+            parts = line.split("\t", 2)
+            pct = parts[1] if len(parts) > 1 else "0"
+            msg = parts[2] if len(parts) > 2 else ""
+            try:
+                _progress(int(float(pct)), msg)
+            except ValueError:
+                _progress(0, msg)
+        elif line.startswith("RESULT\t"):
+            path = line.split("\t", 1)[1].strip()
+        elif line.startswith("ERROR\t"):
+            error = line.split("\t", 1)[1].strip()
+    code = proc.wait()
+    if code != 0 or not path:
+        raise RuntimeError(error or f"Install failed for {repo_id}")
+    _progress(100, f"Installed {repo_id}")
+    return path
+
+
+def _install_cli(repo_id: str) -> int:
+    def _emit(pct: int, msg: str) -> None:
+        print(f"PROGRESS\t{int(pct)}\t{msg}", flush=True)
+
+    try:
+        path = pull_model(repo_id, progress_callback=_emit)
+    except Exception as exc:
+        print(f"ERROR\t{exc}", flush=True)
+        return 1
+    print(f"RESULT\t{path}", flush=True)
+    return 0
 
 
 def delete_local_model(repo_id: str) -> bool:
@@ -317,4 +408,11 @@ def delete_local_model(repo_id: str) -> bool:
         except OSError:
             return False
     return False
+
+
+if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) >= 3 and sys.argv[1] == "--install":
+        raise SystemExit(_install_cli(sys.argv[2]))
 

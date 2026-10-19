@@ -15,6 +15,11 @@ from claynext.gui.components.timeline.models import (
     TimelineTrack,
 )
 
+# Clips that belong to one dub sequence. A new source must not inherit them.
+_OTHER_SEQUENCE_KINDS = frozenset({
+    "caption", "text", "image", "logo", "shape", "mask", "effect", "filter", "transition",
+})
+
 
 class CanvasMedia:
     """Footage, dialogue, captions, waveforms, and the master window."""
@@ -22,8 +27,9 @@ class CanvasMedia:
     def set_media(self, path: str, duration_ms: int = 0):
         """Load (or clear) master footage — replaces any previous source clip on the video track."""
         path = os.path.abspath(path) if path else ""
-        old_path = self.media_path or ""
-        replacing = bool(path) and path != old_path
+        old_path = os.path.abspath(self.media_path) if self.media_path else ""
+        # First source keeps dialogue already placed. A different movie replaces it.
+        replacing = bool(path) and bool(old_path) and path != old_path
         self.media_path = path
         self.media_name = os.path.basename(path) if path else ""
         self._frames = []
@@ -50,6 +56,9 @@ class CanvasMedia:
                     continue
             elif clip.kind == "voice" and clip.extra.get("auto") and (replacing or not path):
                 continue
+            elif replacing and clip.kind in _OTHER_SEQUENCE_KINDS:
+                # The previous film's sequence stays in its composition, not on this source.
+                continue
             kept.append(clip)
         self.clips = kept
         if path:
@@ -73,36 +82,116 @@ class CanvasMedia:
         self._relayout()
         self.clips_changed.emit()
 
+    def drop_other_sequence(self, keep_path: str = "") -> None:
+        """Take the open sequence off the timeline before a new source dub starts."""
+        keep = os.path.abspath(keep_path) if keep_path else ""
+        current = os.path.abspath(self.media_path) if self.media_path else ""
+        other_film = bool(keep) and current != keep
+        if other_film or not keep:
+            self.voice_path = ""
+            self.bed_path = ""
+        kept: list[TimelineClip] = []
+        for clip in self.clips:
+            if clip.kind in _OTHER_SEQUENCE_KINDS or clip.kind == "voice":
+                continue
+            if other_film and clip.kind in {"video", "audio"}:
+                clip_path = os.path.abspath(str(clip.extra.get("path") or "")) if clip.extra.get("path") else ""
+                is_source = (
+                    clip.id == "footage"
+                    or bool(clip.extra.get("master"))
+                    or bool(clip.extra.get("auto"))
+                    or (current and clip_path == current)
+                )
+                if is_source or clip.kind == "audio":
+                    continue
+            kept.append(clip)
+        self.clips = kept
+        if other_film:
+            self.media_path = ""
+            self.media_name = ""
+            self.duration_ms = 0
+            self._frames = []
+            self._wave = _as_envelope(None)
+        self.playhead_ms = 0
+        self.selected_ids.clear()
+        self._relayout()
+        self.clips_changed.emit()
+
+    def _dialogue_clip(self, index: int, seg: dict, track_id: str) -> TimelineClip:
+        start = timestamp_to_sec(seg.get("start", ""))
+        end = timestamp_to_sec(seg.get("end", ""))
+        if end <= start:
+            end = start + 1.2
+        text = (seg.get("translated_text") or seg.get("text") or f"Line {index + 1}").strip()
+        extra = {"auto": True, "row": index, "text": text}
+        audio = str(seg.get("audio_path") or "")
+        locked = True
+        if audio and os.path.isfile(audio):
+            extra["path"] = audio
+            extra["file_ms"] = max(200, int((end - start) * 1000))
+            locked = False
+        return TimelineClip(
+            id=f"dlg-{index}",
+            track_id=track_id,
+            kind="voice",
+            start_ms=int(seg.get("start_ms") or start * 1000),
+            duration_ms=max(200, int((end - start) * 1000)),
+            label=text[:48],
+            locked=locked,
+            extra=extra,
+        )
+
     def set_dialogue(self, segments: list[dict]):
         self.clips = [c for c in self.clips if not (c.kind == "voice" and c.extra.get("auto"))]
         voice = self.ensure_track("voice")
         for i, seg in enumerate(segments or []):
-            start = timestamp_to_sec(seg.get("start", ""))
-            end = timestamp_to_sec(seg.get("end", ""))
-            if end <= start:
-                end = start + 1.2
-            text = (seg.get("translated_text") or seg.get("text") or f"Line {i + 1}").strip()
-            extra = {"auto": True, "row": i, "text": text}
-            audio = str(seg.get("audio_path") or "")
-            locked = True
-            if audio and os.path.isfile(audio):
-                extra["path"] = audio
-                extra["file_ms"] = max(200, int((end - start) * 1000))
-                locked = False
-            self.clips.append(TimelineClip(
-                id=f"dlg-{i}",
-                track_id=voice.id,
-                kind="voice",
-                start_ms=int(seg.get("start_ms") or start * 1000),
-                duration_ms=max(200, int((end - start) * 1000)),
-                label=text[:48],
-                locked=locked,
-                extra=extra,
-            ))
+            if isinstance(seg, dict):
+                self.clips.append(self._dialogue_clip(i, seg, voice.id))
+        self._extend_duration()
+        self._relayout()
+
+    def sync_dialogue(self, segments: list[dict]) -> bool:
+        """Patch voice clips in place. Rebuild only when the line count changes."""
+        segs = [seg for seg in (segments or []) if isinstance(seg, dict)]
+        autos = [c for c in self.clips if c.kind == "voice" and c.extra.get("auto")]
+        if len(autos) != len(segs):
+            self.set_dialogue(segs)
+            return True
+        voice = self.ensure_track("voice")
+        by_id = {clip.id: clip for clip in autos}
+        changed = False
+        for index, seg in enumerate(segs):
+            fresh = self._dialogue_clip(index, seg, voice.id)
+            clip = by_id.get(fresh.id)
+            if clip is None:
+                self.set_dialogue(segs)
+                return True
+            same = (
+                clip.start_ms == fresh.start_ms
+                and clip.duration_ms == fresh.duration_ms
+                and clip.label == fresh.label
+                and clip.locked == fresh.locked
+                and clip.extra.get("text") == fresh.extra.get("text")
+                and clip.extra.get("path") == fresh.extra.get("path")
+            )
+            if same:
+                continue
+            clip.start_ms = fresh.start_ms
+            clip.duration_ms = fresh.duration_ms
+            clip.label = fresh.label
+            clip.locked = fresh.locked
+            clip.track_id = voice.id
+            clip.extra = fresh.extra
+            changed = True
+        if changed:
+            self._extend_duration()
+            self._relayout(notify=False)
+        return changed
+
+    def _extend_duration(self) -> None:
         last = max((c.end_ms for c in self.clips), default=self.duration_ms)
         if last > self.duration_ms:
             self.duration_ms = last
-        self._relayout()
 
     def caption_cues(self) -> list[tuple[int, int, str]]:
         """Dubbed lines as (start, end, text) at wherever their voice clips sit now."""

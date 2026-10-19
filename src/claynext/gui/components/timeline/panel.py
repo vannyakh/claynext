@@ -507,7 +507,7 @@ class TimelinePanel(QWidget):
         self.canvas._relayout(notify=False)
 
     def _on_dub_focus(self, on: bool):
-        """Show only Cover (video) + Voice (TTS) lanes for movie dubbing."""
+        """Show Source, caption text, and Voice lanes for movie dubbing."""
         self.canvas.set_dub_focus(on)
         self.rail.sync_heights(self.canvas.tracks)
 
@@ -1448,8 +1448,12 @@ class TimelinePanel(QWidget):
         self.comp.blockSignals(True)
         self.comp.clear()
         self.comp.addItems(names)
-        if names:
+        if names and index >= 0:
             self.comp.setCurrentIndex(max(0, min(index, len(names) - 1)))
+            self.comp.show()
+            self._comp_sep.show()
+        elif names:
+            self.comp.setCurrentIndex(-1)
             self.comp.show()
             self._comp_sep.show()
         else:
@@ -1522,6 +1526,10 @@ class TimelinePanel(QWidget):
             ))
         if not incoming:
             return
+        if not any(track.kind in {"caption", "text"} for track in incoming):
+            caption = new_track("caption")
+            video_at = next((i for i, track in enumerate(incoming) if track.kind == "video"), -1)
+            incoming.insert(video_at + 1 if video_at >= 0 else 0, caption)
         valid = {track.id for track in incoming}
         fallback: dict[str, str] = {}
         for track in incoming:
@@ -1708,6 +1716,10 @@ class TimelinePanel(QWidget):
     def has_footage(self) -> bool:
         return bool(self.canvas.media_path)
 
+    def drop_other_sequence(self, keep_path: str = "") -> None:
+        """Clear the open sequence so a new source dub does not reuse it."""
+        self.canvas.drop_other_sequence(keep_path)
+
     def set_media(self, path: str, duration_ms: int = 0):
         path = os.path.abspath(path) if path else ""
         self.canvas.set_media(path, duration_ms)
@@ -1742,6 +1754,21 @@ class TimelinePanel(QWidget):
         self.canvas.set_dialogue(segments)
         self._rebuild_rail()
         self._refresh_meta()
+        self._load_missing_voice_waves()
+
+    def sync_dialogue(self, segments: list[dict]) -> bool:
+        """Update voice clips without rebuilding the track headers."""
+        tracks = len(self.canvas.tracks)
+        changed = self.canvas.sync_dialogue(segments)
+        if len(self.canvas.tracks) != tracks:
+            self._rebuild_rail()
+        if changed:
+            self._refresh_meta()
+            self._load_missing_voice_waves()
+            self.canvas.update()
+        return changed
+
+    def _load_missing_voice_waves(self) -> None:
         paths = [
             str(clip.extra.get("path"))
             for clip in self.canvas.clips

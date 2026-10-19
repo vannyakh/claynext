@@ -125,12 +125,105 @@ class TranslateEngine:
             pass
         dur = max(0.0, float(duration_sec or 0.0))
         rate = TranslateEngine._PACE_RATES.get(target_lang or "", 3.5)
-        target = int(dur * rate)
+        beats = dur * rate
+        target = max(1, int(round(beats * 0.90)))
         return {
-            "min": max(1, int(dur * rate * 0.80)),
-            "target": max(1, target),
-            "max": max(2, int(dur * rate * 1.20)),
+            "min": max(1, int(round(beats * 0.60))),
+            "target": target,
+            "max": max(target, int(round(beats))),
         }
+
+    @staticmethod
+    def spoken_units(text: str, target_lang: str = "") -> int:
+        """Beats a line takes to say. Khmer counts syllables."""
+        try:
+            from claynext.adapters.dubbing import get_dubbing_adapter
+
+            counted = get_dubbing_adapter().spoken_units(text, target_lang)
+            if counted is not None:
+                return counted
+        except Exception:
+            pass
+        return TranslateEngine._spoken_units_py(text, target_lang)
+
+    @staticmethod
+    def _spoken_units_py(text: str, target_lang: str = "") -> int:
+        bare = []
+        skipping = False
+        for ch in text or "":
+            if ch == "[":
+                skipping = True
+                continue
+            if ch == "]" and skipping:
+                skipping = False
+                continue
+            if not skipping:
+                bare.append(ch)
+        raw = "".join(bare).strip()
+        if not raw:
+            return 0
+        khmer = "Khmer" in (target_lang or "") or any("\u1780" <= ch <= "\u17ff" for ch in raw)
+        if khmer:
+            return max(1, TranslateEngine._khmer_beats(raw))
+        cjk = sum(1 for ch in raw if "\u4e00" <= ch <= "\u9fff" or "\u3040" <= ch <= "\u30ff" or "\uac00" <= ch <= "\ud7af")
+        latin = sum(1 for ch in raw if ch.isascii() and ch.isalpha())
+        if cjk and (not latin or cjk * 2 >= latin):
+            return max(1, cjk)
+        beats = 0
+        in_vowel = False
+        for ch in raw:
+            if ch in "aeiouyAEIOUY":
+                if not in_vowel:
+                    beats += 1
+                    in_vowel = True
+            else:
+                in_vowel = False
+        return max(1, beats)
+
+    @staticmethod
+    def _khmer_beats(text: str) -> int:
+        chars = list(text or "")
+        n = len(chars)
+        i = 0
+        beats = 0
+
+        def base(ch: str) -> bool:
+            return "\u1780" <= ch <= "\u17b3"
+
+        def vowel(ch: str) -> bool:
+            return "\u17b6" <= ch <= "\u17c5"
+
+        def sign(ch: str) -> bool:
+            return "\u17c6" <= ch <= "\u17d1" or ch in "\u17d3\u17dd"
+
+        def coda(index: int) -> bool:
+            j = index + 1
+            if j < n and chars[j] == "\u17d2":
+                return False
+            while j < n and sign(chars[j]):
+                j += 1
+            if j < n and vowel(chars[j]):
+                return False
+            return True
+
+        while i < n:
+            if not base(chars[i]):
+                i += 1
+                continue
+            beats += 1
+            i += 1
+            while i < n:
+                if chars[i] == "\u17d2" and i + 1 < n and base(chars[i + 1]):
+                    i += 2
+                    continue
+                if vowel(chars[i]) or sign(chars[i]):
+                    i += 1
+                    continue
+                if base(chars[i]) and coda(i):
+                    i += 1
+                    continue
+                break
+        return beats
 
     @staticmethod
     def gemini_key() -> str:
@@ -400,7 +493,9 @@ class TranslateEngine:
             rust = get_dubbing_adapter().build_dub_prompt(
                 payload, target_lang, source_lang, style=style
             )
-            if rust:
+            # An older binary has no voice-rewrite rule, so keep the Python prompt.
+            fit = bool(style.get("fit_duration", True))
+            if rust and "VOICE REWRITE" in rust and (not fit or "SPOKEN FIT" in rust):
                 return rust
         except Exception:
             pass
@@ -412,23 +507,15 @@ class TranslateEngine:
         src_name = f"from {source_lang} " if source_lang and source_lang not in {"auto", "Auto Detect"} else ""
 
         rules = [
-            "1. Preserve emotional tone, character nuance, and actor delivery — write spoken dialogue, not subtitle captions.",
-            "2. Keep each line's meaning accurate; do not invent plot facts.",
+            TranslateEngine._voice_rewrite_rule(),
+            "2. Keep the scene true. Do not invent plot, names, or actions. Change the words so the line sounds spoken.",
         ]
         n = 3
         if fit:
-            rules.append(
-                f"{n}. TTS DURATION FIT (critical): keep spoken length inside recommended_syllables "
-                f"(min/target/max) for duration_sec. Prefer shorter natural phrasing over padding. "
-                f"Stay within speed_tolerance (typically 0.65–1.85). Count syllables/units for {target_lang}."
-            )
+            rules.append(TranslateEngine._spoken_fit_rule(n, target_lang))
             n += 1
         if slang:
-            rules.append(
-                f"{n}. SLANG & IDIOM: prefer natural slang, colloquialisms, and idioms a native "
-                f"{target_lang} speaker would say in film — not stiff word-for-word translation. "
-                f"Match register (teen slang, formal, rough) to the character."
-            )
+            rules.append(TranslateEngine._register_rule(n, target_lang))
             n += 1
         if expression:
             from claynext.models.tts_expression import EXPRESSION_CHIPS
@@ -455,13 +542,149 @@ class TranslateEngine:
         feat = ", ".join(features) if features else "literal"
 
         return (
-            f"You are a cinematic dubbing adapter translating film dialogue {src_name}into "
-            f"{lang_name}.\n"
+            f"You are a dubbing writer for film dialogue {src_name}into {lang_name}.\n"
+            "You know the script. Write a new spoken line, not a translation of each word.\n"
+            "It must sound like this person talking, in the same breath.\n"
             f"Active features: {feat}.\n"
             "Rules:\n"
             + "\n".join(rules)
             + f"\n\nDialogue segments:\n{json.dumps(payload, ensure_ascii=False)}"
         )
+
+    @staticmethod
+    def _voice_rewrite_rule() -> str:
+        return (
+            "1. VOICE REWRITE: Do not translate word by word. Understand the line, then write new words — "
+            "the best line a native speaker would say in that moment. Keep who did it, what happened, "
+            "the feeling, and the sound of the voice (short or drawn out, sharp or soft, polite or rough). "
+            "Do not copy the source grammar. A dictionary line nobody would say is wrong."
+        )
+
+    @staticmethod
+    def _register_rule(n: int, target_lang: str) -> str:
+        rule = (
+            f"{n}. SLANG: Match how this person talks. If they are casual, rude, or swearing, "
+            f"keep that heat with the short word people actually say — slang, an insult, or a swear word. "
+            f"Do not swap it for a polite or textbook word. Do not add a curse the line did not earn."
+        )
+        if "Khmer" in (target_lang or "") or "ខ្មែរ" in (target_lang or ""):
+            rule += (
+                " Khmer — \"What the hell are you doing?\" is said \"ឯងធ្វើអីហ្នឹង?\", "
+                "not \"តើអ្នកកំពុងធ្វើអ្វី?\"."
+            )
+        return rule
+
+    @staticmethod
+    def _spoken_fit_rule(n: int, target_lang: str) -> str:
+        rule = (
+            f"{n}. SPOKEN FIT (critical): write what a voice actor can say inside duration_sec "
+            f"at a natural pace. Aim at recommended_syllables.target. Do not pass max. "
+            f"Those numbers are spoken beats, not written words. If unsure, choose the shorter line. "
+            f"Drop fillers that do not change the action (then, so, well, and, you know). "
+            f"Drop a repeated owner when that person is already in the line (\"her room\" → \"the room\")."
+        )
+        if "Khmer" in (target_lang or "") or "ខ្មែរ" in (target_lang or ""):
+            rule += (
+                " Khmer pattern — source \"then he sent her to her room\"; "
+                "too long to say: \"បន្ទាប់មកគាត់បានបញ្ជូននាងទៅបន្ទប់របស់នាង\"; "
+                "say: \"គាត់បានជួននាងទៅបន្ទប់\"."
+            )
+        return rule
+
+    @staticmethod
+    def _fit_prompt(lines: list[dict], target_lang: str) -> str:
+        try:
+            from claynext.adapters.dubbing import get_dubbing_adapter
+
+            rust = get_dubbing_adapter().build_fit_prompt(lines, target_lang)
+            if rust:
+                return rust
+        except Exception:
+            pass
+        lang = "spoken Khmer" if "Khmer" in (target_lang or "") else target_lang
+        return (
+            "You are tightening dubbed lines that are too long to say in the actor's slot.\n"
+            f"Write new words in {lang} that this person would actually say. Keep the same voice.\n"
+            "If the line is slang, an insult, or a swear, keep that heat with a shorter spoken word. "
+            "Do not polish it polite.\n"
+            "Keep who did the action. Drop fillers and repeated owners.\n"
+            "Each khmer_text must use at most max_units spoken beats (Khmer: syllables).\n"
+            "Pattern: \"then he sent her to her room\" is said \"គាត់បានជួននាងទៅបន្ទប់\", "
+            "not \"បន្ទាប់មកគាត់បានបញ្ជូននាងទៅបន្ទប់របស់នាង\".\n"
+            "\"What the hell are you doing?\" stays rough and short, not a textbook question.\n"
+            "Return STRICTLY a JSON array of objects with keys id and khmer_text.\n\n"
+            f"Lines:\n{json.dumps(lines, ensure_ascii=False)}"
+        )
+
+    @staticmethod
+    def _tighten_to_slot(
+        rows: dict,
+        target_lang: str,
+        backend: str,
+        ollama_model: str,
+        progress_callback: Callable = None,
+    ) -> None:
+        """One rewrite for lines whose spoken beats run past the slot."""
+        pending = []
+        for row in rows.values():
+            quota = row.get("recommended_syllables") or {}
+            cap = int(quota.get("max") or 0)
+            text = str(row.get("translated_text") or "")
+            if cap > 0 and text:
+                pending.append((row, cap, text))
+        if not pending:
+            return
+        counts = TranslateEngine._spoken_units_many(
+            [text for _row, _cap, text in pending], target_lang,
+        )
+        overflow: list[dict] = []
+        for (row, cap, text), units in zip(pending, counts):
+            if units > cap:
+                overflow.append({
+                    "id": row.get("id"),
+                    "text": row.get("original_text") or row.get("text") or "",
+                    "khmer_text": text,
+                    "duration_sec": row.get("duration_sec"),
+                    "max_units": cap,
+                    "units": units,
+                })
+        if not overflow:
+            return
+        prompt = TranslateEngine._fit_prompt(overflow, target_lang)
+        try:
+            if backend == "ollama":
+                mapped = TranslateEngine._ollama_generate(prompt, ollama_model)
+            else:
+                mapped = TranslateEngine._gemini_batch(prompt, progress_callback)
+        except Exception:
+            return
+        by_key = {}
+        for item in mapped:
+            if isinstance(item, dict):
+                by_key[str(item.get("id", item.get("segment_id")))] = item
+        for row in rows.values():
+            item = by_key.get(str(row.get("id")))
+            if not item:
+                continue
+            fresh = TranslateEngine._line_text(item)
+            if not fresh:
+                continue
+            old = str(row.get("translated_text") or "")
+            fresh_n, old_n = TranslateEngine._spoken_units_many([fresh, old], target_lang)
+            if fresh_n < old_n:
+                row["translated_text"] = fresh
+
+    @staticmethod
+    def _spoken_units_many(texts: list[str], target_lang: str = "") -> list[int]:
+        try:
+            from claynext.adapters.dubbing import get_dubbing_adapter
+
+            counted = get_dubbing_adapter().spoken_units_many(texts, target_lang)
+            if counted is not None and len(counted) == len(texts):
+                return counted
+        except Exception:
+            pass
+        return [TranslateEngine._spoken_units_py(text, target_lang) for text in texts]
 
     @staticmethod
     def _map_batch(
@@ -535,11 +758,14 @@ class TranslateEngine:
                 mapped = TranslateEngine._ollama_generate(prompt, ollama_model)
             else:
                 mapped = TranslateEngine._gemini_batch(prompt, progress_callback)
-            by_id.update(
-                TranslateEngine._map_batch(
-                    batch, mapped, target_lang, fallback_google=backend == "gemini", source_lang=source_lang
-                )
+            rows = TranslateEngine._map_batch(
+                batch, mapped, target_lang, fallback_google=backend == "gemini", source_lang=source_lang
             )
+            if (style or {}).get("fit_duration", True):
+                TranslateEngine._tighten_to_slot(
+                    rows, target_lang, backend, ollama_model, progress_callback,
+                )
+            by_id.update(rows)
             if progress_callback:
                 pct = 10 + int(((b + 1) / len(batches)) * 85)
                 label = "Ollama" if backend == "ollama" else "Gemini"

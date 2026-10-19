@@ -1381,6 +1381,11 @@ QPushButton#dub_props_ghost_btn:pressed {{
 #start_dub_body {{
     background-color: {COLOR_BG_CARD};
 }}
+#startLocalizeDialog QScrollArea#start_dub_captions,
+#startLocalizeDialog QScrollArea#start_dub_captions > QWidget {{
+    background: transparent;
+    border: none;
+}}
 /* Match Settings field size (28px) */
 #startLocalizeDialog QComboBox#start_localize_combo {{
     background-color: {COLOR_BG_DARK};

@@ -47,13 +47,25 @@ class DubbingAdapter:
         if rust:
             return rust
         dur = max(0.0, float(duration_sec or 0.0))
-        rate = _PACE_FALLBACK
-        target = int(dur * rate)
+        beats = dur * _PACE_FALLBACK
+        target = max(1, int(round(beats * 0.90)))
         return {
-            "min": max(1, int(dur * rate * 0.80)),
-            "target": max(1, target),
-            "max": max(2, int(dur * rate * 1.20)),
+            "min": max(1, int(round(beats * 0.60))),
+            "target": target,
+            "max": max(target, int(round(beats))),
         }
+
+    def spoken_units(self, text: str, target_lang: str = "") -> int | None:
+        return RustAiAdapter.spoken_units(text, target_lang)
+
+    def spoken_units_many(self, texts: list[str], target_lang: str = "") -> list[int] | None:
+        return RustAiAdapter.spoken_units_many(texts, target_lang)
+
+    def build_fit_prompt(self, lines: list[dict[str, Any]], target_lang: str) -> str | None:
+        prompt = RustAiAdapter.build_fit_prompt(lines, target_lang)
+        if prompt and "max_units" in prompt and "Do not polish it polite" in prompt:
+            return prompt
+        return None
 
     def build_dub_prompt(
         self,

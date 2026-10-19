@@ -158,6 +158,9 @@ class PipelineTools:
             "caption_anim": self.store.get_setting("dub", "caption_anim", "none") or "none",
             "caption_fit": self.store.get_setting("dub", "caption_fit", "1") == "1",
             "caption_y": caption_y,
+            "picture_effect": self.store.get_setting("dub", "picture_effect", "none") or "none",
+            "picture_filter": self.store.get_setting("dub", "picture_filter", "clean") or "clean",
+            "picture_transition": self.store.get_setting("dub", "picture_transition", "none") or "none",
             "export_srt": self.store.get_setting("dub", "export_srt", "0") == "1",
             "gender_detect": self.store.get_setting("dub", "gender_detect", "1") == "1",
             "translate_fit_duration": self.store.get_setting("dub", "translate_fit_duration", "1") == "1",
@@ -266,6 +269,12 @@ class PipelineTools:
         except (TypeError, ValueError):
             caption_y = 86
         self.store.set_setting("dub", "caption_y", str(caption_y))
+        effect = str(opts.get("picture_effect") or "none")
+        look = str(opts.get("picture_filter") or "clean")
+        transition = str(opts.get("picture_transition") or "none")
+        self.store.set_setting("dub", "picture_effect", effect)
+        self.store.set_setting("dub", "picture_filter", look)
+        self.store.set_setting("dub", "picture_transition", transition)
 
         if look and hasattr(self, "caption_look_grid"):
             from claynext.gui.views.studio.captions import CAPTION_STYLES
@@ -306,8 +315,115 @@ class PipelineTools:
             box.blockSignals(False)
         self.store.set_setting("dub", setting, "1" if checked else "0")
 
+    def _source_already_on_track(self, path: str) -> bool:
+        if not path or not hasattr(self, "timeline"):
+            return False
+        canvas = self.timeline.canvas
+        abspath = os.path.abspath(path)
+        on_track = any(
+            clip.kind == "video"
+            and os.path.abspath(str(clip.extra.get("path") or "")) == abspath
+            for clip in canvas.clips
+        )
+        return on_track and os.path.abspath(canvas.media_path or "") == abspath
+
+    def _ensure_source_sequence(self, path: str) -> None:
+        """Probe the movie off the interface thread, then place it on Source."""
+        if not path or not os.path.isfile(path) or not hasattr(self, "timeline"):
+            return
+        abspath = os.path.abspath(path)
+        if self._source_already_on_track(abspath):
+            return
+        if getattr(self, "_source_seq_path", "") == abspath:
+            return
+        self._source_seq_path = abspath
+        token = int(getattr(self, "_source_seq_token", 0)) + 1
+        self._source_seq_token = token
+
+        def probe(progress_callback=None):
+            from claynext.adapters.ffmpeg_adapter import get_ffmpeg_adapter
+            return int(get_ffmpeg_adapter().duration(abspath) * 1000)
+
+        worker = Worker(probe)
+        worker.signals.result.connect(
+            lambda ms, media=abspath, seq=token: self._apply_source_sequence(media, int(ms or 0), seq)
+        )
+        worker.signals.error.connect(
+            lambda *_err, media=abspath, seq=token: self._apply_source_sequence(media, 0, seq)
+        )
+        pending = getattr(self, "_source_seq_workers", None)
+        if not isinstance(pending, list):
+            pending = []
+            self._source_seq_workers = pending
+        pending.append(worker)
+
+        def _release(done=worker):
+            held = getattr(self, "_source_seq_workers", None)
+            if isinstance(held, list) and done in held:
+                held.remove(done)
+
+        worker.signals.finished.connect(_release)
+        self._source_seq_worker = worker
+        pool = getattr(self, "thread_pool", None)
+        if pool is None:
+            from PySide6.QtCore import QThreadPool
+            pool = QThreadPool.globalInstance()
+        pool.start(worker)
+
+    def _apply_source_sequence(self, path: str, duration_ms: int, token: int) -> None:
+        if token != int(getattr(self, "_source_seq_token", 0)):
+            return
+        if getattr(self, "_source_seq_path", "") == path:
+            self._source_seq_path = ""
+        if not path or not os.path.isfile(path) or not hasattr(self, "timeline"):
+            return
+        if self._source_already_on_track(path):
+            return
+        if duration_ms > 0:
+            self.timeline.set_media(path, duration_ms)
+        else:
+            self.timeline.set_media(path)
+        self._timeline_open = True
+        if hasattr(self, "_sync_timeline_visibility"):
+            self._sync_timeline_visibility()
+        self._live_paint_keys = None
+        segments = [seg for seg in (getattr(self, "_segments", None) or []) if isinstance(seg, dict)]
+        if segments and hasattr(self.timeline, "sync_dialogue"):
+            self.timeline.sync_dialogue(segments)
+        self.log.info(f"Source sequence · {os.path.basename(path)}")
+
+    def _detach_other_sequence(self) -> None:
+        """Keep the open sequence saved, then leave the timeline free for this source."""
+        index = int(getattr(self, "_composition_index", -1))
+        compositions = list(getattr(self, "_compositions", None) or [])
+        selected = os.path.abspath(getattr(self, "selected_file", "") or "")
+        comp_source = ""
+        if 0 <= index < len(compositions):
+            comp_source = os.path.abspath(str(compositions[index].get("source") or ""))
+            if hasattr(self, "_stash_composition"):
+                self._stash_composition()
+        self._composition_index = -1
+        self._viewing_task = -1
+        if not hasattr(self, "timeline"):
+            return
+        current = os.path.abspath(getattr(self.timeline.canvas, "media_path", "") or "")
+        other_film = bool(selected) and (
+            (bool(current) and current != selected)
+            or (bool(comp_source) and comp_source != selected)
+        )
+        if other_film:
+            # Drop it before the dub job reads overlays.
+            self.timeline.drop_other_sequence(selected)
+        names = [str(comp.get("name") or "") for comp in compositions]
+        if names:
+            self.timeline.set_compositions(names, -1)
+
     def _launch_dub_job(self):
         from claynext.gui.views.studio.tasks import LiveBridge
+
+        # The other movie's sequence stays in its composition. This dub shows the new source.
+        self._detach_other_sequence()
+        self._ensure_source_sequence(self.selected_file)
 
         # Don't let a script TTS/translate retry race the main dub worker
         if hasattr(self, "_cancel_script_job"):
@@ -318,6 +434,8 @@ class PipelineTools:
         task["control"] = control
         # Own the script panel until this job's transcript list arrives.
         self._segments = []
+        self._live_paint_keys = None
+        self._live_scroll_row = None
         self._script_follow_task = task["id"]
         if hasattr(self, "_set_script_loading"):
             self._set_script_loading(True, "Transcribing…", "Reading dialogue from the movie")
@@ -486,10 +604,77 @@ class PipelineTools:
             })
             label = text if len(text) <= 48 else f"{text[:47]}…"
             canvas.add_clip("caption", label, duration_ms=dur, extra={"overlay": ov}, start_ms=start)
+        self._apply_caption_picture()
         self.timeline.rail.rebuild(canvas.tracks)
         self._sync_preview_overlays(force=True)
         look = style.get("name") or "Caption"
         self.log.info(f"Auto captions · {len(segments)} segment(s) · {look}")
+
+    def _apply_caption_picture(self) -> None:
+        """Place one effect, one filter, and source-cut transitions chosen with captions."""
+        if not hasattr(self, "timeline"):
+            return
+        effect = str(self.store.get_setting("dub", "picture_effect", "none") or "none")
+        filt = str(self.store.get_setting("dub", "picture_filter", "clean") or "clean")
+        transition = str(self.store.get_setting("dub", "picture_transition", "none") or "none")
+        canvas = self.timeline.canvas
+        canvas.clips = [
+            clip for clip in canvas.clips
+            if not (isinstance(clip.extra, dict) and clip.extra.get("auto_picture"))
+        ]
+        span = canvas.master_span()
+        start, dur = span if span else (0, max(int(canvas.duration_ms or 0), 1000))
+        from claynext.models.fx import DEFAULT_INTENSITY, EFFECT_LABELS, FILTER_LOOKS
+        from claynext.models.transitions import (
+            DEFAULT_DURATION_MS, DEFAULT_INTENSITY as TR_INTENSITY, TRANSITION_LABELS,
+        )
+
+        placed: list[str] = []
+        if effect != "none":
+            name = EFFECT_LABELS.get(effect, effect)
+            style = {
+                "kind": "effect",
+                "effect": effect,
+                "intensity": DEFAULT_INTENSITY["effect"],
+                "name": name,
+            }
+            canvas.add_clip(
+                "effect", name, duration_ms=dur,
+                extra={"fx": style, "auto_picture": True}, start_ms=start,
+            )
+            placed.append(name)
+        if filt not in {"", "none", "clean"}:
+            label = dict(FILTER_LOOKS).get(filt, filt)
+            style = {
+                "kind": "filter",
+                "filter": filt,
+                "look": filt,
+                "intensity": DEFAULT_INTENSITY["filter"],
+                "name": label,
+            }
+            canvas.add_clip(
+                "filter", label, duration_ms=dur,
+                extra={"fx": style, "auto_picture": True}, start_ms=start,
+            )
+            placed.append(label)
+        if transition != "none":
+            seams = canvas.find_split_seams()
+            if seams:
+                name = TRANSITION_LABELS.get(transition, transition)
+                tr = {
+                    "transition": transition,
+                    "intensity": int(TR_INTENSITY),
+                    "duration_ms": int(DEFAULT_DURATION_MS),
+                    "name": name,
+                }
+                for seam in seams:
+                    seam["left_clip"].extra["transition"] = dict(tr)
+                placed.append(name)
+            else:
+                self.log.info("Transition skipped · source has a single cut")
+        canvas.selected_ids.clear()
+        if placed:
+            self.log.info("Caption picture · " + " · ".join(placed))
 
     def _remember_composition(
         self, output: str, segments: list, source: str, language: str, voice: str,

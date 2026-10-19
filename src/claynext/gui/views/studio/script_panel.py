@@ -434,89 +434,158 @@ class ScriptPanelTools:
 
         self._fit_script_columns()
 
+    def _script_row_key(self, seg: dict, index: int) -> tuple:
+        return (
+            str(seg.get("id", index + 1)),
+            str(seg.get("start", "")),
+            str(seg.get("end", "")),
+            str(seg.get("speaker") or ""),
+            str(seg.get("gender") or ""),
+            bool(seg.get("pending")),
+            bool(seg.get("gender_manual")),
+            str(seg.get("tts_voice_hint") or seg.get("voice_id") or ""),
+            str(seg.get("original_text") or seg.get("text") or ""),
+            str(seg.get("translated_text") or ""),
+            str(seg.get("audio_path") or ""),
+        )
+
+    def _apply_script_row(self, row: int, seg: dict, index: int) -> None:
+        id_item = QTableWidgetItem(str(seg.get("id", index + 1)))
+        id_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table.setItem(row, 0, id_item)
+
+        start = str(seg.get("start", ""))
+        end = str(seg.get("end", ""))
+        start_fmt = start[3:8] if len(start) >= 8 else start
+        end_fmt = end[3:8] if len(end) >= 8 else end
+        time_str = f"{start_fmt}-{end_fmt}" if end_fmt else start_fmt
+        time_item = QTableWidgetItem(time_str)
+        time_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        time_item.setForeground(QBrush(QColor("#64748b")))
+        time_item.setToolTip(f"{start} --> {end}")
+        self.table.setItem(row, 1, time_item)
+
+        speaker = str(seg.get("speaker") or f"Character {index % 2 + 1}")
+        mark = " ●" if seg.get("pending") else ""
+        char_item = QTableWidgetItem(f"● {speaker}{mark}")
+        char_item.setTextAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        voice = str(seg.get("tts_voice_hint") or seg.get("voice_id") or "")
+        char_item.setToolTip(f"{speaker}" + (f"\nVoice: {voice}" if voice else ""))
+        gender = str(seg.get("gender") or "Unknown")
+        if gender == "Female":
+            char_color = QColor("#f472b6")
+        elif gender == "Male":
+            char_color = QColor("#38bdf8")
+        else:
+            hue = (sum(ord(c) for c in speaker) * 47) % 360
+            char_color = QColor.fromHsv(hue, 120, 220)
+        char_item.setForeground(QBrush(char_color))
+        self.table.setItem(row, 2, char_item)
+
+        gender_item = QTableWidgetItem(gender)
+        gender_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        if gender == "Female":
+            gender_item.setForeground(QBrush(QColor("#f472b6")))
+        elif gender == "Male":
+            gender_item.setForeground(QBrush(QColor("#38bdf8")))
+        else:
+            gender_item.setForeground(QBrush(QColor("#64748b")))
+        tip = "Manual gender" if seg.get("gender_manual") else "Auto-detected gender"
+        if voice:
+            tip += f"\nTTS: {voice}"
+        gender_item.setToolTip(tip)
+        self.table.setItem(row, 3, gender_item)
+
+        orig = str(seg.get("original_text") or seg.get("text") or "")
+        src_item = QTableWidgetItem(orig)
+        src_item.setTextAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        src_item.setForeground(QBrush(QColor("#94a3b8")))
+        src_item.setToolTip(f"Original speech:\n{orig}")
+        self.table.setItem(row, 4, src_item)
+
+        dub = str(seg.get("translated_text") or "")
+        dub_item = QTableWidgetItem(dub)
+        dub_item.setTextAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        dub_item.setForeground(QBrush(QColor("#f8fafc")))
+        font = dub_item.font()
+        font.setBold(True)
+        dub_item.setFont(font)
+        if seg.get("pending"):
+            dub_item.setBackground(QBrush(QColor(168, 85, 247, 48)))
+            dub_item.setToolTip("Pending version. Accept to keep it, or Reverse to restore the previous line.")
+        else:
+            dub_item.setToolTip(f"Dubbed translation:\n{dub}")
+        self.table.setItem(row, 5, dub_item)
+
+    def _patch_script_rows(self, segments: list) -> bool:
+        """Update changed script lines. A full rebuild is required when the count changes."""
+        segs = [seg for seg in (segments or []) if isinstance(seg, dict)]
+        if len(segs) != len(self._segments) or len(segs) != self.table.rowCount():
+            return False
+        changed: list[int] = []
+        speakers_changed = False
+        filters_changed = False
+        for index, seg in enumerate(segs):
+            old = self._segments[index]
+            if self._script_row_key(old, index) == self._script_row_key(seg, index):
+                continue
+            changed.append(index)
+            if str(old.get("speaker") or "") != str(seg.get("speaker") or ""):
+                speakers_changed = True
+            if (
+                bool(old.get("pending")) != bool(seg.get("pending"))
+                or bool(str(old.get("translated_text") or "").strip()) != bool(str(seg.get("translated_text") or "").strip())
+                or bool(str(old.get("original_text") or old.get("text") or "").strip())
+                != bool(str(seg.get("original_text") or seg.get("text") or "").strip())
+            ):
+                filters_changed = True
+        if not changed:
+            self._segments = segs
+            return True
+        self._filling_table = True
+        self.table.setUpdatesEnabled(False)
+        try:
+            for index in changed:
+                self._apply_script_row(index, segs[index], index)
+                self.table.resizeRowToContents(index)
+            playing = int(getattr(self, "_playing_row", -1))
+            if playing in changed and 0 <= playing < self.table.rowCount():
+                brush = QBrush(QColor(99, 102, 241, 38))
+                for col in range(self.table.columnCount()):
+                    item = self.table.item(playing, col)
+                    if item is not None:
+                        item.setBackground(brush)
+        finally:
+            self.table.setUpdatesEnabled(True)
+            self._filling_table = False
+        self._segments = segs
+        if speakers_changed:
+            self._refresh_character_filter()
+        if speakers_changed or filters_changed:
+            self._apply_script_filters()
+        else:
+            self._update_script_meta()
+        return True
+
     def _fill_table(self, segments: list):
         self._filling_table = True
         self._playing_row = -1
         self._segments = list(segments or [])
-        self.table.setRowCount(0)
-        for i, seg in enumerate(self._segments):
-            row = self.table.rowCount()
-            self.table.insertRow(row)
-
-            id_item = QTableWidgetItem(str(seg.get("id", i + 1)))
-            id_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.table.setItem(row, 0, id_item)
-
-            start = str(seg.get("start", ""))
-            end = str(seg.get("end", ""))
-            start_fmt = start[3:8] if len(start) >= 8 else start
-            end_fmt = end[3:8] if len(end) >= 8 else end
-            time_str = f"{start_fmt}-{end_fmt}" if end_fmt else start_fmt
-            time_item = QTableWidgetItem(time_str)
-            time_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            time_item.setForeground(QBrush(QColor("#64748b")))
-            time_item.setToolTip(f"{start} --> {end}")
-            self.table.setItem(row, 1, time_item)
-
-            speaker = str(seg.get("speaker") or f"Character {i % 2 + 1}")
-            mark = " ●" if seg.get("pending") else ""
-            char_item = QTableWidgetItem(f"● {speaker}{mark}")
-            char_item.setTextAlignment(
-                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-            )
-            voice = str(seg.get("tts_voice_hint") or seg.get("voice_id") or "")
-            char_item.setToolTip(f"{speaker}" + (f"\nVoice: {voice}" if voice else ""))
-            gender = str(seg.get("gender") or "Unknown")
-            if gender == "Female":
-                char_color = QColor("#f472b6")
-            elif gender == "Male":
-                char_color = QColor("#38bdf8")
-            else:
-                # Stable color from speaker name hash
-                hue = (sum(ord(c) for c in speaker) * 47) % 360
-                char_color = QColor.fromHsv(hue, 120, 220)
-            char_item.setForeground(QBrush(char_color))
-            self.table.setItem(row, 2, char_item)
-
-            gender_item = QTableWidgetItem(gender)
-            gender_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            if gender == "Female":
-                gender_item.setForeground(QBrush(QColor("#f472b6")))
-            elif gender == "Male":
-                gender_item.setForeground(QBrush(QColor("#38bdf8")))
-            else:
-                gender_item.setForeground(QBrush(QColor("#64748b")))
-            tip = "Manual gender" if seg.get("gender_manual") else "Auto-detected gender"
-            if voice:
-                tip += f"\nTTS: {voice}"
-            gender_item.setToolTip(tip)
-            self.table.setItem(row, 3, gender_item)
-
-            orig = str(seg.get("original_text") or seg.get("text") or "")
-            src_item = QTableWidgetItem(orig)
-            src_item.setTextAlignment(
-                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-            )
-            src_item.setForeground(QBrush(QColor("#94a3b8")))
-            src_item.setToolTip(f"Original speech:\n{orig}")
-            self.table.setItem(row, 4, src_item)
-
-            dub = str(seg.get("translated_text") or "")
-            dub_item = QTableWidgetItem(dub)
-            dub_item.setTextAlignment(
-                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-            )
-            dub_item.setForeground(QBrush(QColor("#f8fafc")))
-            font = dub_item.font()
-            font.setBold(True)
-            dub_item.setFont(font)
-            if seg.get("pending"):
-                dub_item.setBackground(QBrush(QColor(168, 85, 247, 48)))
-                dub_item.setToolTip("Pending version. Accept to keep it, or Reverse to restore the previous line.")
-            else:
-                dub_item.setToolTip(f"Dubbed translation:\n{dub}")
-            self.table.setItem(row, 5, dub_item)
-
+        self.table.setUpdatesEnabled(False)
+        try:
+            self.table.setRowCount(0)
+            for index, seg in enumerate(self._segments):
+                self.table.insertRow(index)
+                if isinstance(seg, dict):
+                    self._apply_script_row(index, seg, index)
+        finally:
+            self.table.setUpdatesEnabled(True)
         self._fit_script_columns()
         self.table.resizeRowsToContents()
         self._filling_table = False

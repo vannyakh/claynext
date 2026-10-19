@@ -239,6 +239,63 @@ class RustAiAdapter:
             return None
 
     @classmethod
+    def spoken_units(cls, text: str, target_lang: str = "") -> int | None:
+        """Spoken beats for one line. None if the binary has no spoken-units command."""
+        try:
+            res = cls._ai(
+                "spoken-units",
+                json.dumps({"lang": target_lang or "", "text": text or ""}, ensure_ascii=False),
+                check=False,
+            )
+            if not res or res.returncode != 0:
+                return None
+            raw = (res.stdout or "").strip()
+            if not raw:
+                return None
+            return int(raw)
+        except Exception as e:
+            logger.debug(f"Rust spoken-units failed: {e}")
+            return None
+
+    @classmethod
+    def spoken_units_many(cls, texts: list[str], target_lang: str = "") -> list[int] | None:
+        try:
+            res = cls._ai(
+                "spoken-units",
+                json.dumps({"lang": target_lang or "", "texts": texts}, ensure_ascii=False),
+                check=False,
+            )
+            if not res or res.returncode != 0:
+                return None
+            data = json.loads((res.stdout or "").strip() or "[]")
+            if not isinstance(data, list):
+                return None
+            return [int(n) for n in data]
+        except Exception as e:
+            logger.debug(f"Rust spoken-units failed: {e}")
+            return None
+
+    @classmethod
+    def build_fit_prompt(cls, lines: list[dict[str, Any]], target_lang: str) -> str | None:
+        """Rewrite prompt for lines that run past the speech slot."""
+        try:
+            res = cls._ai(
+                "build-fit-prompt",
+                json.dumps(
+                    {"target_lang": target_lang or "", "lines": lines},
+                    ensure_ascii=False,
+                ),
+                check=False,
+            )
+            if not res or res.returncode != 0:
+                return None
+            prompt = (res.stdout or "").strip()
+            return prompt or None
+        except Exception as e:
+            logger.debug(f"Rust build-fit-prompt failed: {e}")
+            return None
+
+    @classmethod
     def build_translate_prompt(
         cls, source_lang: str, target_lang: str, text: str
     ) -> str | None:

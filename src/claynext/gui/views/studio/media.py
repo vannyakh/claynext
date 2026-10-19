@@ -71,7 +71,8 @@ class MediaTools:
         self.store.upsert_media(file_path)
         if file_path not in self.media_lib.paths():
             self.media_lib.add_files([file_path], select_last=False)
-        changed = file_path != self.selected_file
+        previous = self.selected_file or ""
+        changed = file_path != previous
         self.selected_file = file_path
         if not self._compositions:
             self._output_path = ""
@@ -84,7 +85,9 @@ class MediaTools:
         except Exception:
             self._media_info = {"name": name, "path": file_path}
         stem = os.path.splitext(name)[0]
-        if not self._project.get("name") or self._project.get("name") == "Untitled":
+        previous_stem = os.path.splitext(os.path.basename(previous))[0] if previous else ""
+        current_name = str(self._project.get("name") or "")
+        if not current_name or current_name == "Untitled" or (changed and current_name == previous_stem):
             self._project["name"] = stem
         self._project["media"] = file_path
         self._refresh_project_info()
@@ -94,6 +97,10 @@ class MediaTools:
             self.log.info(f"Dub source · {name}")
 
     def _restore_workspace_data(self):
+        # A chosen project file is the whole workspace. The last-session
+        # library belongs to Studio launched with no project.
+        if getattr(self, "_startup_project_path", ""):
+            return
         rows = self.store.list_library()
         paths = [r["path"] for r in rows if os.path.isfile(r["path"])]
         last = self.store.last_opened_path()
@@ -101,9 +108,6 @@ class MediaTools:
         if paths:
             self.media_lib.set_paths(paths, select=last if last in paths else None, quiet=True)
         self._syncing_library = False
-        # Skip autosession when home screen already chose a project file.
-        if getattr(self, "_startup_project_path", ""):
-            return
         if hasattr(self, "_restore_project_session"):
             self._restore_project_session()
 

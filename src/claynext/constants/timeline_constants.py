@@ -28,7 +28,7 @@ TRACK_PRESETS = (
     ("mask", "Mask", 28, "#94a3b8", "shapes"),
     ("effect", "Effect", 28, "#f97316", "sparkles"),
     ("filter", "Filter", 28, "#c084fc", "filter"),
-    ("caption", "Text", 28, "#fb7185", "type"),
+    ("caption", "Caption", 28, "#fb7185", "type"),
 )
 # Add-track menu. Source already exists (master). Captions live on Text.
 # Blur is an effect you can also drop onto footage.
@@ -47,5 +47,5 @@ ADD_TRACK_PRESETS = (
 PRESET = {k: (name, h, color, icn) for k, name, h, color, icn in TRACK_PRESETS}
 OVERLAY_KINDS = frozenset({"text", "caption", "image", "logo", "shape", "mask"})
 FX_KINDS = frozenset({"effect", "filter"})
-# Dubbing focus — Cover (source video) + Voice (TTS) only
-DUB_FOCUS_KINDS = frozenset({"video", "voice"})
+# Dubbing focus — Source, caption text, and Voice. Other lanes stay hidden.
+DUB_FOCUS_KINDS = frozenset({"video", "voice", "caption", "text"})

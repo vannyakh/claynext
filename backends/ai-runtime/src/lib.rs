@@ -21,9 +21,10 @@ pub use ocr::{filter_ocr_results, OcrBox};
 pub use stems::{calculate_ducked_background_volume, DemucsStemConfig};
 pub use timing::{align_speech_speed, align_speech_speed_result, AlignSpeedResult};
 pub use translation::{
-    build_dubbing_llm_prompt, build_dubbing_llm_prompt_from_request, build_llm_translation_prompt,
-    chunk_subtitles_for_translation, estimate_speech_quota, expression_chip_tokens, DubPromptRequest,
-    SpeechQuota, TranslateStyle, TranslationChunk,
+    build_dubbing_llm_prompt, build_dubbing_llm_prompt_from_request, build_fit_rewrite_prompt,
+    build_llm_translation_prompt, chunk_subtitles_for_translation, estimate_speech_quota,
+    expression_chip_tokens, spoken_units, DubPromptRequest, SpeechQuota, TranslateStyle,
+    TranslationChunk,
 };
 pub use tts::TtsVoiceSpec;
 pub use tts_expression::{parse_expression_tags, UtteranceSegment};

@@ -1,8 +1,6 @@
 """Clean New Project dialog — templates, essentials, live canvas preview."""
 from __future__ import annotations
 
-from pathlib import Path
-
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -37,7 +35,7 @@ from claynext.gui.dialogs.project_settings_dialog import (
     default_project_settings,
 )
 from claynext.gui.icons import icon
-from claynext.models.dub_project import PROJECT_DIR, _slug
+from claynext.models.dub_project import PROJECT_DIR
 
 
 class NewProjectDialog(QDialog):
@@ -286,18 +284,10 @@ class NewProjectDialog(QDialog):
         self.val_canvas.setText(f"{pw} × {ph}")
         self.val_fps.setText(fps)
 
-        name = self.edit_name.text().strip() or "Untitled"
-        folder = Path(self.edit_location.text().strip() or str(PROJECT_DIR))
-        dest = folder / f"{_slug(name)}.claynext.json"
-
         if not self.edit_name.text().strip():
             self.lbl_status.setObjectName("new_project_pill_error")
             self.lbl_status.setText("Project name required")
             self.btn_create.setEnabled(False)
-        elif dest.is_file():
-            self.lbl_status.setObjectName("new_project_pill_warn")
-            self.lbl_status.setText("File exists — timestamp will be added")
-            self.btn_create.setEnabled(True)
         else:
             self.lbl_status.setObjectName("new_project_pill_ready")
             self.lbl_status.setText("✓ Ready to create")
