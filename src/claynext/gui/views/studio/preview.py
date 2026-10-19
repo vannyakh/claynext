@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QL
 from claynext.models.dubbing_service import timestamp_to_sec
 from claynext.models.canvas import ratio_value
 from claynext.gui.components.media_preview import MediaPlaybackWidget, MediaPreviewWidget
-from claynext.gui.components.overlay_canvas import OverlayCanvas, PreviewStageHost
+from claynext.gui.components.overlay import OverlayCanvas, PreviewStageHost
 from claynext.gui.components.spinner import Spinner
 
 

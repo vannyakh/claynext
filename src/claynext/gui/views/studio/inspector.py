@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 from claynext.constants.timeline_constants import FX_KINDS, OVERLAY_KINDS
 from claynext.models.thumbnails import pixmap_for
 from claynext.models.adjust import clean_adjust
-from claynext.gui.components.overlay_canvas import TEXT_KINDS
+from claynext.gui.components.overlay import TEXT_KINDS
 from claynext.gui.components.fx_shelf import FxShelfPanel
 from claynext.gui.components.properties_panel import TrackPropsPage
 from claynext.gui.components.text_styles_panel import TextStylesPanel
@@ -87,6 +87,13 @@ class InspectorTools:
         self.project_info.show_empty()
         self.prop_stack.setCurrentIndex(_PROJECT_PAGE)
         outer.addWidget(self.prop_stack, 1)
+        self._apply_all_host = QWidget(wrap)
+        foot = QHBoxLayout(self._apply_all_host)
+        foot.setContentsMargins(14, 4, 14, 10)
+        foot.addStretch(1)
+        foot.addWidget(self.track_props.text_inspector.btn_apply_all, 0, Qt.AlignmentFlag.AlignRight)
+        self._apply_all_host.hide()
+        outer.addWidget(self._apply_all_host)
         self._sync_props_header()
         return wrap
 

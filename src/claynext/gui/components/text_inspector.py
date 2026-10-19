@@ -4,9 +4,8 @@ from __future__ import annotations
 from PySide6.QtCore import QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QColorDialog, QFontComboBox, QGridLayout, QHBoxLayout, QLabel,
-    QPushButton, QSizePolicy, QStackedWidget, QStyledItemDelegate, QStyle, QStyleOptionViewItem,
-    QToolButton, QVBoxLayout, QWidget,
+    QButtonGroup, QCheckBox, QColorDialog, QFontDialog, QGridLayout, QHBoxLayout, QLabel,
+    QPushButton, QSizePolicy, QStackedWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
 from claynext.constants.theme_constants import COLOR_BORDER, COLOR_PRIMARY, COLOR_TEXT_MUTED
@@ -27,80 +26,6 @@ _ALIGN_TO_CANVAS = (
     ("right", "pos-right", "Align right"), ("top", "pos-top", "Align top"),
     ("vcenter", "pos-vcenter", "Centre vertically"), ("bottom", "pos-bottom", "Align bottom"),
 )
-
-
-class FontChoiceDelegate(QStyledItemDelegate):
-    """Draw each font name in that typeface. App stylesheets otherwise flatten the list."""
-
-    def paint(self, painter, option, index):
-        opt = QStyleOptionViewItem(option)
-        self.initStyleOption(opt, index)
-        face = _choice_font(index, opt.font)
-        opt.font = face
-        widget = opt.widget
-        style = widget.style() if widget is not None else None
-        if style is None:
-            from PySide6.QtWidgets import QApplication
-            style = QApplication.style()
-        style.drawPrimitive(QStyle.PrimitiveElement.PE_PanelItemViewItem, opt, painter, widget)
-        painter.save()
-        painter.setFont(face)
-        selected = bool(opt.state & QStyle.StateFlag.State_Selected)
-        color = opt.palette.highlightedText().color() if selected else opt.palette.text().color()
-        painter.setPen(color)
-        painter.drawText(opt.rect.adjusted(10, 0, -8, 0), Qt.AlignmentFlag.AlignVCenter, opt.text)
-        painter.restore()
-
-    def sizeHint(self, option, index):
-        opt = QStyleOptionViewItem(option)
-        self.initStyleOption(opt, index)
-        opt.font = _choice_font(index, opt.font)
-        hint = super().sizeHint(opt, index)
-        hint.setHeight(max(hint.height(), 26))
-        return hint
-
-
-def _choice_font(index, fallback: QFont) -> QFont:
-    """QFontComboBox stores the family as the row label, not as a font role."""
-    name = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
-    stored = index.data(Qt.ItemDataRole.FontRole)
-    if isinstance(stored, QFont) and stored.family():
-        face = QFont(stored)
-    else:
-        face = QFont(name or fallback.family())
-    face.setPointSize(13)
-    face.setBold(False)
-    face.setItalic(False)
-    face.setUnderline(False)
-    return face
-
-
-class FontChoiceBox(QFontComboBox):
-    """Font menu whose closed label and each option are set in that font."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("dub_setting_field")
-        self.setFontFilters(QFontComboBox.FontFilter.ScalableFonts)
-        self.setMaxVisibleItems(14)
-        view = self.view()
-        view.setItemDelegate(FontChoiceDelegate(view))
-        view.setMinimumWidth(220)
-        self.currentFontChanged.connect(self.use_family)
-
-    def setCurrentFont(self, font: QFont):
-        super().setCurrentFont(font)
-        self.use_family(font)
-
-    def use_family(self, font: QFont):
-        family = str(font.family() or "Arial").replace("\\", "").replace('"', "")
-        face = QFont(family)
-        face.setPointSize(13)
-        self.setFont(face)
-        # More specific than the window font, and it does not restyle the popup rows.
-        self.setStyleSheet(
-            f'QFontComboBox#dub_setting_field {{ font-family: "{family}"; font-size: 13px; }}'
-        )
 
 
 def _swatch_icon(color: str, side: int = 16, width: int = 0, height: int = 0) -> QIcon:
@@ -146,19 +71,18 @@ class TextInspector(QWidget):
         self.tab_bar = SegmentTabs(["Basic", "Animation"], size="sm", fill=True)
         self.tab_group = self.tab_bar.group
         root.addWidget(self.tab_bar)
-        self.btn_apply_all = QPushButton("Apply to all")
-        self.btn_apply_all.setObjectName("dub_props_ghost_btn")
-        self.btn_apply_all.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_apply_all.setToolTip("Copy this caption's font, color, and motion onto every caption")
-        self.btn_apply_all.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.btn_apply_all.setVisible(False)
-        self.btn_apply_all.clicked.connect(self.apply_all_requested.emit)
-        root.addWidget(self.btn_apply_all)
         self.pages = QStackedWidget()
         self.tab_bar.changed.connect(self.pages.setCurrentIndex)
         root.addWidget(self.pages)
         self.pages.addWidget(self._build_basic())
         self.pages.addWidget(self._build_animation())
+        self.btn_apply_all = QPushButton("Apply all", self)
+        self.btn_apply_all.setObjectName("dub_props_ghost_btn")
+        self.btn_apply_all.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_apply_all.setToolTip("Copy this caption's font, color, and motion onto every caption")
+        self.btn_apply_all.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.btn_apply_all.setVisible(False)
+        self.btn_apply_all.clicked.connect(self.apply_all_requested.emit)
         self.setEnabled(False)
 
     # ── building blocks ────────────────────────────────────────────
@@ -311,14 +235,14 @@ class TextInspector(QWidget):
         if shape:
             self._build_shape(content)
         else:
-            self.chk_live = QCheckBox("Live caption from script")
-            self.chk_live.setObjectName("dub_switch")
-            self.chk_live.toggled.connect(self._emit)
-            content.addWidget(self.chk_live)
             content.addWidget(self._label("Font"))
-            self.font_box = FontChoiceBox()
-            self.font_box.currentFontChanged.connect(lambda f: self._set("font", f.family()))
-            content.addWidget(self.font_box)
+            self.btn_font = QPushButton("Arial")
+            self.btn_font.setObjectName("dub_setting_field")
+            self.btn_font.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.btn_font.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            self.btn_font.setToolTip("Choose a font")
+            self.btn_font.clicked.connect(self._pick_font)
+            content.addWidget(self.btn_font)
             self.spin_size = self._spin_row(content, "Font size", *FONT_RANGE, "font_size")
             pattern = QHBoxLayout()
             pattern.setSpacing(6)
@@ -350,10 +274,6 @@ class TextInspector(QWidget):
 
         # Shape mode still needs stubs referenced by bind/apply
         if shape:
-            self.chk_live = QCheckBox()
-            self.chk_live.hide()
-            self.font_box = QFontComboBox()
-            self.font_box.hide()
             self.spin_size = self._spin(*FONT_RANGE)
             self.btn_bold = self._toggle("B")
             self.btn_italic = self._toggle("I")
@@ -581,13 +501,17 @@ class TextInspector(QWidget):
         self.setEnabled(item is not None)
         if item is None:
             self.btn_apply_all.setVisible(False)
+            host = self.btn_apply_all.parentWidget()
+            if host is not None and host is not self:
+                host.hide()
             return
         self._style = item.style()
         self._block = True
-        self.chk_live.setChecked(bool(item.live))
         caption = item.kind == "caption" and not self._shape_mode
-        self.chk_live.setVisible(item.kind == "caption")
         self.btn_apply_all.setVisible(caption)
+        host = self.btn_apply_all.parentWidget()
+        if host is not None and host is not self:
+            host.setVisible(caption)
         self.spin_x.setValue(round((float(item.x) - 0.5) * 200))
         self.spin_y.setValue(round((float(item.y) - 0.5) * 200))
         self.spin_rot.setValue(round(float(item.rotation)))
@@ -612,7 +536,7 @@ class TextInspector(QWidget):
         s = self._style
         blocked = self._block
         self._block = True
-        self.font_box.setCurrentFont(QFont(s["font"]))
+        self._show_font(s["font"])
         self.spin_size.setValue(s["font_size"])
         self.btn_bold.setChecked(s["bold"])
         self.btn_italic.setChecked(s["italic"])
@@ -675,7 +599,6 @@ class TextInspector(QWidget):
     def apply_to(self, item):
         for key, value in self._style.items():
             setattr(item, key, value)
-        item.live = self.chk_live.isChecked()
         item.x = min(0.98, max(0.02, 0.5 + self.spin_x.value() / 200.0))
         item.y = min(0.98, max(0.02, 0.5 + self.spin_y.value() / 200.0))
         item.rotation = float(self.spin_rot.value())
@@ -714,6 +637,39 @@ class TextInspector(QWidget):
         self._emit()
 
     # ── edits ──────────────────────────────────────────────────────
+    def _show_font(self, family: str) -> None:
+        if not hasattr(self, "btn_font"):
+            return
+        family = str(family or "Arial")
+        self.btn_font.setText(family)
+        face = QFont(family)
+        face.setPointSize(13)
+        self.btn_font.setFont(face)
+
+    def _pick_font(self) -> None:
+        """Open the standard font dialog and keep the caption style in step with it."""
+        current = QFont(str(self._style.get("font") or "Arial"))
+        current.setPointSize(max(1, int(self._style.get("font_size") or 16)))
+        current.setBold(bool(self._style.get("bold")))
+        current.setItalic(bool(self._style.get("italic")))
+        current.setUnderline(bool(self._style.get("underline")))
+        ok, font = QFontDialog.getFont(
+            current, self, "Font", QFontDialog.FontDialogOption.ScalableFonts,
+        )
+        if not ok:
+            return
+        self._style["font"] = font.family() or current.family()
+        picked = font.pointSize()
+        if picked > 0:
+            self._style["font_size"] = picked
+        self._style["bold"] = font.bold()
+        self._style["italic"] = font.italic()
+        self._style["underline"] = font.underline()
+        self._style["preset"] = ""
+        self._style = clean_text_style(self._style)
+        self._sync_widgets()
+        self._emit()
+
     def _emit(self, *_):
         if not self._block and self._item is not None:
             self.changed.emit()
