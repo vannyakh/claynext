@@ -80,12 +80,19 @@ class ScriptJobTools:
             act_tts_sel.setEnabled(not busy)
 
         menu.addSeparator()
+        current = self._task_by_id(self._current_script_task_id()) if hasattr(self, "_task_by_id") else None
+        current_status = str(current.get("status") or "") if current else ""
+        dubbing_this = current_status in {"running", "paused"}
+        batch_busy = bool(getattr(self, "_dub_busy", False) or getattr(self, "_flight", None))
+        allow_full = can_retry and self._script_worker is None and not dubbing_this
+        if batch_busy and current_status not in {"failed", "cancelled"}:
+            allow_full = False
         act_all = self._script_menu_action(
             menu, "refresh", "Retry full dub",
             self._retry_script_all,
             tip="Full redub · transcript → translate → TTS → mix",
         )
-        act_all.setEnabled(can_retry and not busy)
+        act_all.setEnabled(allow_full)
 
     def _fill_script_actions_menu(self):
         menu = getattr(self, "_script_actions_menu", None)
@@ -163,33 +170,21 @@ class ScriptJobTools:
 
     def _retry_script_all(self):
         """Full pipeline retry for the movie tied to this script."""
-        if bool(getattr(self, "_dub_busy", False)):
-            self.log.warn("Dub already running")
-            return
-        from claynext.gui.dialogs.env_alert import ensure_job_environment
-
-        lead, co = self._primary_voices()
-        asr_model = (
-            self.combo_model.currentText()
-            if hasattr(self, "combo_model")
-            else "whisper-small"
-        )
-        if not ensure_job_environment(
-            self,
-            voice_id=str(lead or ""),
-            secondary_voice_id=str(co or ""),
-            asr_model=str(asr_model or ""),
-            title="Download environment",
-        ):
-            self.log.warn("Retry all blocked — missing environment")
-            return
         tid = self._current_script_task_id()
-        if tid >= 0 and hasattr(self, "_retry_task"):
-            self._retry_task(tid)
-            self.log.info("Retry all · queued full dub pass")
+        task = self._task_by_id(tid) if tid >= 0 and hasattr(self, "_task_by_id") else None
+        if task and task.get("status") in {"running", "paused"}:
+            self.log.warn("That movie is already dubbing")
+            return
+        if tid >= 0 and hasattr(self, "_push_retries"):
+            self._push_retries([tid])
+            return
+        if bool(getattr(self, "_dub_busy", False) or getattr(self, "_flight", None)):
+            self.log.warn("Dub already running")
             return
         source = str(getattr(self, "selected_file", "") or "")
         if source and os.path.isfile(source) and hasattr(self, "_begin_dub_jobs"):
+            if hasattr(self, "_retry_environment_ready") and not self._retry_environment_ready():
+                return
             self._begin_dub_jobs([source])
             self.log.info("Retry all · starting dub")
             return

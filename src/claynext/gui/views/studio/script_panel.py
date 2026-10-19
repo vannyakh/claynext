@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import os
+import re
 
 from PySide6.QtCore import QEvent, QSize, Qt, QTimer
-from PySide6.QtGui import QBrush, QColor, QKeySequence, QShortcut
+from PySide6.QtGui import QBrush, QColor, QFontMetrics, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QStyle, QStyleOptionViewItem, QStyledItemDelegate,
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
     QTableWidgetItem, QFrame, QHeaderView, QAbstractItemView, QMenu,
     QStackedWidget, QSizePolicy, QToolButton,
@@ -17,6 +19,67 @@ from claynext.gui.components.shell.shelf_header import make_shelf_button, make_s
 from claynext.gui.components.controls.spinner import Spinner
 from claynext.gui.components.controls.table_fit import fit_or_scroll
 from claynext.utils.job_control import JobControl
+
+
+_EXPR_TAG = re.compile(r"\[[^\[\]]+\]|\{[^{}]+\}")
+_TAG_GRAY = QColor("#64748b")
+_DUB_INK = QColor("#f8fafc")
+
+
+class _DubColumnDelegate(QStyledItemDelegate):
+    """Dub column: expression tags stay gray, the spoken line stays bright."""
+
+    def paint(self, painter, option, index):
+        if index.column() != 5:
+            super().paint(painter, option, index)
+            return
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        text = opt.text
+        opt.text = ""
+        widget = opt.widget
+        style = widget.style() if widget is not None else None
+        if style is None:
+            super().paint(painter, option, index)
+            return
+        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, widget)
+        if not text:
+            return
+        rect = style.subElementRect(QStyle.SubElement.SE_ItemViewItemText, opt, widget)
+        painter.save()
+        font = opt.font
+        font.setBold(True)
+        painter.setFont(font)
+        metrics = QFontMetrics(font)
+        baseline = int(rect.top() + (rect.height() + metrics.ascent() - metrics.descent()) / 2)
+        selected = bool(opt.state & QStyle.StateFlag.State_Selected)
+        ink = opt.palette.highlightedText().color() if selected else _DUB_INK
+        x = rect.left() + 2
+        limit = rect.right() - 2
+        pos = 0
+        pieces: list[tuple[str, QColor]] = []
+        for match in _EXPR_TAG.finditer(text):
+            if match.start() > pos:
+                pieces.append((text[pos:match.start()], ink))
+            pieces.append((match.group(0), _TAG_GRAY))
+            pos = match.end()
+        if pos < len(text):
+            pieces.append((text[pos:], ink))
+        for piece, color in pieces:
+            if x >= limit:
+                break
+            room = limit - x
+            width = metrics.horizontalAdvance(piece)
+            shown = piece
+            if width > room:
+                shown = metrics.elidedText(piece, Qt.TextElideMode.ElideRight, max(0, room))
+                width = room
+            painter.setPen(color)
+            painter.drawText(int(x), baseline, shown)
+            x += width
+            if width >= room:
+                break
+        painter.restore()
 
 
 _SCRIPT_VIEW_FILTERS = (
@@ -327,6 +390,7 @@ class ScriptPanelTools:
 
         self.table = QTableWidget()
         self.table.setObjectName("transcript_table")
+        self.table.setItemDelegate(_DubColumnDelegate(self.table))
         # Timing + character + gender + source/dub lines.
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(["#", "Time", "Character", "Gender", "Source", "Dub"])
@@ -440,6 +504,7 @@ class ScriptPanelTools:
             str(seg.get("start", "")),
             str(seg.get("end", "")),
             str(seg.get("speaker") or ""),
+            str(seg.get("expression") or ""),
             str(seg.get("gender") or ""),
             bool(seg.get("pending")),
             bool(seg.get("gender_manual")),
@@ -472,7 +537,12 @@ class ScriptPanelTools:
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
         voice = str(seg.get("tts_voice_hint") or seg.get("voice_id") or "")
-        char_item.setToolTip(f"{speaker}" + (f"\nVoice: {voice}" if voice else ""))
+        expr = str(seg.get("expression") or "")
+        char_item.setToolTip(
+            speaker
+            + (f"\nVoice: {voice}" if voice else "")
+            + (f"\nExpression: {expr}" if expr else "")
+        )
         gender = str(seg.get("gender") or "Unknown")
         if gender == "Female":
             char_color = QColor("#f472b6")
@@ -571,6 +641,8 @@ class ScriptPanelTools:
             self._apply_script_filters()
         else:
             self._update_script_meta()
+        if hasattr(self, "_refresh_character_list"):
+            self._refresh_character_list()
         return True
 
     def _fill_table(self, segments: list):
@@ -595,6 +667,8 @@ class ScriptPanelTools:
         self._apply_script_filters()
         if hasattr(self, "timeline") and not getattr(self, "_skip_dialogue_sync", False):
             self.timeline.set_dialogue(self._segments)
+        if hasattr(self, "_refresh_character_list"):
+            self._refresh_character_list()
 
     def _fit_script_rows(self):
         if not hasattr(self, "table"):
@@ -707,8 +781,12 @@ class ScriptPanelTools:
         self._update_script_meta()
 
     def _set_script_loading_hint(self, hint: str):
-        if hasattr(self, "load_hint") and self._script_loading:
-            self.load_hint.setText(str(hint or "Please wait"))
+        if not hasattr(self, "load_hint") or not self._script_loading:
+            return
+        text = str(hint or "Please wait")
+        if self.load_hint.text() == text:
+            return
+        self.load_hint.setText(text)
 
     def _set_script_actions_enabled(self, enabled: bool):
         for name in (

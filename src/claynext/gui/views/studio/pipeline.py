@@ -75,6 +75,9 @@ class PipelineTools:
         self._batch_layout = "merge" if layout == "merge" and len(sources) >= 2 else "separate"
         self._merge_open = self._batch_layout == "merge"
         self._merge_offsets = {}
+        self._merge_durations = {}
+        self._merge_seq_tokens = {}
+        self._merge_layout_wait = []
         self._merge_comp_index = -1
         self._batch_failed = []
         self._flight = {}
@@ -363,7 +366,20 @@ class PipelineTools:
         segments = [seg for seg in (getattr(self, "_segments", None) or []) if isinstance(seg, dict)]
         if segments and hasattr(self.timeline, "sync_dialogue"):
             self.timeline.sync_dialogue(segments)
-        self.log.info(f"Source sequence · {os.path.basename(path)}")
+        self.log.info(f"Source on track · {os.path.basename(path)}")
+        if hasattr(self, "show_timeline_player") and not getattr(self, "_merge_open", False):
+            self.show_timeline_player()
+
+    def _merge_duration_ms(self, path: str) -> int:
+        stored = int((getattr(self, "_merge_durations", {}) or {}).get(path) or 0)
+        if stored > 0:
+            return stored
+        if not hasattr(self, "timeline"):
+            return 0
+        for clip in self.timeline.canvas.master_clips():
+            if os.path.abspath(str(clip.extra.get("path") or "")) == path:
+                return int(clip.duration_ms or 0)
+        return 0
 
     def _queue_merge_source(self, path: str) -> None:
         """Place this movie at the end of the one merge sequence. Do not replace the master."""
@@ -374,6 +390,10 @@ class PipelineTools:
         if not isinstance(offsets, dict):
             offsets = {}
             self._merge_offsets = offsets
+        durations = getattr(self, "_merge_durations", None)
+        if not isinstance(durations, dict):
+            durations = {}
+            self._merge_durations = durations
         existing = next(
             (
                 clip for clip in self.timeline.canvas.master_clips()
@@ -383,14 +403,29 @@ class PipelineTools:
         )
         if existing is not None:
             offsets.setdefault(abspath, int(existing.start_ms))
+            durations.setdefault(abspath, int(existing.duration_ms or 0))
             return
-        offset = 0
+        if abspath in offsets:
+            return
+        waiting = getattr(self, "_merge_layout_wait", None)
+        if not isinstance(waiting, list):
+            waiting = []
+            self._merge_layout_wait = waiting
+        if any(self._merge_duration_ms(reserved) <= 0 for reserved in offsets):
+            if abspath not in waiting:
+                waiting.append(abspath)
+            return
         span = self.timeline.canvas.master_span()
-        if span:
-            offset = int(span[0] + span[1])
+        offset = int(span[0] + span[1]) if span else 0
+        for reserved, at in offsets.items():
+            offset = max(offset, int(at) + self._merge_duration_ms(reserved))
         offsets[abspath] = offset
-        token = int(getattr(self, "_merge_seq_token", 0)) + 1
-        self._merge_seq_token = token
+        tokens = getattr(self, "_merge_seq_tokens", None)
+        if not isinstance(tokens, dict):
+            tokens = {}
+            self._merge_seq_tokens = tokens
+        token = int(tokens.get(abspath) or 0) + 1
+        tokens[abspath] = token
 
         def probe(progress_callback=None):
             from claynext.adapters.ffmpeg_adapter import get_ffmpeg_adapter
@@ -410,11 +445,18 @@ class PipelineTools:
         self.thread_pool.start(worker)
 
     def _apply_merge_source(self, path: str, duration_ms: int, start_ms: int, token: int) -> None:
-        if token != int(getattr(self, "_merge_seq_token", 0)):
+        tokens = getattr(self, "_merge_seq_tokens", None) or {}
+        if int(tokens.get(path) or 0) != int(token):
+            self._flush_merge_wait()
             return
         if not path or not os.path.isfile(path) or not hasattr(self, "timeline"):
             return
-        self.timeline.append_master(path, duration_ms, start_ms)
+        durations = getattr(self, "_merge_durations", None)
+        if not isinstance(durations, dict):
+            durations = {}
+            self._merge_durations = durations
+        durations[path] = max(1, int(duration_ms or 0))
+        self.timeline.append_master(path, durations[path], start_ms)
         self._timeline_open = True
         if hasattr(self, "_sync_timeline_visibility"):
             self._sync_timeline_visibility()
@@ -423,6 +465,13 @@ class PipelineTools:
             self.log.info(f"Master · {name}")
         else:
             self.log.info(f"Master · {name} at {start_ms / 1000:.1f}s")
+        self._flush_merge_wait()
+
+    def _flush_merge_wait(self) -> None:
+        waiting = list(getattr(self, "_merge_layout_wait", []) or [])
+        self._merge_layout_wait = []
+        for media in waiting:
+            self._queue_merge_source(media)
 
     def _detach_other_sequence(self) -> None:
         """Keep the open sequence saved, then leave the timeline free for this source."""
@@ -665,11 +714,19 @@ class PipelineTools:
         self.thread_pool.start(worker)
 
     def _on_progress(self, val: int, msg: str, task_id: int | None = None):
-        self.log.debug(f"{val}% · {msg}")
         self._task_progress(val, msg, task_id=task_id)
-        if task_id is not None and task_id != getattr(self, "_script_follow_task", -1):
+        pinned = int(getattr(self, "_script_pinned", -1) or -1)
+        follow = int(getattr(self, "_script_follow_task", -1) or -1)
+        shown = pinned if pinned >= 0 else follow
+        if task_id is not None and task_id != shown:
             return
         text = str(msg or "")
+        task = self._task_by_id(task_id) if task_id is not None and hasattr(self, "_task_by_id") else None
+        name = str(task.get("name") or "") if task else ""
+        if name and text:
+            text = f"{name} · {text}"
+        elif name:
+            text = name
         if hasattr(self, "_set_script_loading_hint"):
             self._set_script_loading_hint(text or f"{int(val)}%")
         self._set_footer_progress(True, int(val), text)
@@ -840,12 +897,23 @@ class PipelineTools:
         failed.append((source, message))
         name = os.path.basename(source) or "Movie"
         if getattr(self, "_merge_open", False):
-            self._merge_seq_token = int(getattr(self, "_merge_seq_token", 0)) + 1
+            tokens = getattr(self, "_merge_seq_tokens", None)
+            if not isinstance(tokens, dict):
+                tokens = {}
+                self._merge_seq_tokens = tokens
+            tokens[source] = int(tokens.get(source) or 0) + 1
             offsets = getattr(self, "_merge_offsets", None)
             if isinstance(offsets, dict):
                 offsets.pop(source, None)
+            durations = getattr(self, "_merge_durations", None)
+            if isinstance(durations, dict):
+                durations.pop(source, None)
+            waiting = getattr(self, "_merge_layout_wait", None)
+            if isinstance(waiting, list):
+                self._merge_layout_wait = [item for item in waiting if item != source]
             if source and hasattr(self.timeline, "drop_master"):
                 self.timeline.drop_master(source)
+            self._flush_merge_wait()
             self.log.warn(f"Skipped · {name} · {message}")
             return
         self.log.error(f"Dubbing failed · {name} · {message}")

@@ -1343,6 +1343,25 @@ QPushButton#dub_props_ghost_btn:pressed {{
     font-size: 14px;
     font-weight: 700;
 }}
+#character_panel {{
+    background: transparent;
+}}
+#character_row {{
+    background-color: {COLOR_BG_INPUT};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 8px;
+}}
+#character_name {{
+    color: {COLOR_TEXT_MAIN};
+    font-size: 12px;
+    font-weight: 700;
+    background: transparent;
+}}
+#character_meta {{
+    color: {COLOR_TEXT_MUTED};
+    font-size: 10px;
+    background: transparent;
+}}
 
 #dub_config_section {{
     background: transparent;

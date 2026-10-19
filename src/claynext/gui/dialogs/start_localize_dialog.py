@@ -304,20 +304,20 @@ class StartLocalizeDialog(QDialog):
         style.setSpacing(8)
         self.chk_translate_fit = self._option(
             style,
-            "Fit line to TTS duration",
-            "Ask Gemini/Ollama to keep dub length inside the timing slot (syllable budget)",
+            "Fit words to the segment",
+            "Keep each spoken line inside its turn so the voice finishes before the next line",
             bool(defaults.get("translate_fit_duration", True)),
         )
         self.chk_translate_slang = self._option(
             style,
-            "Natural slang & rough talk",
-            "Rewrite the line the way that person talks, including slang and swear words",
+            "Slang and idioms",
+            "Say the real-world meaning in neutral everyday speech, not a word-for-word idiom",
             bool(defaults.get("translate_slang", True)),
         )
         self.chk_translate_expression = self._option(
             style,
             "Expression tags",
-            "Allow [laugh] [sigh] [excited]… cues for TTS when emotion is clear",
+            "Show [laugh] [sigh] [pause] in the Dub script. TTS uses them as a short delay. Captions stay plain.",
             bool(defaults.get("translate_expression", True)),
         )
         tip = QLabel("Applies when Translate uses Gemini or Ollama (Auto prefers them).")
@@ -517,7 +517,9 @@ class StartLocalizeDialog(QDialog):
         edit_opts.setContentsMargins(0, 4, 0, 0)
         edit_opts.setSpacing(8)
         self.chk_auto_mix = self._option(
-            edit_opts, "Auto mix", "Duck only original speech; keep music & effects",
+            edit_opts,
+            "Isolate original voice",
+            "Remove the original dialogue. Keep the isolated effects and background under the new voice.",
             bool(defaults.get("auto_mix", True)),
         )
         lay.addLayout(edit_opts)
@@ -542,7 +544,9 @@ class StartLocalizeDialog(QDialog):
         voice_opts.setContentsMargins(0, 4, 0, 0)
         voice_opts.setSpacing(8)
         self.chk_vocal_master = self._option(
-            voice_opts, "Studio vocal chain", "Presence lift and peak limiter on new voices",
+            voice_opts,
+            "Improve voice",
+            "Clearer TTS: presence lift and a peak limiter on the new voice",
             bool(defaults.get("vocal_master", True)),
         )
         lay.addLayout(voice_opts)

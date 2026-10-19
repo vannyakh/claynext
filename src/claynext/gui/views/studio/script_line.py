@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 
 from PySide6.QtCore import Qt, QUrl, QThreadPool
+from PySide6.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDialog,
@@ -17,6 +19,21 @@ from claynext.models.tts_expression import EXPRESSION_CHIPS
 from claynext.gui.worker import Worker
 from claynext.gui.components.controls.spinner import Spinner
 from claynext.utils.config import CACHE_DIR
+
+
+class _TagHighlighter(QSyntaxHighlighter):
+    """Expression tags in the line editor stay gray. The spoken words stay bright."""
+
+    _TAG = re.compile(r"\[[^\[\]]+\]|\{[^{}]+\}")
+
+    def __init__(self, document):
+        super().__init__(document)
+        self._fmt = QTextCharFormat()
+        self._fmt.setForeground(QColor("#64748b"))
+
+    def highlightBlock(self, text: str):
+        for match in self._TAG.finditer(text or ""):
+            self.setFormat(match.start(), match.end() - match.start(), self._fmt)
 
 
 def _preview_cache_path(voice_id: str, text: str) -> str:
@@ -86,6 +103,7 @@ class LineEditDialog(QDialog):
         self.dub.setObjectName("dub_setting_field")
         self.dub.setPlainText(str(seg.get("translated_text") or ""))
         self.dub.setFixedHeight(96)
+        self._tag_highlighter = _TagHighlighter(self.dub.document())
         self.dub.setPlaceholderText(
             'Use tags for delivery, e.g. [laugh] I can\'t believe it! [sigh] What a mess.'
         )

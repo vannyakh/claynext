@@ -23,12 +23,12 @@ dependencies = [
 [project.optional-dependencies]
 whisperx = [
     "whisperx>=3.3.0",
-    "torch>=2.4.0",
+    "torch==2.8.0",
     "torchaudio>=2.4.0",
 ]
 demucs = [
     "demucs>=4.0.1",
-    "torch>=2.4.0",
+    "torch==2.8.0",
     "torchaudio>=2.4.0",
 ]
 demucs-mlx = [
@@ -41,7 +41,7 @@ voxcpm = [
     "soundfile>=0.12.0",
 ]
 gender = [
-    "torch>=2.4.0",
+    "torch==2.8.0",
     "torchaudio>=2.4.0",
 ]
 

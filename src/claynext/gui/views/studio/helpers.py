@@ -11,11 +11,19 @@ _TS_ARROW = re.compile(
 _SPEAKER_PREFIX = re.compile(r"^\[([^\]]+)\]\s*")
 
 
+def _caption_line(seg: dict) -> str:
+    """Caption and subtitle text, without TTS expression tags."""
+    from claynext.models.tts_expression import strip_expression_tags
+
+    raw = str(seg.get("translated_text") or seg.get("text") or "").strip()
+    return strip_expression_tags(raw)
+
+
 def export_segments(path: str, fmt: str, segments: list) -> None:
     if fmt == "srt":
         with open(path, "w", encoding="utf-8") as handle:
             for i, seg in enumerate(segments, 1):
-                txt = str(seg.get("translated_text") or seg.get("text") or "").strip()
+                txt = _caption_line(seg)
                 speaker = seg.get("speaker")
                 prefix = f"[{speaker}] " if speaker else ""
                 start = str(seg.get("start", "00:00:00,000")).replace(".", ",")
@@ -26,7 +34,7 @@ def export_segments(path: str, fmt: str, segments: list) -> None:
         with open(path, "w", encoding="utf-8") as handle:
             handle.write("WEBVTT\n\n")
             for i, seg in enumerate(segments, 1):
-                txt = str(seg.get("translated_text") or seg.get("text") or "").strip()
+                txt = _caption_line(seg)
                 speaker = seg.get("speaker")
                 prefix = f"[{speaker}] " if speaker else ""
                 start = str(seg.get("start", "00:00:00.000")).replace(",", ".")

@@ -397,7 +397,8 @@ class TranslateEngine:
         }
         for key in (
             "start_sec", "end_sec", "duration_sec", "tts_voice_hint", "voice_id",
-            "gender", "gender_manual", "recommended_syllables", "speed_tolerance", "segment_id",
+            "gender", "gender_manual", "expression", "character",
+            "recommended_syllables", "speed_tolerance", "segment_id",
         ):
             if key in seg:
                 row[key] = seg[key]
@@ -470,6 +471,8 @@ class TranslateEngine:
                 "id": s.get("id"),
                 "segment_id": s.get("segment_id", s.get("id")),
                 "speaker": s.get("speaker") or "",
+                "gender": s.get("gender") or "",
+                "expression": s.get("expression") or "",
                 "duration_sec": float(dur),
                 "text": (s.get("text") or s.get("original_text") or "").strip(),
                 "recommended_syllables": quota,
@@ -495,7 +498,13 @@ class TranslateEngine:
             )
             # An older binary has no voice-rewrite rule, so keep the Python prompt.
             fit = bool(style.get("fit_duration", True))
-            if rust and "VOICE REWRITE" in rust and (not fit or "SPOKEN FIT" in rust):
+            if (
+                rust
+                and "VOICE REWRITE" in rust
+                and "NEUTRAL SPEECH" in rust
+                and "CAST:" in rust
+                and (not fit or "SPOKEN FIT" in rust)
+            ):
                 return rust
         except Exception:
             pass
@@ -509,8 +518,11 @@ class TranslateEngine:
         rules = [
             TranslateEngine._voice_rewrite_rule(),
             "2. Keep the scene true. Do not invent plot, names, or actions. Change the words so the line sounds spoken.",
+            "3. CAST: speaker is this character's name. gender is Female, Male, or empty. "
+            "expression is this line's feeling (laugh, sigh, shout, whisper, sad, angry, or empty). "
+            "Write that person, and keep the same name sounding the same across lines.",
         ]
-        n = 3
+        n = 4
         if fit:
             rules.append(TranslateEngine._spoken_fit_rule(n, target_lang))
             n += 1
@@ -522,9 +534,11 @@ class TranslateEngine:
 
             tags = ", ".join(tok for _label, tok in EXPRESSION_CHIPS)
             rules.append(
-                f"{n}. EXPRESSION TAGS: when the source implies a non-verbal beat or strong emotion, "
-                f"you MAY insert at most one short TTS cue at the start or mid-line from: {tags}. "
-                f"Never invent story; never stack multiple tags; omit tags when the line is plain speech."
+                f"{n}. EXPRESSION TAGS: when the source has a breath, a laugh, or a clear emotion, "
+                f"you MAY insert at most one TTS cue from: {tags}. Put it before the words it colors. "
+                f"The tag is a voice delay, not a word: do not translate it, and do not speak the brackets. "
+                f"If the segment's expression is set, start with that tag and no other. "
+                f"Never stack tags. Omit them when expression is empty and the line is plain speech."
             )
             n += 1
         rules.append(
@@ -563,13 +577,15 @@ class TranslateEngine:
     @staticmethod
     def _register_rule(n: int, target_lang: str) -> str:
         rule = (
-            f"{n}. SLANG: Match how this person talks. If they are casual, rude, or swearing, "
-            f"keep that heat with the short word people actually say — slang, an insult, or a swear word. "
-            f"Do not swap it for a polite or textbook word. Do not add a curse the line did not earn."
+            f"{n}. NEUTRAL SPEECH: When the line uses slang, an idiom, or a figure of speech, "
+            f"say what it means in real life. Use the everyday phrase a person would actually speak — "
+            f"neutral, natural, and clear. Do not translate the idiom word by word. "
+            f"Do not invent extra swearing. Do not turn it into a textbook sentence."
         )
         if "Khmer" in (target_lang or "") or "ខ្មែរ" in (target_lang or ""):
             rule += (
-                " Khmer — \"What the hell are you doing?\" is said \"ឯងធ្វើអីហ្នឹង?\", "
+                " Khmer — \"piece of cake\" is said \"ងាយណាស់\", not a cake. "
+                "\"What the hell are you doing?\" is said \"ឯងធ្វើអីហ្នឹង?\", "
                 "not \"តើអ្នកកំពុងធ្វើអ្វី?\"."
             )
         return rule
@@ -577,9 +593,10 @@ class TranslateEngine:
     @staticmethod
     def _spoken_fit_rule(n: int, target_lang: str) -> str:
         rule = (
-            f"{n}. SPOKEN FIT (critical): write what a voice actor can say inside duration_sec "
-            f"at a natural pace. Aim at recommended_syllables.target. Do not pass max. "
-            f"Those numbers are spoken beats, not written words. If unsure, choose the shorter line. "
+            f"{n}. SPOKEN FIT (critical): this line is one spoken turn. Fit the words inside duration_sec "
+            f"so the voice finishes before the next segment starts. Aim at recommended_syllables.target. "
+            f"Do not pass max. Those numbers are spoken beats, not written words. "
+            f"If unsure, choose the shorter line. "
             f"Drop fillers that do not change the action (then, so, well, and, you know). "
             f"Drop a repeated owner when that person is already in the line (\"her room\" → \"the room\")."
         )
@@ -597,7 +614,7 @@ class TranslateEngine:
             from claynext.adapters.dubbing import get_dubbing_adapter
 
             rust = get_dubbing_adapter().build_fit_prompt(lines, target_lang)
-            if rust:
+            if rust and "NEUTRAL SPEECH" in rust:
                 return rust
         except Exception:
             pass
@@ -605,13 +622,13 @@ class TranslateEngine:
         return (
             "You are tightening dubbed lines that are too long to say in the actor's slot.\n"
             f"Write new words in {lang} that this person would actually say. Keep the same voice.\n"
-            "If the line is slang, an insult, or a swear, keep that heat with a shorter spoken word. "
-            "Do not polish it polite.\n"
+            "NEUTRAL SPEECH: say slang and idioms as the real-world phrase, short and clear. "
+            "Do not translate them word by word, and do not add a curse.\n"
+            "Keep expression tags such as [sigh] if they are already there. Do not add a new one.\n"
             "Keep who did the action. Drop fillers and repeated owners.\n"
-            "Each khmer_text must use at most max_units spoken beats (Khmer: syllables).\n"
+            "Each khmer_text must use at most max_units spoken beats (Khmer: syllables). Tags do not count.\n"
             "Pattern: \"then he sent her to her room\" is said \"គាត់បានជួននាងទៅបន្ទប់\", "
             "not \"បន្ទាប់មកគាត់បានបញ្ជូននាងទៅបន្ទប់របស់នាង\".\n"
-            "\"What the hell are you doing?\" stays rough and short, not a textbook question.\n"
             "Return STRICTLY a JSON array of objects with keys id and khmer_text.\n\n"
             f"Lines:\n{json.dumps(lines, ensure_ascii=False)}"
         )

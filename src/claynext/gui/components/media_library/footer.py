@@ -167,6 +167,8 @@ class _MediaDetailFooter(QFrame):
         """Show job progress in the media footer (replaces script-panel loader)."""
         self._localize_busy = bool(busy)
         if not busy:
+            self._localize_pct = None
+            self._localize_tip = None
             self.lbl_progress.clear()
             self.lbl_progress.setVisible(False)
             self.btn_localize.setEnabled(True)
@@ -174,11 +176,21 @@ class _MediaDetailFooter(QFrame):
         self.show()
         pct = max(0, min(100, int(pct)))
         tip = str(message or "Localization in progress")
-        self.btn_localize.setEnabled(False)
-        self.btn_localize.setText("Working…" if pct <= 0 else f"{pct}%")
-        self.btn_localize.setToolTip(tip)
+        label = "Working…" if pct <= 0 else f"{pct}%"
         short = tip if len(tip) <= 42 else tip[:39] + "…"
-        self.lbl_progress.setText(short)
+        if (
+            getattr(self, "_localize_pct", None) == pct
+            and getattr(self, "_localize_tip", None) == tip
+        ):
+            return
+        self._localize_pct = pct
+        self._localize_tip = tip
+        self.btn_localize.setEnabled(False)
+        if self.btn_localize.text() != label:
+            self.btn_localize.setText(label)
+        self.btn_localize.setToolTip(tip)
+        if self.lbl_progress.text() != short:
+            self.lbl_progress.setText(short)
         self.lbl_progress.setToolTip(tip)
         self.lbl_progress.setVisible(True)
 

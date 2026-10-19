@@ -209,14 +209,20 @@ class StatusBadgeDelegate(QStyledItemDelegate):
         super().__init__(parent)
         self._angle = 0
         self._timer = QTimer(self)
-        self._timer.setInterval(33)
+        self._timer.setInterval(80)
         self._timer.timeout.connect(self._tick)
 
     def _tick(self):
-        self._angle = (self._angle + 14) % 360
+        self._angle = (self._angle + 28) % 360
         view = self.parent()
-        if view is not None:
-            view.viewport().update()
+        if view is None or not view.isVisible():
+            return
+        viewport = view.viewport()
+        x = view.columnViewportPosition(_STATUS_COL)
+        width = view.columnWidth(_STATUS_COL)
+        if width <= 0:
+            return
+        viewport.update(x, 0, width, viewport.height())
 
     def set_animating(self, on: bool):
         if on:
@@ -262,7 +268,7 @@ class StatusBadgeDelegate(QStyledItemDelegate):
             # Layout: [spinner] [pill %] stacked over a thin progress track
             spin = 14
             gap = 5
-            bw, bh = 44, 18
+            bw, bh = 62, 18
             total_w = spin + gap + bw
             left = rect.x() + (rect.width() - total_w) // 2
             cy = rect.y() + rect.height() // 2 - 2
@@ -291,7 +297,13 @@ class StatusBadgeDelegate(QStyledItemDelegate):
             f.setWeight(QFont.Weight.DemiBold)
             painter.setFont(f)
             painter.setPen(QColor(text_col))
-            label = f"{progress}%" if status == "running" else text_label
+            stage = str(index.data(_ROLE_STAGE) or "")
+            if status == "running" and stage:
+                label = f"{stage} {progress}%"
+            elif status == "running":
+                label = f"{progress}%"
+            else:
+                label = text_label
             painter.drawText(pill_rect, Qt.AlignmentFlag.AlignCenter, label)
 
             # Progress track under the controls
@@ -473,6 +485,9 @@ class TaskTools:
         act_clear_sel = self._task_tools_menu.addAction("Clear selection")
         act_clear_sel.triggered.connect(lambda: self._select_all_tasks(False))
         self._task_tools_menu.addSeparator()
+        self._act_retry_failed = self._task_tools_menu.addAction(icon("refresh", size=14), "Retry failed tasks")
+        self._act_retry_failed.triggered.connect(self._retry_failed_tasks)
+        self._task_tools_menu.aboutToShow.connect(self._sync_retry_failed_action)
         act_clear_done = self._task_tools_menu.addAction(icon("trash", size=14), "Clear finished tasks")
         act_clear_done.triggered.connect(self._clear_finished_tasks)
         self.btn_task_menu.setMenu(self._task_tools_menu)
@@ -1190,6 +1205,9 @@ class TaskTools:
                 live.append({})
             live[index] = {**live[index], **segment}
             task["live_clip"] = index
+        pinned = int(getattr(self, "_script_pinned", -1) or -1)
+        if pinned >= 0 and pinned != task_id:
+            return
         follow = int(getattr(self, "_script_follow_task", -1) or -1)
         if self._viewing_task == task_id or follow == task_id:
             self._live_timer.start()
@@ -1221,7 +1239,10 @@ class TaskTools:
         segments = [seg for seg in task.get("live") or [] if isinstance(seg, dict) and seg]
         source = str(task.get("source") or "")
         merging = bool(getattr(self, "_merge_open", False))
-        if source and hasattr(self, "_ensure_source_sequence"):
+        pinned = int(getattr(self, "_script_pinned", -1) or -1)
+        follow = int(getattr(self, "_script_follow_task", -1) or -1)
+        peeking = pinned >= 0 and pinned != follow
+        if source and hasattr(self, "_ensure_source_sequence") and not peeking:
             already = (
                 hasattr(self, "_source_already_on_track")
                 and self._source_already_on_track(source)
@@ -1239,11 +1260,11 @@ class TaskTools:
             and len(segments) == self.table.rowCount()
             and len(segments) == len(getattr(self, "_segments", []))
         )
-        self._skip_dialogue_sync = merging
+        self._skip_dialogue_sync = merging or peeking
         try:
             patched = same_shape and hasattr(self, "_patch_script_rows") and self._patch_script_rows(segments)
             if patched:
-                if merging and hasattr(self.timeline, "place_source_dialogue"):
+                if peeking or (merging and hasattr(self.timeline, "place_source_dialogue")):
                     pass
                 elif hasattr(self.timeline, "sync_dialogue"):
                     self.timeline.sync_dialogue(segments)
@@ -1253,7 +1274,7 @@ class TaskTools:
                 self._fill_table(segments)
         finally:
             self._skip_dialogue_sync = False
-        if merging and source and hasattr(self.timeline, "place_source_dialogue"):
+        if not peeking and merging and source and hasattr(self.timeline, "place_source_dialogue"):
             offset = int(getattr(self, "_merge_offsets", {}).get(os.path.abspath(source), 0))
             shifted = self._shift_segments(segments, offset) if hasattr(self, "_shift_segments") else segments
             self.timeline.place_source_dialogue(shifted, source)
@@ -1287,6 +1308,73 @@ class TaskTools:
 
     # ── Selection ──────────────────────────────────────────────────────
 
+    def _batch_running(self) -> bool:
+        flight = getattr(self, "_flight", None) or {}
+        return bool(flight) or bool(getattr(self, "_dub_busy", False))
+
+    def _publish_task_status(self, task: dict | None) -> None:
+        """Keep the footer and window status on the movie the user is looking at."""
+        if not task or not hasattr(self, "_set_footer_progress"):
+            return
+        pct = max(0, min(100, int(task.get("progress") or 0)))
+        status = str(task.get("status") or "")
+        if status == "done":
+            pct = 100
+        stage = ""
+        stage_idx = int(task.get("stage", -1) or -1)
+        if 0 <= stage_idx < len(STAGES):
+            stage = STAGES[stage_idx][0]
+        name = str(task.get("name") or "")
+        msg = str(task.get("message") or "")
+        text = " · ".join(part for part in (name, stage, msg) if part)
+        if status in _ACTIVE or self._batch_running():
+            self._set_footer_progress(True, pct, text)
+            if hasattr(self, "_set_window_status"):
+                self._set_window_status(f"{pct}% · {text}" if text else f"{pct}%", pct)
+            return
+        if hasattr(self, "_set_window_status"):
+            self._set_window_status(text or "Ready", None)
+
+    def _pin_task_script(self, task: dict) -> None:
+        """Show one movie's script and status without moving the timeline under a running batch."""
+        self._script_pinned = task["id"]
+        self._live_paint_keys = None
+        self._live_scroll_row = None
+        self._skip_dialogue_sync = True
+        try:
+            if task.get("status") in _ACTIVE:
+                self._viewing_task = task["id"]
+                self._render_live_task()
+            else:
+                self._viewing_task = -1
+                comp_index = int(task.get("comp") or -1)
+                segments = []
+                comps = getattr(self, "_compositions", []) or []
+                if 0 <= comp_index < len(comps):
+                    segments = list(comps[comp_index].get("segments") or [])
+                if hasattr(self, "_fill_table"):
+                    self._fill_table(segments)
+        finally:
+            self._skip_dialogue_sync = False
+        self._publish_task_status(task)
+
+    def _restore_followed_script(self) -> None:
+        """Back to the movie that owns the open script, with its live status."""
+        self._script_pinned = -1
+        self._viewing_task = -1
+        self._live_paint_keys = None
+        self._live_scroll_row = None
+        self._live_timer.stop()
+        follow = int(getattr(self, "_script_follow_task", -1) or -1)
+        task = self._task_by_id(follow) if follow >= 0 else None
+        if task is not None:
+            self._render_live_task()
+            self._publish_task_status(task)
+            return
+        running = next((item for item in self._tasks if item.get("status") in _ACTIVE), None)
+        if running is not None:
+            self._publish_task_status(running)
+
     def _on_task_clicked(self, row: int, col: int):
         if col == _CHECK_COL:
             return
@@ -1298,6 +1386,10 @@ class TaskTools:
             self._deselect_task()
             return
         self._task_selected_id = task["id"]
+        if self._batch_running():
+            self._pin_task_script(task)
+            self._refresh_tasks()
+            return
         if 0 <= task["comp"] < len(self._compositions):
             self._viewing_task = -1
             if task["comp"] != self._composition_index:
@@ -1315,9 +1407,15 @@ class TaskTools:
         self._refresh_tasks()
 
     def _deselect_task(self):
-        if self._task_selected_id < 0 and self._viewing_task < 0:
+        pinned = int(getattr(self, "_script_pinned", -1) or -1)
+        if self._task_selected_id < 0 and self._viewing_task < 0 and pinned < 0:
             return
         self._task_selected_id = -1
+        if pinned >= 0 and self._batch_running():
+            self._restore_followed_script()
+            self._sync_timeline_visibility()
+            self._refresh_tasks()
+            return
         self._leave_live_view()
         self._sync_timeline_visibility()
         self._refresh_tasks()
@@ -1357,10 +1455,27 @@ class TaskTools:
             open_act.triggered.connect(lambda: self._open_task(tid))
             exp_act = menu.addAction(icon("export", size=14), "Export Composition")
             exp_act.triggered.connect(lambda: self._export_single_task(tid))
-        elif status in {"failed", "cancelled"} and task.get("source"):
+        elif status in _FAILED and task.get("source"):
             retry = menu.addAction(icon("refresh", size=14), "Retry Task")
-            retry.setEnabled(not busy and os.path.isfile(str(task.get("source") or "")))
-            retry.triggered.connect(lambda: self._retry_task(tid))
+            reason = self._retry_block_reason(task)
+            retry.setEnabled(not reason)
+            if reason:
+                retry.setToolTip(reason)
+            retry.triggered.connect(lambda _checked=False, task_id=tid: self._retry_task(task_id))
+
+        failed_checked = [
+            task_id for task_id in self._task_checked
+            if (row_task := self._task_by_id(task_id))
+            and row_task["status"] in _FAILED
+            and not self._retry_block_reason(row_task)
+        ]
+        if len(failed_checked) > 1:
+            batch_retry = menu.addAction(
+                icon("refresh", size=14), f"Retry {len(failed_checked)} failed",
+            )
+            batch_retry.triggered.connect(
+                lambda _checked=False, ids=list(failed_checked): self._push_retries(ids)
+            )
 
         menu.addSeparator()
         if task.get("source"):
@@ -1396,22 +1511,141 @@ class TaskTools:
         for tid in ids:
             self._delete_task(tid, confirm=False)
 
-    def _retry_task(self, task_id: int):
-        task = self._task_by_id(task_id)
-        if not task:
-            return
+    def _retry_block_reason(self, task: dict) -> str:
+        """Why this movie must not start again. Empty means a retry is safe."""
+        if task.get("status") in _ACTIVE:
+            return "Already running"
         source = str(task.get("source") or "")
         if not source or not os.path.isfile(source):
+            return "File missing"
+        abspath = os.path.abspath(source)
+        flight = getattr(self, "_flight", None) or {}
+        if abspath in flight:
+            return "Already running"
+        for queued in getattr(self, "_dub_queue", []) or []:
+            if os.path.abspath(str(queued)) == abspath:
+                return "Already queued"
+        for other in self._tasks:
+            if other.get("id") == task.get("id"):
+                continue
+            if os.path.abspath(str(other.get("source") or "")) != abspath:
+                continue
+            if other.get("status") in _ACTIVE:
+                return "Already running"
+            if other.get("status") == "queued":
+                return "Already queued"
+        if getattr(self, "_batch_stopping", False) and flight:
+            return "Wait for the stop to finish"
+        return ""
+
+    def _sync_retry_failed_action(self):
+        act = getattr(self, "_act_retry_failed", None)
+        if act is None:
             return
-        task["status"] = "queued"
-        task["stages"] = [-1 for _stage in STAGES]
-        task["stage"] = -1
-        task["message"] = ""
-        task["comp"] = -1
-        task.pop("control", None)
-        task.pop("live", None)
+        ready = [
+            task for task in self._tasks
+            if task.get("status") in _FAILED and not self._retry_block_reason(task)
+        ]
+        count = len(ready)
+        act.setEnabled(count > 0)
+        act.setText(f"Retry {count} failed" if count else "Retry failed tasks")
+
+    def _retry_failed_tasks(self):
+        self._push_retries([
+            task["id"] for task in self._tasks if task.get("status") in _FAILED
+        ])
+
+    def _retry_task(self, task_id: int):
+        self._push_retries([task_id])
+
+    def _retry_environment_ready(self) -> bool:
+        voice_id = self.combo_voice.currentData() if hasattr(self, "combo_voice") else None
+        if not voice_id:
+            self._show_error("No voice", "Choose an Edge neural voice.")
+            return False
+        from claynext.gui.dialogs.env_alert import ensure_job_environment
+
+        sec = self.combo_voice_sec.currentData() if hasattr(self, "combo_voice_sec") else ""
+        asr_model = self.combo_model.currentText() if hasattr(self, "combo_model") else "whisper-small"
+        if not ensure_job_environment(
+            self,
+            voice_id=str(voice_id or ""),
+            secondary_voice_id=str(sec or ""),
+            asr_model=str(asr_model or ""),
+            title="Download environment",
+        ):
+            self.log.warn("Retry blocked — missing environment")
+            return False
+        return True
+
+    def _push_retries(self, task_ids: list[int]) -> None:
+        """Put failed movies back on the queue without touching jobs already running."""
+        flight = getattr(self, "_flight", None)
+        if not isinstance(flight, dict):
+            flight = {}
+            self._flight = flight
+        if getattr(self, "_batch_stopping", False) and flight:
+            self.log.warn("Retry waits until the stop finishes")
+            return
+        if not self._retry_environment_ready():
+            return
+        pushed: list[str] = []
+        seen: set[str] = set()
+        for task_id in task_ids:
+            task = self._task_by_id(task_id)
+            if not task or task.get("status") in _ACTIVE or task.get("status") == "queued":
+                continue
+            if task.get("status") not in _FAILED and task.get("status") != "done":
+                continue
+            reason = self._retry_block_reason(task)
+            if reason:
+                self.log.warn(f"Retry skipped · {task.get('name') or 'Movie'} · {reason}")
+                continue
+            source = str(task.get("source") or "")
+            abspath = os.path.abspath(source)
+            if abspath in seen:
+                continue
+            seen.add(abspath)
+            task["status"] = "queued"
+            task["stages"] = [-1 for _stage in STAGES]
+            task["stage"] = -1
+            task["progress"] = 0
+            task["message"] = ""
+            task["comp"] = -1
+            task.pop("control", None)
+            task.pop("live", None)
+            task.pop("live_clip", None)
+            failed = getattr(self, "_batch_failed", None)
+            if isinstance(failed, list):
+                self._batch_failed = [
+                    (path, message)
+                    for path, message in failed
+                    if os.path.abspath(str(path)) != abspath
+                ]
+            pushed.append(source)
+        if not pushed:
+            return
         self._refresh_tasks()
-        self._start_task(task_id)
+        queue = [
+            str(path) for path in (getattr(self, "_dub_queue", None) or [])
+            if os.path.abspath(str(path)) not in seen
+        ]
+        self._dub_queue = pushed + queue
+        self._batch_stopping = False
+        busy = bool(getattr(self, "_dub_busy", False)) or bool(flight)
+        if not busy:
+            self._set_busy(True)
+        names = ", ".join(os.path.basename(path) for path in pushed[:4])
+        extra = len(pushed) - 4
+        if extra > 0:
+            names = f"{names} · +{extra}"
+        width = self._batch_width() if hasattr(self, "_batch_width") else 1
+        free = max(0, width - len(flight))
+        if free:
+            self.log.info(f"Retry · {len(pushed)} movie(s) · {names}")
+        else:
+            self.log.info(f"Retry queued · {len(pushed)} movie(s) · {names} · waiting for a free slot")
+        self._launch_next_or_finish()
 
     # ── Table rendering ────────────────────────────────────────────────
 
@@ -1537,7 +1771,11 @@ class TaskTools:
         stage = ""
         if 0 <= int(task.get("stage", -1)) < len(STAGES):
             stage = STAGES[int(task["stage"])][0]
-        label = QTableWidgetItem(_STATUS_LABELS.get(status, status))
+        label = table.item(row, _STATUS_COL)
+        if label is None:
+            label = QTableWidgetItem()
+            table.setItem(row, _STATUS_COL, label)
+        label.setText(_STATUS_LABELS.get(status, status))
         label.setData(Qt.ItemDataRole.UserRole, status)
         label.setData(_ROLE_PROGRESS, progress)
         label.setData(_ROLE_STAGE, stage)
@@ -1549,8 +1787,8 @@ class TaskTools:
                 tip += f" · {stage}"
         if msg:
             tip += f"\n{msg}"
-        label.setToolTip(tip)
-        table.setItem(row, _STATUS_COL, label)
+        if label.toolTip() != tip:
+            label.setToolTip(tip)
 
     def _patch_status_progress(self, task: dict) -> bool:
         """Update STATUS cell data in-place for the given task. Returns True if found."""
@@ -1563,35 +1801,58 @@ class TaskTools:
             if name_item is None or name_item.data(Qt.ItemDataRole.UserRole) != tid:
                 continue
             self._sync_status_cell(row, task)
-            table.viewport().update()
+            subtitle = self._format_task_subtitle(task)
+            viewport = table.viewport()
+            status_index = table.model().index(row, _STATUS_COL)
+            viewport.update(table.visualRect(status_index))
+            if name_item.data(Qt.ItemDataRole.UserRole + 3) != subtitle:
+                name_item.setData(Qt.ItemDataRole.UserRole + 3, subtitle)
+                name_index = table.model().index(row, _NAME_COL)
+                viewport.update(table.visualRect(name_index))
             return True
         return False
 
     def _sync_task_hint(self):
         if not hasattr(self, "task_hint"):
             return
+        previous = getattr(self, "_task_hint_text", None)
         if not self._tasks:
-            self.task_hint.setText("No tasks yet · Drag & drop video files or click + Add")
+            text = "No tasks yet · Drag & drop video files or click + Add"
+            if text != previous:
+                self._task_hint_text = text
+                self.task_hint.setText(text)
             return
-        active = self._task_by_id(self._active_task)
-        if active and active["status"] == "paused":
-            pct = int(active.get("progress") or 0)
-            self.task_hint.setText(f"Paused · {pct}% · {active['name']}")
-            return
-        if active and active["status"] == "running":
-            pct = int(active.get("progress") or 0)
-            stage = STAGES[active["stage"]][0] if 0 <= active["stage"] < len(STAGES) else "…"
-            msg = active["message"] or stage
-            self.task_hint.setText(f"Dubbing · {pct}% · {active['name']} · {msg}")
+        running = [task for task in self._tasks if task.get("status") in _ACTIVE]
+        if running:
+            bits = []
+            for task in running[:3]:
+                stage_idx = int(task.get("stage", -1) or -1)
+                stage = STAGES[stage_idx][0] if 0 <= stage_idx < len(STAGES) else ""
+                pct = int(task.get("progress") or 0)
+                label = f"{task.get('name') or 'Movie'} {stage} {pct}%".strip()
+                bits.append(" ".join(label.split()))
+            extra = len(running) - len(bits)
+            text = "Dubbing · " + " · ".join(bits)
+            if extra > 0:
+                text += f" · +{extra}"
+            if text != previous:
+                self._task_hint_text = text
+                self.task_hint.setText(text)
             return
         ready = sum(1 for t in self._tasks if t["status"] == "done")
         queued = sum(1 for t in self._tasks if t["status"] == "queued")
+        failed = sum(1 for t in self._tasks if t["status"] in _FAILED)
         parts = [f"{len(self._tasks)} task" + ("" if len(self._tasks) == 1 else "s")]
         if ready:
             parts.append(f"{ready} ready")
         if queued:
             parts.append(f"{queued} queued")
-        self.task_hint.setText(" · ".join(parts))
+        if failed:
+            parts.append(f"{failed} failed")
+        text = " · ".join(parts)
+        if text != previous:
+            self._task_hint_text = text
+            self.task_hint.setText(text)
 
     def _toggle_timeline(self, checked: bool | None = None):
         if isinstance(checked, bool) and self.sender() is getattr(self, "act_timeline", None):

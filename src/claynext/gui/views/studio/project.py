@@ -60,6 +60,7 @@ class ProjectTools:
             "fx": self.timeline.export_fx(include_hidden=True),
             "tracks": self.timeline.export_tracks(),
             "segments": list(self._segments),
+            "characters": [dict(row) for row in getattr(self, "_cast_extra", []) or []],
             "output": self._output_path,
             "stems": self._current_stems(),
             "footage": self.timeline.export_footage(),
@@ -140,9 +141,18 @@ class ProjectTools:
                 self._project["media"] = ""
                 if hasattr(self, "preview"):
                     self.preview.clear()
+            saved_cast = data.get("characters")
+            if isinstance(saved_cast, list):
+                self._cast_extra = [
+                    row for row in saved_cast
+                    if isinstance(row, dict) and str(row.get("name") or "").strip()
+                ]
+                self._cast_signature = None
             segments = data.get("segments")
             if isinstance(segments, list) and segments:
                 self._fill_table(segments)
+            elif hasattr(self, "_refresh_character_list"):
+                self._refresh_character_list()
             if isinstance(data.get("takes"), list):
                 self.timeline.apply_takes(data["takes"])
             comps = data.get("compositions")

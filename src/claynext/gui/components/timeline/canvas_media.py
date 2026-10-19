@@ -206,8 +206,15 @@ class CanvasMedia:
 
     def caption_segments(self) -> list[tuple[str, int, int, str]]:
         """Auto voice clips as (voice_id, start_ms, end_ms, text) for per-line caption tracks."""
+        from claynext.models.tts_expression import strip_expression_tags
+
         rows = [
-            (c.id, c.start_ms, c.end_ms, str(c.extra.get("text") or c.label).strip())
+            (
+                c.id,
+                c.start_ms,
+                c.end_ms,
+                strip_expression_tags(str(c.extra.get("text") or c.label)),
+            )
             for c in self.clips if c.kind == "voice" and c.extra.get("auto")
         ]
         return sorted((row for row in rows if row[3]), key=lambda row: row[1])

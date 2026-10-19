@@ -14,6 +14,7 @@ from claynext.gui.components.shell.log import LogPanel
 from claynext.gui.components.timeline.panel import TimelinePanel
 from claynext.gui.dialogs.project_settings_dialog import default_project_settings
 from claynext.gui.views.studio.captions import CaptionTools
+from claynext.gui.views.studio.characters import CharacterTools
 from claynext.gui.views.studio.config import ConfigTools
 from claynext.gui.views.studio.constants import (
     DUB_ACCENT, PANEL_MAX_W, PANEL_MIN_W, PROPS_MAX_W, PROPS_MIN_W,
@@ -42,6 +43,7 @@ class StudioView(
     ConfigTools,
     CaptionTools,
     ScriptPanelTools,
+    CharacterTools,
     ScriptExportTools,
     ScriptJobTools,
     ScriptEditTools,
@@ -109,6 +111,7 @@ class StudioView(
         properties_panel = self._build_properties_panel()
         preview_panel = self._build_preview_player()
         script_panel = self._build_script_panel()
+        character_panel = self._build_character_panel()
         self.log = LogPanel(show_title=False)
         self.timeline = TimelinePanel()
         self.timeline.seek_requested.connect(self._on_timeline_seek)
@@ -139,6 +142,7 @@ class StudioView(
         self.shelf.add_tab("media", "folder", "Movie library · start dubbing", media_panel)
         self.shelf.add_tab("tasks", "list", "Pick a movie, start a dub task, and open finished tasks", tasks_panel)
         self.shelf.add_tab("script", "chat", "Dub script · edit lines, import / export", script_panel)
+        self.shelf.add_tab("characters", "mic", "Characters · create a cast and assign voices", character_panel)
         self.shelf.add_tab("voices", "volume", "Preview voices and favorites", voice_panel)
         self.shelf.add_tab("text", "type", "On-screen text", text_panel)
         self.shelf.add_tab("effects", "sparkles", "Video effects", self._build_fx_panel("effect"))

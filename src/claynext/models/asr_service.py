@@ -279,6 +279,7 @@ class ASREngine:
         word_timestamps: bool = False,
         initial_prompt: str | None = None,
         compute_device: str = "auto",
+        clip_timestamps: list[float] | None = None,
     ) -> List[Dict[str, Any]]:
         if not media_path or not os.path.isfile(media_path):
             raise FileNotFoundError("Media file not found.")
@@ -341,11 +342,14 @@ class ASREngine:
             }
             if initial_prompt and initial_prompt.strip():
                 transcribe_kwargs["initial_prompt"] = initial_prompt.strip()
+            if clip_timestamps and len(clip_timestamps) >= 2:
+                transcribe_kwargs["clip_timestamps"] = clip_timestamps
 
-            segments_iter, info = model.transcribe(
-                wav_path,
-                **transcribe_kwargs,
-            )
+            try:
+                segments_iter, info = model.transcribe(wav_path, **transcribe_kwargs)
+            except TypeError:
+                transcribe_kwargs.pop("clip_timestamps", None)
+                segments_iter, info = model.transcribe(wav_path, **transcribe_kwargs)
             rows: List[Dict[str, Any]] = []
             for i, seg in enumerate(segments_iter, start=1):
                 text = (seg.text or "").strip()

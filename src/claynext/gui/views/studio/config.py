@@ -53,7 +53,7 @@ class ConfigTools:
         self.chk_auto_captions = self._hidden_switch(host, "auto_captions", True)
         self.chk_auto_mix = self._hidden_switch(host, "auto_mix", True)
         self.chk_vocal_master = self._hidden_switch(host, "vocal_master", True)
-        # LLM translate style (Gemini / Ollama) — duration fit, slang, expression tags
+        # LLM translate style — segment fit, neutral slang/idiom, expression tags
         self.chk_translate_fit = self._hidden_switch(host, "translate_fit_duration", True)
         self.chk_translate_slang = self._hidden_switch(host, "translate_slang", True)
         self.chk_translate_expression = self._hidden_switch(host, "translate_expression", True)

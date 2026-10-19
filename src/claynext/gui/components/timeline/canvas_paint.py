@@ -200,14 +200,19 @@ class CanvasPaint:
             p.fillRect(0, y, self.width(), self.height() - y, QColor(BG_TL))
         if not self.media_path:
             self._paint_empty(p)
+        exposed = self._exposed.adjusted(-4, -4, 4, 4)
         for clip in self.clips:
             if not self.lane_visible(self.track_by_id(clip.track_id)):
+                continue
+            if not exposed.isEmpty() and not self.clip_rect(clip).intersects(exposed):
                 continue
             self._paint_clip(p, clip)
             self._paint_trim_grips(p, clip)
         self._paint_split_seams(p)
         for clip in self.clips:
             if not self.lane_visible(self.track_by_id(clip.track_id)):
+                continue
+            if not exposed.isEmpty() and not self.clip_rect(clip).intersects(exposed):
                 continue
             self._paint_volume_line(p, clip)
         self._paint_recording(p)
@@ -311,6 +316,9 @@ class CanvasPaint:
         if not track:
             return
         rect = self.clip_rect(clip)
+        exposed = self._exposed
+        if not exposed.isEmpty() and not rect.intersects(exposed.adjusted(-4, -4, 4, 4)):
+            return
         selected = clip.id in self.selected_ids
         is_video = clip.kind == "video" and (clip.extra.get("master") or clip.extra.get("path"))
         strip_path = str(clip.extra.get("path") or "")

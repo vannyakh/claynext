@@ -531,8 +531,12 @@ class MediaPlaybackWidget(QWidget):
 
     def set_window(self, origin_ms: int, length_ms: int):
         """Show and seek a slice of the file. Length 0 follows the whole file."""
-        self._origin = max(0, int(origin_ms))
-        self._length = max(0, int(length_ms))
+        origin = max(0, int(origin_ms))
+        length = max(0, int(length_ms))
+        if origin == getattr(self, "_origin", None) and length == getattr(self, "_length", None):
+            return
+        self._origin = origin
+        self._length = length
         if self._length:
             self.slider.setRange(0, self._length)
             shown = max(0, min(self._length, self._curr_pos - self._origin))

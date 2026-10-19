@@ -1,6 +1,8 @@
 """Video surface that paints graded player frames."""
 from __future__ import annotations
 
+import time
+
 from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Qt, Signal, QRect
 from PySide6.QtGui import QImage, QPainter
@@ -25,6 +27,7 @@ class _VideoSurface(QWidget):
         self._adjust: dict = {}
         self._fx: list[dict] = []
         self._fx_ms = 0
+        self._frame_clock = 0.0
         self._mode = Qt.AspectRatioMode.KeepAspectRatio
 
     def videoSink(self) -> QVideoSink:
@@ -55,8 +58,13 @@ class _VideoSurface(QWidget):
         self.update()
 
     def _on_frame(self, frame):
-        if not frame.isValid():
+        if not self.isVisible() or not frame.isValid():
             return
+        now = time.monotonic()
+        # Leave time for scrolling and the rest of the window. 30fps is enough for preview.
+        if now - self._frame_clock < 0.033:
+            return
+        self._frame_clock = now
         image = frame.toImage()
         if image.isNull():
             return
@@ -76,7 +84,7 @@ class _VideoSurface(QWidget):
         key = (target.width(), target.height(), repr(self._fx), self._fx_ms if self._fx else 0)
         if self._cache[0] != key:
             image = self._frame.scaled(
-                target.size(), Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation
+                target.size(), Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.FastTransformation
             )
             self._cache = (key, fx_image(grade_image(image, self._adjust), self._fx, self._fx_ms))
         p = QPainter(self)

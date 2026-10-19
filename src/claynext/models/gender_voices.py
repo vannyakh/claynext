@@ -6,6 +6,7 @@ then maps each character to the best available TTS voice of that gender.
 """
 from __future__ import annotations
 
+import re
 from collections import Counter
 from typing import Any
 
@@ -111,6 +112,120 @@ def detect_segment_gender(seg: dict[str, Any], *, honor_manual: bool = True) -> 
     if existing != "Unknown":
         return existing
     return "Unknown"
+
+
+_GENERIC_SPEAKER = re.compile(
+    r"^(?:character|speaker|unknown|spk|speaker)[\s_\-]?\d*$",
+    re.IGNORECASE,
+)
+_INTRO = re.compile(
+    r"(?:i am|i'm|i’m|my name is|this is|call me|我是|我叫|名叫)\s*"
+    r"([A-Z][\w'’\-]{1,18}|[\u4e00-\u9fff]{2,4})",
+    re.IGNORECASE,
+)
+_VOCATIVE = re.compile(r"^([A-Z][\w'’\-]{1,16})[,，]\s")
+_EXPR_CUES = (
+    ("laugh", ("haha", "ha ha", "laugh", "lol", "哈哈", "呵呵", "嘿嘿")),
+    ("sigh", ("sigh", "唉")),
+    ("whisper", ("whisper", "小声", "悄悄")),
+    ("sad", ("sob", "cry", "呜", "哭")),
+    ("shout", ("shut up", "滚", "闭嘴")),
+    ("gasp", ("gasp",)),
+)
+
+
+def is_generic_speaker(name: str) -> bool:
+    return bool(_GENERIC_SPEAKER.match(str(name or "").strip()))
+
+
+def detect_line_expression(text: str) -> str:
+    """A short delivery cue from the spoken line. Empty when the line is plain."""
+    raw = str(text or "")
+    low = f" {raw.lower()} "
+    for label, cues in _EXPR_CUES:
+        if any(cue in low or cue in raw for cue in cues):
+            return label
+    if raw.count("!") >= 2 or raw.count("！") >= 2:
+        return "shout"
+    return ""
+
+
+def expression_tag(expression: str) -> str:
+    token = {
+        "laugh": "[laugh]",
+        "sigh": "[sigh]",
+        "whisper": "[whisper]",
+        "sad": "[sad]",
+        "shout": "[shout]",
+        "angry": "[angry]",
+        "gasp": "[gasp]",
+    }.get(str(expression or "").strip().lower(), "")
+    return token
+
+
+def apply_character_cast(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Name each speaker from the transcript and mark the line's expression.
+
+    A self-introduction wins. A name spoken at the start of a line is given to
+    the other person in that turn. Generic labels such as Character 1 stay when
+    the lines never say a name.
+    """
+    if not segments:
+        return segments
+    speakers: list[str] = []
+    for seg in segments:
+        name = str(seg.get("speaker") or "").strip() or "Character 1"
+        seg["speaker"] = name
+        if name not in speakers:
+            speakers.append(name)
+        text = str(seg.get("text") or seg.get("original_text") or "")
+        seg["expression"] = detect_line_expression(text)
+
+    intros: dict[str, Counter[str]] = {sp: Counter() for sp in speakers}
+    addressed: dict[str, Counter[str]] = {sp: Counter() for sp in speakers}
+    for index, seg in enumerate(segments):
+        speaker = str(seg.get("speaker") or "")
+        text = str(seg.get("text") or seg.get("original_text") or "").strip()
+        intro = _INTRO.search(text)
+        if intro:
+            intros[speaker][intro.group(1).strip(" ,，.。")] += 2
+        call = _VOCATIVE.match(text)
+        if not call:
+            continue
+        called = call.group(1).strip()
+        other = ""
+        if index + 1 < len(segments):
+            nxt = str(segments[index + 1].get("speaker") or "")
+            if nxt and nxt != speaker:
+                other = nxt
+        if not other and index > 0:
+            prev = str(segments[index - 1].get("speaker") or "")
+            if prev and prev != speaker:
+                other = prev
+        if other:
+            addressed[other][called] += 1
+
+    used = {sp for sp in speakers if not is_generic_speaker(sp)}
+    rename: dict[str, str] = {}
+    for speaker in speakers:
+        if speaker in used:
+            continue
+        votes = intros[speaker] + addressed[speaker]
+        picked = ""
+        for candidate, _count in votes.most_common():
+            clean = candidate.strip()
+            if clean and clean not in used and not is_generic_speaker(clean):
+                picked = clean
+                break
+        if picked:
+            used.add(picked)
+            rename[speaker] = picked
+    for seg in segments:
+        speaker = str(seg.get("speaker") or "")
+        if speaker in rename:
+            seg["speaker"] = rename[speaker]
+        seg["character"] = seg.get("speaker") or ""
+    return segments
 
 
 def character_gender_map(segments: list[dict[str, Any]]) -> dict[str, str]:

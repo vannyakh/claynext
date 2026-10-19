@@ -217,13 +217,15 @@ fn voice_rewrite_rule() -> String {
 
 fn register_rule(n: usize, target_lang: &str) -> String {
     let mut rule = format!(
-        "{n}. SLANG: Match how this person talks. If they are casual, rude, or swearing, \
-         keep that heat with the short word people actually say — slang, an insult, or a swear word. \
-         Do not swap it for a polite or textbook word. Do not add a curse the line did not earn."
+        "{n}. NEUTRAL SPEECH: When the line uses slang, an idiom, or a figure of speech, \
+         say what it means in real life. Use the everyday phrase a person would actually speak — \
+         neutral, natural, and clear. Do not translate the idiom word by word. \
+         Do not invent extra swearing. Do not turn it into a textbook sentence."
     );
     if lang_is_khmer(target_lang) {
         rule.push_str(
-            " Khmer — \"What the hell are you doing?\" is said \"ឯងធ្វើអីហ្នឹង?\", \
+            " Khmer — \"piece of cake\" is said \"ងាយណាស់\", not a cake. \
+             \"What the hell are you doing?\" is said \"ឯងធ្វើអីហ្នឹង?\", \
              not \"តើអ្នកកំពុងធ្វើអ្វី?\".",
         );
     }
@@ -232,9 +234,10 @@ fn register_rule(n: usize, target_lang: &str) -> String {
 
 fn spoken_fit_rule(n: usize, target_lang: &str) -> String {
     let mut rule = format!(
-        "{n}. SPOKEN FIT (critical): write what a voice actor can say inside duration_sec \
-         at a natural pace. Aim at recommended_syllables.target. Do not pass max. \
-         Those numbers are spoken beats, not written words. If unsure, choose the shorter line. \
+        "{n}. SPOKEN FIT (critical): this line is one spoken turn. Fit the words inside duration_sec \
+         so the voice finishes before the next segment starts. Aim at recommended_syllables.target. \
+         Do not pass max. Those numbers are spoken beats, not written words. \
+         If unsure, choose the shorter line. \
          Drop fillers that do not change the action (then, so, well, and, you know). \
          Drop a repeated owner when that person is already in the line (\"her room\" → \"the room\")."
     );
@@ -328,8 +331,12 @@ pub fn build_dubbing_llm_prompt(
     let mut rules: Vec<String> = vec![
         voice_rewrite_rule(),
         "2. Keep the scene true. Do not invent plot, names, or actions. Change the words so the line sounds spoken.".into(),
+        "3. CAST: speaker is this character's name. gender is Female, Male, or empty. \
+         expression is this line's feeling (laugh, sigh, shout, whisper, sad, angry, or empty). \
+         Write that person, and keep the same name sounding the same across lines."
+            .into(),
     ];
-    let mut n: usize = 3;
+    let mut n: usize = 4;
 
     if style.fit_duration {
         rules.push(spoken_fit_rule(n, target_lang));
@@ -342,9 +349,11 @@ pub fn build_dubbing_llm_prompt(
     if style.use_expression {
         let tags = expression_chip_tokens().join(", ");
         rules.push(format!(
-            "{n}. EXPRESSION TAGS: when the source implies a non-verbal beat or strong emotion, \
-             you MAY insert at most one short TTS cue at the start or mid-line from: {tags}. \
-             Never invent story; never stack multiple tags; omit tags when the line is plain speech."
+            "{n}. EXPRESSION TAGS: when the source has a breath, a laugh, or a clear emotion, \
+             you MAY insert at most one TTS cue from: {tags}. Put it before the words it colors. \
+             The tag is a voice delay, not a word: do not translate it, and do not speak the brackets. \
+             If the segment's expression is set, start with that tag and no other. \
+             Never stack tags. Omit them when expression is empty and the line is plain speech."
         ));
         n += 1;
     }
@@ -393,12 +402,13 @@ pub fn build_fit_rewrite_prompt(payload: &serde_json::Value, target_lang: &str) 
     format!(
         "You are tightening dubbed lines that are too long to say in the actor's slot.\n\
          Write new words in {lang_name} that this person would actually say. Keep the same voice.\n\
-         If the line is slang, an insult, or a swear, keep that heat with a shorter spoken word. Do not polish it polite.\n\
+         NEUTRAL SPEECH: say slang and idioms as the real-world phrase, short and clear. \
+         Do not translate them word by word, and do not add a curse.\n\
+         Keep expression tags such as [sigh] if they are already there. Do not add a new one.\n\
          Keep who did the action. Drop fillers and repeated owners.\n\
-         Each khmer_text must use at most max_units spoken beats (Khmer: syllables).\n\
+         Each khmer_text must use at most max_units spoken beats (Khmer: syllables). Tags do not count.\n\
          Pattern: \"then he sent her to her room\" is said \"គាត់បានជួននាងទៅបន្ទប់\", \
          not \"បន្ទាប់មកគាត់បានបញ្ជូននាងទៅបន្ទប់របស់នាង\".\n\
-         \"What the hell are you doing?\" stays rough and short, not a textbook question.\n\
          Return STRICTLY a JSON array of objects with keys id and khmer_text.\n\n\
          Lines:\n{body}"
     )
@@ -441,10 +451,11 @@ mod tests {
             use_expression: false,
         };
         let prompt = build_dubbing_llm_prompt(&payload, "Khmer", "English", &style);
+        assert!(prompt.contains("CAST:"));
         assert!(prompt.contains("VOICE REWRITE"));
         assert!(prompt.contains("SPOKEN FIT"));
-        assert!(prompt.contains("SLANG"));
-        assert!(prompt.contains("swear"));
+        assert!(prompt.contains("NEUTRAL SPEECH"));
+        assert!(prompt.contains("idiom"));
         assert!(prompt.contains("គាត់បានជួននាងទៅបន្ទប់"));
         assert!(prompt.contains("ឯងធ្វើអីហ្នឹង?"));
         assert!(!prompt.contains("EXPRESSION TAGS"));

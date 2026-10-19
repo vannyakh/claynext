@@ -530,7 +530,42 @@ class PreviewTools:
             self._store_project_session()
         self.log.info(f"Footage replaced · {os.path.basename(path)}")
 
+    def _segment_spans(self) -> list[tuple[int, int]]:
+        """Cue times for the open script. Rebuilt only when that list changes."""
+        segs = getattr(self, "_segments", None) or []
+        key = (id(segs), len(segs))
+        if key == getattr(self, "_segment_span_key", None):
+            return self._segment_span_rows
+        rows: list[tuple[int, int]] = []
+        for seg in segs:
+            if not isinstance(seg, dict):
+                rows.append((0, 1))
+                continue
+            start = int(timestamp_to_sec(str(seg.get("start") or "")) * 1000)
+            end = int(timestamp_to_sec(str(seg.get("end") or "")) * 1000)
+            if end <= start:
+                end = start + 1
+            rows.append((start, end))
+        self._segment_span_key = key
+        self._segment_span_rows = rows
+        return rows
+
     def _on_player_position(self, ms: int):
+        if self._player_mode != "timeline":
+            return
+        self._pending_playhead = int(ms)
+        timer = getattr(self, "_playhead_timer", None)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._flush_playhead)
+            self._playhead_timer = timer
+        if timer.isActive():
+            return
+        timer.start(50 if self._main_playing() else 0)
+
+    def _flush_playhead(self):
+        ms = int(getattr(self, "_pending_playhead", 0))
         if self._player_mode != "timeline":
             return
         if getattr(self, "_hold_playhead", False):
@@ -563,11 +598,7 @@ class PreviewTools:
                 if self.prop_stack.currentIndex() == 0:
                     self._sync_props_audio()
         row = -1
-        for i, seg in enumerate(self._segments):
-            start = int(timestamp_to_sec(seg.get("start", "")) * 1000)
-            end = int(timestamp_to_sec(seg.get("end", "")) * 1000)
-            if end <= start:
-                end = start + 1
+        for i, (start, end) in enumerate(self._segment_spans()):
             if start <= timeline_ms < end:
                 row = i
                 break

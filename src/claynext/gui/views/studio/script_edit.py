@@ -101,6 +101,27 @@ class ScriptEditTools:
                 names.append(name)
         return names
 
+    def _line_cast_choices(self) -> list[dict]:
+        """Created characters first, then TTS voices that are not already names."""
+        cast: list[dict] = []
+        seen: set[str] = set()
+        for row in self._character_rows() if hasattr(self, "_character_rows") else []:
+            name = str(row.get("name") or "")
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            cast.append({
+                "label": name,
+                "id": str(row.get("voice_id") or ""),
+                "gender": str(row.get("gender") or ""),
+            })
+        for voice in self._cast_voice_choices():
+            label = str(voice.get("label") or "")
+            if label and label not in seen:
+                seen.add(label)
+                cast.append(voice)
+        return cast
+
     def _cast_voice_choices(self) -> list[dict]:
         """TTS voices for the target language — used as character cast options."""
         from claynext.models.gender_voices import voices_for_lang
@@ -442,7 +463,7 @@ class ScriptEditTools:
             return
         dialog = LineEditDialog(
             self._segments[row],
-            self._cast_voice_choices(),
+            self._line_cast_choices(),
             lang=self._voice_lang(),
             parent=self,
         )

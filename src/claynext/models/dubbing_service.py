@@ -113,7 +113,7 @@ def analyze_movie_characters(
     and gender-matched neural voices per character.
     """
     from claynext.models.gender_audio import enrich_segments_with_audio_gender
-    from claynext.models.gender_voices import assign_gender_and_voices
+    from claynext.models.gender_voices import apply_character_cast, assign_gender_and_voices
 
     if not segments:
         return []
@@ -191,6 +191,10 @@ def analyze_movie_characters(
             progress_callback=progress_callback,
         )
 
+    if progress_callback:
+        progress_callback(37, "Naming characters and reading expression…")
+    apply_character_cast(segments)
+
     return assign_gender_and_voices(
         segments,
         primary_voice=primary_voice,
@@ -219,6 +223,45 @@ def _try_demucs(wav_path: str, out_dir: Path, ping: Callable) -> tuple[str | Non
         return (bed if bed else None), (vocals if vocals else None)
     except Exception:
         return None, None
+
+
+def _speech_clip_pairs(path: str, duration: float) -> list[float] | None:
+    """Pack the extracted track into speech windows. Short media stays one pass."""
+    if duration <= 45 or not path or not os.path.isfile(path):
+        return None
+    spans: list[tuple[float, float]] = []
+    try:
+        from claynext.adapters.ai import get_ai_adapter
+
+        for item in get_ai_adapter().vad_chunk(path) or []:
+            start = float(item.get("start_sec") or 0)
+            end = float(item.get("end_sec") or 0)
+            if end > start:
+                spans.append((start, end))
+    except Exception:
+        spans = []
+    windows: list[tuple[float, float]] = []
+    if spans:
+        cur_s, cur_e = spans[0]
+        for start, end in spans[1:]:
+            if end - cur_s <= 36 and start - cur_e <= 0.8:
+                cur_e = end
+            else:
+                windows.append((max(0.0, cur_s - 0.12), min(duration, cur_e + 0.2)))
+                cur_s, cur_e = start, end
+        windows.append((max(0.0, cur_s - 0.12), min(duration, cur_e + 0.2)))
+    else:
+        cursor = 0.0
+        while cursor < duration - 0.3:
+            windows.append((cursor, min(duration, cursor + 40.0)))
+            cursor += 40.0
+    if len(windows) <= 1:
+        return None
+    pairs: list[float] = []
+    for start, end in windows:
+        if end - start >= 0.4:
+            pairs.extend([round(start, 3), round(end, 3)])
+    return pairs if len(pairs) >= 4 else None
 
 
 def _tts_workers(requested: int | None) -> int:
@@ -262,6 +305,12 @@ def _speak_lines(
             control.checkpoint()
         voice = item.get("tts_voice_hint") or voice_id
         text_to_speak = str(item.get("translated_text") or item.get("text") or "")
+        from claynext.models.gender_voices import expression_tag
+        from claynext.models.tts_expression import has_expression_tags
+
+        tag = expression_tag(str(item.get("expression") or ""))
+        if tag and text_to_speak and not has_expression_tags(text_to_speak):
+            text_to_speak = f"{tag} {text_to_speak}"
         raw_mp3 = str(job / f"seg_{idx + 1:04d}.mp3")
         TTSEngine.synthesize(text_to_speak, voice, raw_mp3)
         start = float(item.get("start_sec") or timestamp_to_sec(item.get("start", "")))
@@ -365,7 +414,7 @@ class DubbingEngine:
                 except Exception:
                     pass
 
-        ping(2, "Demuxing movie audio (48 kHz stereo)…")
+        ping(2, "Extracting audio from the source track…")
         full_wav = str(job / "source_48k.wav")
         demux_wav(video_path, full_wav, rate=48000, channels=2)
         ping(7, "Probing media duration…")
@@ -405,18 +454,19 @@ class DubbingEngine:
                 raise RuntimeError("WhisperX produced no dialogue segments.")
         else:
             effective_lang = source_lang if source_lang and source_lang != "Auto Detect" else asr_language
-            ping(16, f"Transcribing dialogue ({effective_lang}) with {asr_model}…")
+            clips = _speech_clip_pairs(asr_source, duration)
+            chunk_note = f" · {len(clips) // 2} speech chunks" if clips else ""
+            ping(16, f"Transcribing the source track ({effective_lang}){chunk_note}…")
             segments = ASREngine.transcribe(
                 asr_source,
                 model_name=asr_model,
                 language=effective_lang,
+                clip_timestamps=clips,
                 progress_callback=lambda p, m: ping(16 + int(p * 0.22), m),
             )
 
-        ping(38, f"Transcript ready · {len(segments)} line(s)")
-        share("transcript", [dict(seg) for seg in segments])
         if auto_chain:
-            ping(39, "Analyzing character dialogue turns and duration quotas…")
+            ping(38, "Reading gender, expression, and character names…")
             segments = analyze_movie_characters(
                 segments,
                 primary_voice=voice_id,
@@ -424,9 +474,16 @@ class DubbingEngine:
                 target_lang=target_lang,
                 audio_path=asr_source,
                 work_dir=job,
-                progress_callback=lambda p, m: ping(max(39, min(41, int(p))), m),
+                progress_callback=lambda p, m: ping(max(38, min(41, int(p))), m),
             )
-            ping(42, f"Batch translating {len(segments)} line(s) from {source_lang} → {target_lang}…")
+        ping(38, f"Transcript ready · {len(segments)} line(s)")
+        share("transcript", [dict(seg) for seg in segments])
+        if auto_chain:
+            names = sorted({str(seg.get("speaker") or "") for seg in segments if seg.get("speaker")})
+            cast = ", ".join(names[:4])
+            if cast:
+                ping(41, f"Cast · {cast}")
+            ping(42, f"Translating {len(segments)} line(s) with cast, gender, and expression…")
             translated = TranslateEngine.translate_subtitles(
                 segments,
                 target_lang=target_lang,
@@ -515,39 +572,42 @@ class DubbingEngine:
         else:
             dialogue = raw_dialogue
 
-        # Step 6: Smart Dynamic Movie Audio Ducking
-        # Preserves 100% full volume for sound effects, character vocal expressions (screams/grunts), and music!
-        # Only ducks during translated speech intervals, with center-channel vocal reduction.
-        ping(89, "Applying dynamic ducking (preserving movie sound effects, character expressions & music)…")
+        # Step 6: Isolate the original voice. The bed keeps effects and background.
+        ping(89, "Removing the original voice · keeping effects and background…")
         if bgm_separated and os.path.isfile(bgm_separated):
             bgm_bed = bgm_separated
-            ping(91, "Using Demucs music/effects bed…")
+            ping(91, "Isolated bed ready · original voice removed…")
         else:
-            dialogue_intervals: list[tuple[float, float]] = []
-            for item in translated:
-                txt = (item.get("translated_text") or item.get("text") or "").strip()
-                if not txt:
-                    continue
-                st = float(item.get("start_sec") or timestamp_to_sec(item.get("start", "")))
-                en = float(item.get("end_sec") or timestamp_to_sec(item.get("end", "")))
-                if en > st:
-                    dialogue_intervals.append((st, en))
+            isolated = ensure_speech_bed(video_path, use_demucs=False)
+            if isolated and os.path.isfile(isolated):
+                bgm_bed = isolated
+                ping(91, "Effects and background isolated · original voice removed…")
+            else:
+                dialogue_intervals: list[tuple[float, float]] = []
+                for item in translated:
+                    txt = (item.get("translated_text") or item.get("text") or "").strip()
+                    if not txt:
+                        continue
+                    st = float(item.get("start_sec") or timestamp_to_sec(item.get("start", "")))
+                    en = float(item.get("end_sec") or timestamp_to_sec(item.get("end", "")))
+                    if en > st:
+                        dialogue_intervals.append((st, en))
 
-            bgm_bed = str(job / "bgm_dynamic_ducked.wav")
-            duck_target = max(0.05, min(0.50, float(background_vol)))
-            clamped_fade_ms = max(50, min(500, int(fade_ms)))
-            fade_sec = clamped_fade_ms / 1000.0
-            dynamic_duck_audio(
-                full_wav,
-                dialogue_intervals,
-                bgm_bed,
-                duck_vol=duck_target,
-                fade_in_sec=fade_sec,
-                fade_out_sec=fade_sec,
-                fade_ms=clamped_fade_ms,
-                center_attenuation=max(0.0, min(1.0, float(center_attenuation))),
-            )
-            ping(91, "Dynamic duck bed ready…")
+                bgm_bed = str(job / "bgm_dynamic_ducked.wav")
+                duck_target = max(0.05, min(0.50, float(background_vol)))
+                clamped_fade_ms = max(50, min(500, int(fade_ms)))
+                fade_sec = clamped_fade_ms / 1000.0
+                dynamic_duck_audio(
+                    full_wav,
+                    dialogue_intervals,
+                    bgm_bed,
+                    duck_vol=duck_target,
+                    fade_in_sec=fade_sec,
+                    fade_out_sec=fade_sec,
+                    fade_ms=clamped_fade_ms,
+                    center_attenuation=max(0.0, min(1.0, float(center_attenuation))),
+                )
+                ping(91, "Dynamic duck bed ready…")
 
         # Step 7: Final Audio Mix
         ping(92, "Mixing cinema audio bed + dubbed dialogue…")

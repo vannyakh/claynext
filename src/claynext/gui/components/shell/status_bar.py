@@ -58,15 +58,20 @@ class CustomStatusBar(QWidget):
         layout.addWidget(self.lbl_ver)
 
     def set_status_message(self, msg: str, progress: int | None = None):
-        self.lbl_msg.setText(msg or "Ready")
+        text = msg or "Ready"
+        if self.lbl_msg.text() != text:
+            self.lbl_msg.setText(text)
         if progress is None:
             self._spinner.stop()
             self.progress.hide()
             return
         pct = max(0, min(100, int(progress)))
-        self.progress.setValue(pct)
-        self.progress.show()
-        self._spinner.start()
+        if self.progress.value() != pct:
+            self.progress.setValue(pct)
+        if not self.progress.isVisible():
+            self.progress.show()
+        if not self._spinner.is_spinning():
+            self._spinner.start()
 
     def set_active_tool_name(self, name: str):
         self.lbl_active_tool.setText(name or "")

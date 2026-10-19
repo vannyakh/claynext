@@ -122,8 +122,9 @@ class CanvasLayout:
         vw = self.parent().width() if self.parent() is not None else 0
         w = max(self.content_width(), int(vw), 1)
         h = self.total_height()
-        self.setMinimumSize(w, h)
-        self.resize(w, h)
+        if self.minimumWidth() != w or self.minimumHeight() != h or self.width() != w or self.height() != h:
+            self.setMinimumSize(w, h)
+            self.resize(w, h)
         self.update()
         if notify:
             self.clips_changed.emit()
@@ -168,12 +169,15 @@ class CanvasLayout:
         self._relayout()
 
     def set_playhead_ms(self, ms: int):
+        old = self.playhead_ms
         self.playhead_ms = max(0, int(ms))
         now = self.gains()
         if now != self._last_gains:
             self._last_gains = now
             self.gains_changed.emit()
-        self.update()
+        x0 = int(self.x_at(min(old, self.playhead_ms))) - 8
+        x1 = int(self.x_at(max(old, self.playhead_ms))) + 8
+        self.update(x0, 0, max(16, x1 - x0), max(1, self.height()))
 
     def ms_at(self, x: int) -> int:
         return max(0, int(x / max(self.pps, 1) * 1000))

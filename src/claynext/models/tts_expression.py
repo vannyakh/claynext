@@ -45,9 +45,9 @@ _TAG_DEFS: dict[str, dict[str, Any]] = {
     "ahem": {"kind": "vocal", "say": "ahem"},
     "cough": {"kind": "vocal", "say": "cough"},
     "hmm": {"kind": "vocal", "say": "hmm"},
-    "pause": {"kind": "silence", "ms": 420},
-    "break": {"kind": "silence", "ms": 320},
-    "silence": {"kind": "silence", "ms": 500},
+    "pause": {"kind": "silence", "ms": 480},
+    "break": {"kind": "silence", "ms": 360},
+    "silence": {"kind": "silence", "ms": 550},
     "excited": {"kind": "style", "rate": 1.12, "pitch": 5.0},
     "happy": {"kind": "style", "rate": 1.08, "pitch": 4.0},
     "cheerful": {"kind": "style", "rate": 1.08, "pitch": 4.0},
@@ -148,10 +148,13 @@ def parse_expression_text(text: str) -> list[ExprPart]:
                     pitch=style_pitch,
                 )
             )
+            parts.append(ExprPart(kind="silence", ms=220))
         elif defn["kind"] == "style":
+            if parts and parts[-1].kind != "silence":
+                parts.append(ExprPart(kind="silence", ms=80))
             style_rate = float(defn.get("rate") or 1.0)
             style_pitch = float(defn.get("pitch") or 0.0)
-            # Style applies to following speech; no audio by itself
+            # Style applies to following speech; the short silence is the turn delay
         pos = match.end()
     tail = raw[pos:]
     if tail.strip():
