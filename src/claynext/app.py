@@ -75,6 +75,11 @@ def main(argv: list[str] | None = None):
         metavar="PATH",
         help="Open this .claynext.json project in the studio (implies --studio)",
     )
+    parser.add_argument(
+        "--no-splash",
+        action="store_true",
+        help="Skip splash loader screen and launch directly",
+    )
     args, qt_args = parser.parse_known_args(argv)
 
     # Qt Multimedia probes h264_mf / hevc_mf on startup; many PCs lack HEVC MF.
@@ -102,14 +107,17 @@ def main(argv: list[str] | None = None):
         else:
             state["home"] = _open_home()
 
-    from claynext.gui.components.shell.loader import ToolLoaderScreen
+    if args.no_splash:
+        _after_loader()
+    else:
+        from claynext.gui.components.shell.loader import ToolLoaderScreen
 
-    tool_data = NAV_ITEMS[tool_index] if 0 <= tool_index < len(NAV_ITEMS) else NAV_ITEMS[0]
-    loader = ToolLoaderScreen(tool_data=tool_data, parent=None, on_complete=_after_loader)
-    state["loader"] = loader
-    loader.show()
-    loader.raise_()
-    loader.activateWindow()
+        tool_data = NAV_ITEMS[tool_index] if 0 <= tool_index < len(NAV_ITEMS) else NAV_ITEMS[0]
+        loader = ToolLoaderScreen(tool_data=tool_data, parent=None, on_complete=_after_loader)
+        state["loader"] = loader
+        loader.show()
+        loader.raise_()
+        loader.activateWindow()
 
     sys.exit(app.exec())
 

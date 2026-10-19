@@ -19,9 +19,9 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 
 def run_smoke_test() -> int:
-    print("=" * 60)
-    print("🧪 Claynext Studio — Headless Smoke Test")
-    print("=" * 60)
+    print("============================================================")
+    print("[*] Claynext Studio - Headless Smoke Test")
+    print("============================================================")
     failures = []
 
     # 1. Python Version Check
@@ -30,42 +30,44 @@ def run_smoke_test() -> int:
     if py_ver < (3, 12):
         failures.append(f"Python 3.12+ required, found {py_ver.major}.{py_ver.minor}")
     else:
-        print("    [✓] Python version check passed")
+        print("    [+] Python version check passed")
 
     # 2. FFmpeg Binary Check
     try:
-        from claynext.core.ffmpeg_tools import ffmpeg_exe
+        from claynext.adapters.ffmpeg_service import ffmpeg_exe
         exe = ffmpeg_exe()
         print(f"[*] FFmpeg Binary: {exe}")
         if not exe or not os.path.exists(exe):
             failures.append(f"FFmpeg binary not found at: {exe}")
         else:
-            print("    [✓] FFmpeg executable verified")
+            print("    [+] FFmpeg executable verified")
     except Exception as e:
         failures.append(f"FFmpeg verification failed: {e}")
 
-    # 3. Core Engine Imports
+    # 3. Core Engine & Service Imports
     core_modules = [
         "claynext.constants.theme_constants",
         "claynext.constants.ui_constants",
         "claynext.utils.config",
-        "claynext.core.worker",
-        "claynext.core.media_compat",
-        "claynext.core.ffmpeg_tools",
-        "claynext.core.asr_engine",
-        "claynext.core.tts_engine",
-        "claynext.core.translate_engine",
-        "claynext.core.ocr_engine",
-        "claynext.core.dubbing_engine",
-        "claynext.core.dub_project",
+        "claynext.gui.worker",
+        "claynext.adapters.media",
+        "claynext.adapters.ffmpeg_service",
+        "claynext.adapters.rust_bridge",
+        "claynext.adapters.rust_engine",
+        "claynext.models.asr_service",
+        "claynext.models.tts_service",
+        "claynext.models.translate_service",
+        "claynext.models.ocr_service",
+        "claynext.models.dubbing_service",
+        "claynext.models.dub_project",
     ]
     print("[*] Verifying Core Engine Modules...")
     for mod in core_modules:
         try:
             __import__(mod)
-            print(f"    [✓] {mod}")
+            print(f"    [+] {mod}")
         except Exception as e:
-            print(f"    [✗] {mod}: {e}")
+            print(f"    [-] {mod}: {e}")
             failures.append(f"Failed to import {mod}: {e}")
 
     # 4. GUI & Stylesheet Verification
@@ -82,14 +84,14 @@ def run_smoke_test() -> int:
             app = QApplication(["claynext_smoke_test", "-platform", "offscreen"])
 
         qss = build_stylesheet()
-        print(f"    [✓] Compiled QSS Stylesheet: {len(qss)} characters")
-        print(f"    [✓] Navigation Items Registered: {len(NAV_ITEMS)}")
+        print(f"    [+] Compiled QSS Stylesheet: {len(qss)} characters")
+        print(f"    [+] Navigation Items Registered: {len(NAV_ITEMS)}")
 
         tool = NAV_ITEMS[0]
         loader = ToolLoaderScreen(tool_data=tool)
-        print("    [✓] Instantiated ToolLoaderScreen successfully")
+        print("    [+] Instantiated ToolLoaderScreen successfully")
         win = ToolWindow(tool_index=0)
-        print("    [✓] Instantiated ToolWindow successfully")
+        print("    [+] Instantiated ToolWindow successfully")
         # Avoid lingering widgets in offscreen smoke runs.
         loader.close()
         win.close()
@@ -98,12 +100,12 @@ def run_smoke_test() -> int:
 
     print("-" * 60)
     if failures:
-        print(f"❌ Smoke Test FAILED with {len(failures)} issue(s):")
+        print(f"[FAIL] Smoke Test FAILED with {len(failures)} issue(s):")
         for f in failures:
             print(f"   - {f}")
         return 1
 
-    print("✅ All Smoke Tests PASSED! Claynext environment is fully operational.")
+    print("[SUCCESS] All Smoke Tests PASSED! Claynext environment is fully operational.")
     return 0
 
 
