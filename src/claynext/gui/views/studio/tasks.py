@@ -23,8 +23,8 @@ from claynext.gui.icons import icon
 from claynext.models.thumbnails import VIDEO_EXTS, IMAGE_EXTS, icon_for, pixmap_for, thumb_path_for
 from claynext.gui.worker import Worker
 
-from claynext.gui.components.shelf_header import make_shelf_button, make_shelf_header
-from claynext.gui.components.spinner import Spinner
+from claynext.gui.components.shell.shelf_header import make_shelf_button, make_shelf_header
+from claynext.gui.components.controls.spinner import Spinner
 
 _PAUSED_COLOR = "#f59e0b"
 _STATUS_COLORS = {

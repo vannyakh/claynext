@@ -9,8 +9,8 @@ from claynext.constants.theme_constants import (
 )
 from claynext.gui.components.overlay.const import HANDLE_R, MEDIA_KINDS, ROTATE_GAP, TEXT_KINDS
 from claynext.gui.components.overlay.item import OverlayItem
-from claynext.gui.components.shape_render import paint_shape
-from claynext.gui.components.text_render import paint_text
+from claynext.gui.components.render.shape import paint_shape
+from claynext.gui.components.render.text import paint_text
 from claynext.gui.icons import icon
 
 class CanvasPaint:

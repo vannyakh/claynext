@@ -11,9 +11,9 @@ from PySide6.QtWidgets import (
 from claynext.constants.theme_constants import COLOR_BORDER
 from claynext.gui.icons import icon
 from claynext.models.text_style import CAPTION_ANIMS, CAPTION_WIDTH_RANGE, TEXT_COLORS, clean_text_style
-from claynext.gui.components.scrub_spin import ScrubSpinBox
-from claynext.gui.components.text_render import anim_loop_ms, anim_preview_pixmap, template_pixmap
-from claynext.gui.components.text_styles_panel import TEXT_STYLES
+from claynext.gui.components.controls.scrub_spin import ScrubSpinBox
+from claynext.gui.components.render.text import anim_loop_ms, anim_preview_pixmap, template_pixmap
+from claynext.gui.components.inspector.styles import TEXT_STYLES
 
 
 CAPTION_STYLES: list[dict] = [

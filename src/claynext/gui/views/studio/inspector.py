@@ -10,10 +10,10 @@ from PySide6.QtWidgets import (
 from claynext.constants.timeline_constants import FX_KINDS, OVERLAY_KINDS
 from claynext.models.thumbnails import pixmap_for
 from claynext.models.adjust import clean_adjust
-from claynext.gui.components.overlay import TEXT_KINDS
-from claynext.gui.components.fx_shelf import FxShelfPanel
-from claynext.gui.components.properties_panel import TrackPropsPage
-from claynext.gui.components.text_styles_panel import TextStylesPanel
+from claynext.gui.components.overlay.const import TEXT_KINDS
+from claynext.gui.components.inspector.shelf import FxShelfPanel
+from claynext.gui.components.inspector.properties import TrackPropsPage
+from claynext.gui.components.inspector.styles import TextStylesPanel
 from claynext.gui.dialogs.project_settings_dialog import ProjectInfoPage
 
 _PROPS_PAGE = 0

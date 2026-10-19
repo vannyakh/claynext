@@ -17,8 +17,8 @@ from claynext.models.text_style import CAPTION_ANIMS
 from claynext.models.transitions import TRANSITIONS
 from claynext.models.tts_service import TTSEngine
 from claynext.models.translate_service import TranslateEngine
-from claynext.gui.components.scrub_spin import ScrubSpinBox
-from claynext.gui.components.segment_tabs import SegmentTabs
+from claynext.gui.components.controls.scrub_spin import ScrubSpinBox
+from claynext.gui.components.controls.tabs import SegmentTabs
 from claynext.gui.views.studio.captions import CAPTION_STYLES, CaptionLookGrid, CaptionMotionGrid
 from claynext.gui.views.studio.constants import SOURCE_LANGS
 

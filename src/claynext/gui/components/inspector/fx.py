@@ -6,8 +6,8 @@ from PySide6.QtWidgets import QButtonGroup, QGridLayout, QHBoxLayout, QLabel, QT
 
 from claynext.models.fx import EFFECTS, FILTER_LOOKS, clean_fx
 from claynext.models.transitions import TRANSITIONS
-from claynext.gui.components.fx_shelf import fx_tile
-from claynext.gui.components.scrub_spin import ScrubSpinBox
+from claynext.gui.components.inspector.shelf import fx_tile
+from claynext.gui.components.controls.scrub_spin import ScrubSpinBox
 
 
 class FxInspector(QWidget):

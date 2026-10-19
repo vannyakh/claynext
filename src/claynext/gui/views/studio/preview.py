@@ -11,8 +11,9 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QL
 from claynext.models.dubbing_service import timestamp_to_sec
 from claynext.models.canvas import ratio_value
 from claynext.gui.components.media_preview import MediaPlaybackWidget, MediaPreviewWidget
-from claynext.gui.components.overlay import OverlayCanvas, PreviewStageHost
-from claynext.gui.components.spinner import Spinner
+from claynext.gui.components.overlay.canvas import OverlayCanvas
+from claynext.gui.components.overlay.stage import PreviewStageHost
+from claynext.gui.components.controls.spinner import Spinner
 
 
 class PreviewTools:
@@ -102,7 +103,7 @@ class PreviewTools:
             overlay.hide()
 
     def _build_player_header(self) -> QWidget:
-        from claynext.gui.components.segment_tabs import SegmentTabs
+        from claynext.gui.components.controls.tabs import SegmentTabs
 
         bar = QWidget()
         bar.setObjectName("dub_player_modes")

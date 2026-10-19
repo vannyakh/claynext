@@ -15,7 +15,7 @@ from claynext.constants.timeline_constants import (
     OVERLAY_KINDS,
 )
 from claynext.models.fx import clean_fx
-from claynext.gui.components.shape_render import (
+from claynext.gui.components.render.shape import (
     SHAPE_LABELS,
     shape_size,
 )

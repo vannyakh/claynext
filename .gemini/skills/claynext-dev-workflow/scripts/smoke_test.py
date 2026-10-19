@@ -74,7 +74,7 @@ def run_smoke_test() -> int:
         from PySide6.QtWidgets import QApplication
         from claynext.gui.styles import build_stylesheet
         from claynext.gui.main_window import ToolWindow
-        from claynext.gui.components.tool_loader import ToolLoaderScreen
+        from claynext.gui.components.shell.loader import ToolLoaderScreen
         from claynext.constants import NAV_ITEMS
 
         app = QApplication.instance()

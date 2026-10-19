@@ -10,8 +10,8 @@ from PySide6.QtCore import Qt, QPoint, QEvent
 from PySide6.QtGui import QAction, QKeySequence, QShortcut
 
 from claynext.gui.styles import build_stylesheet
-from claynext.gui.components.title_bar import CustomTitleBar
-from claynext.gui.components.status_bar import CustomStatusBar
+from claynext.gui.components.shell.title_bar import CustomTitleBar
+from claynext.gui.components.shell.status_bar import CustomStatusBar
 from claynext.gui.views.studio import StudioView
 from claynext.gui.dialogs.settings_dialog import SettingsDialog
 from claynext.utils.config import APP_NAME, APP_VERSION

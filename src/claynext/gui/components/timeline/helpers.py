@@ -5,7 +5,7 @@ import os
 
 from claynext.constants.timeline_constants import AUDIO_EXTS, IMAGE_EXTS
 from claynext.models.thumbnails import VIDEO_EXTS
-from claynext.gui.components.text_styles_panel import TEXT_STYLE_MIME
+from claynext.gui.components.inspector.styles import TEXT_STYLE_MIME
 
 
 def fmt_ms(ms: int) -> str:

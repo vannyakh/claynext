@@ -12,10 +12,10 @@ from PySide6.QtWidgets import (
 )
 
 from claynext.gui.icons import icon
-from claynext.gui.components.field_controls import SearchField, SelectField
-from claynext.gui.components.shelf_header import make_shelf_button, make_shelf_header
-from claynext.gui.components.spinner import Spinner
-from claynext.gui.components.table_fit import fit_or_scroll
+from claynext.gui.components.controls.fields import SearchField, SelectField
+from claynext.gui.components.shell.shelf_header import make_shelf_button, make_shelf_header
+from claynext.gui.components.controls.spinner import Spinner
+from claynext.gui.components.controls.table_fit import fit_or_scroll
 from claynext.utils.job_control import JobControl
 
 

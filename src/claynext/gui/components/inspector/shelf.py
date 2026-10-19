@@ -24,11 +24,11 @@ from PySide6.QtWidgets import (
 from claynext.constants.theme_constants import COLOR_BORDER, COLOR_PRIMARY, COLOR_TEXT_MAIN
 from claynext.models.fx import DEFAULT_INTENSITY, EFFECTS, FILTER_LOOKS, apply_fx
 from claynext.models.transitions import DEFAULT_DURATION_MS, DEFAULT_INTENSITY as TR_INTENSITY, TRANSITIONS
-from claynext.gui.components.shape_render import (
+from claynext.gui.components.render.shape import (
     BLUR_SHAPES, ELEMENTS, SHAPES, element_tile_icon, sample_cinematic_image, shape_size,
 )
-from claynext.gui.components.shelf_header import make_shelf_header
-from claynext.gui.components.text_styles_panel import TILE, StyleList
+from claynext.gui.components.shell.shelf_header import make_shelf_header
+from claynext.gui.components.inspector.styles import TILE, StyleList
 from claynext.utils.paths import BASE_DIR
 
 _PREVIEW_MS = {"flash": 100, "fade_in": 300, "fade_out": 700, "zoom": 999}

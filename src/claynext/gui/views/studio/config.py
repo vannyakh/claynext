@@ -13,7 +13,7 @@ from claynext.models.asr_service import ASREngine
 from claynext.models.thumbnails import VIDEO_EXTS
 from claynext.models.translate_service import TranslateEngine
 from claynext.models.tts_service import TTSEngine
-from claynext.gui.components.scrub_spin import ScrubSpinBox
+from claynext.gui.components.controls.scrub_spin import ScrubSpinBox
 from claynext.gui.views.studio.constants import SOURCE_LANGS
 
 

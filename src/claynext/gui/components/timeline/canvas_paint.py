@@ -43,7 +43,7 @@ from claynext.models.fx import (
     fx_label,
 )
 from claynext.models.transitions import TRANSITION_LABELS
-from claynext.gui.components.shape_render import SHAPE_LABELS
+from claynext.gui.components.render.shape import SHAPE_LABELS
 from claynext.gui.components.timeline.canvas_const import WAVE_PITCH
 from claynext.gui.components.timeline.helpers import fmt_tc
 from claynext.gui.components.timeline.models import (

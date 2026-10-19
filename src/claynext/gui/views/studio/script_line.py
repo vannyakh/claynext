@@ -15,7 +15,7 @@ from claynext.gui.icons import icon
 from claynext.models.tts_service import TTSEngine
 from claynext.models.tts_expression import EXPRESSION_CHIPS
 from claynext.gui.worker import Worker
-from claynext.gui.components.spinner import Spinner
+from claynext.gui.components.controls.spinner import Spinner
 from claynext.utils.config import CACHE_DIR
 
 

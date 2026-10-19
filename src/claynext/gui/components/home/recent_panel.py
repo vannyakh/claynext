@@ -28,8 +28,8 @@ from claynext.models.dub_project import (
     load_project,
     update_project,
 )
-from claynext.gui.components.home_mode_toggle import MODE_GRID, MODE_LIST, HomeModeToggle
-from claynext.gui.components.home_project_card import (
+from claynext.gui.components.home.mode_toggle import MODE_GRID, MODE_LIST, HomeModeToggle
+from claynext.gui.components.home.project_card import (
     GRID_CARD_H,
     GRID_CARD_W,
     GRID_CELL,

@@ -22,9 +22,9 @@ from PySide6.QtGui import (
 )
 
 from claynext.constants.theme_constants import COLOR_TEXT_SUB
-from claynext.gui.components.field_controls import SelectField
-from claynext.gui.components.media_preview import blur_image
-from claynext.gui.components.scrub_spin import ScrubSpinBox
+from claynext.gui.components.controls.fields import SelectField
+from claynext.gui.components.media_preview.image import blur_image
+from claynext.gui.components.controls.scrub_spin import ScrubSpinBox
 from claynext.gui.icons import icon
 from claynext.models.adjust import FILTER_PRESETS, filter_sample_rgb, grade_filter_preview
 from claynext.models.canvas import (

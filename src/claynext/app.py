@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None):
         else:
             state["home"] = _open_home()
 
-    from claynext.gui.components.tool_loader import ToolLoaderScreen
+    from claynext.gui.components.shell.loader import ToolLoaderScreen
 
     tool_data = NAV_ITEMS[tool_index] if 0 <= tool_index < len(NAV_ITEMS) else NAV_ITEMS[0]
     loader = ToolLoaderScreen(tool_data=tool_data, parent=None, on_complete=_after_loader)

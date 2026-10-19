@@ -29,8 +29,8 @@ from claynext.models.canvas import canvas_filter, clean_canvas, is_neutral
 from claynext.models.fx import clean_fx, fx_filters, fx_label
 from claynext.gui.worker import Worker
 from claynext.utils.paths import OUTPUTS_DIR, STUDIO_CACHE
-from claynext.gui.components.shape_render import shape_drawing
-from claynext.gui.components.text_render import (
+from claynext.gui.components.render.shape import shape_drawing
+from claynext.gui.components.render.text import (
     burn_metrics, caption_width, fit_caption, font_for, measure_box, wrap_text,
 )
 from claynext.gui.components.timeline.canvas import TimelineCanvas

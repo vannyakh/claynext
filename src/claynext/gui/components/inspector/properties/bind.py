@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 from claynext.constants.timeline_constants import FX_KINDS, OVERLAY_KINDS
-from claynext.gui.components.collapsible_section import CollapsibleSection
-from claynext.gui.components.overlay import TEXT_KINDS, OverlayItem
+from claynext.gui.components.controls.section import CollapsibleSection
+from claynext.gui.components.overlay.const import TEXT_KINDS
+from claynext.gui.components.overlay.item import OverlayItem
 from claynext.gui.components.timeline.models import TimelineClip, TimelineTrack
 from claynext.models.adjust import FILTER_PRESETS, clean_adjust
 
-from claynext.gui.components.properties_panel.const import AUDIO_KINDS, VIDEO_TABS
+from claynext.gui.components.inspector.properties.const import AUDIO_KINDS, VIDEO_TABS
 
 class PropsBind:
     def current_tab(self) -> str:

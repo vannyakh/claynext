@@ -18,8 +18,8 @@ from PySide6.QtGui import (
 )
 
 from claynext.constants.theme_constants import COLOR_BORDER, COLOR_TEXT_SUB
-from claynext.gui.components.collapsible_section import CollapsibleSection
-from claynext.gui.components.scrub_spin import ScrubSpinBox
+from claynext.gui.components.controls.section import CollapsibleSection
+from claynext.gui.components.controls.scrub_spin import ScrubSpinBox
 from claynext.gui.icons import icon
 
 class PropsChrome:

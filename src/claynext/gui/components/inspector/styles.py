@@ -19,8 +19,8 @@ from PySide6.QtWidgets import (
 )
 
 from claynext.models.text_style import anim_frame, clean_text_style, is_animated, preset_values
-from claynext.gui.components.shelf_header import make_shelf_header
-from claynext.gui.components.text_render import template_pixmap
+from claynext.gui.components.shell.shelf_header import make_shelf_header
+from claynext.gui.components.render.text import template_pixmap
 
 TEXT_STYLE_MIME = "application/x-claynext-text-style"
 TILE = QSize(106, 62)

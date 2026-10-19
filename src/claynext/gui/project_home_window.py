@@ -30,10 +30,10 @@ from claynext.models.dub_project import (
     remember_project,
 )
 from claynext.gui.icons import image_icon
-from claynext.gui.components.home_mode_toggle import MODE_GRID, MODE_LIST
-from claynext.gui.components.home_rail import HomeRail
-from claynext.gui.components.home_recent_panel import HomeRecentPanel
-from claynext.gui.components.title_bar import CustomTitleBar
+from claynext.gui.components.home.mode_toggle import MODE_GRID, MODE_LIST
+from claynext.gui.components.home.rail import HomeRail
+from claynext.gui.components.home.recent_panel import HomeRecentPanel
+from claynext.gui.components.shell.title_bar import CustomTitleBar
 from claynext.gui.dialogs.new_project_dialog import NewProjectDialog
 from claynext.gui.dialogs.project_settings_dialog import default_project_settings
 from claynext.gui.styles import build_stylesheet
@@ -200,7 +200,7 @@ class ProjectHomeWindow(QMainWindow):
         self._launch_studio(str(dest))
 
     def _launch_studio(self, project_path: str):
-        from claynext.gui.components.tool_loader import ToolLoaderScreen
+        from claynext.gui.components.shell.loader import ToolLoaderScreen
         from claynext.gui.main_window import ToolWindow
 
         if self._studio is not None:

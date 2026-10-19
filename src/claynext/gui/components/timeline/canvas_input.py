@@ -22,7 +22,7 @@ from claynext.models.fx import (
     fx_label,
 )
 from claynext.models.transitions import TRANSITION_LABELS
-from claynext.gui.components.text_styles_panel import parse_text_style
+from claynext.gui.components.inspector.styles import parse_text_style
 from claynext.gui.components.timeline.canvas_const import (
     TRIM_MIN_MS,
     TRIM_REACH,

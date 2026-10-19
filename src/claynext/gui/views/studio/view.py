@@ -7,10 +7,10 @@ from PySide6.QtCore import Qt, QThreadPool, QTimer
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy, QMessageBox, QFileDialog
 
 from claynext.controllers.store import get_store
-from claynext.gui.components.dock_workspace import DOCK_HEADER_H, DockWorkspace
+from claynext.gui.components.shell.dock import DOCK_HEADER_H, DockWorkspace
 from claynext.gui.components.timeline.sequence_bar import SEQUENCE_ROW_H
-from claynext.gui.components.icon_tab_shelf import IconTabShelf
-from claynext.gui.components.log_panel import LogPanel
+from claynext.gui.components.shell.icon_tabs import IconTabShelf
+from claynext.gui.components.shell.log import LogPanel
 from claynext.gui.components.timeline.panel import TimelinePanel
 from claynext.gui.dialogs.project_settings_dialog import default_project_settings
 from claynext.gui.views.studio.captions import CaptionTools

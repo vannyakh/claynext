@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QFrame, QToolButton, QSizePolicy, QStackedWidget,
 )
 
-from claynext.gui.components.spinner import Spinner
+from claynext.gui.components.controls.spinner import Spinner
 
 from claynext.gui.icons import icon
 from claynext.models.tts_service import TTSEngine
@@ -64,7 +64,7 @@ class VoiceTools:
     """Shelf tab for hearing a voice and starring favorites."""
 
     def _build_voice_panel(self) -> QWidget:
-        from claynext.gui.components.shelf_header import make_shelf_header
+        from claynext.gui.components.shell.shelf_header import make_shelf_header
 
         panel = QWidget()
         panel.setObjectName("voice_browser")

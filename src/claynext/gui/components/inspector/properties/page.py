@@ -14,20 +14,20 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage
 
 from claynext.constants.theme_constants import COLOR_TEXT_SUB
-from claynext.gui.components.fx_inspector import FxInspector
-from claynext.gui.components.overlay import OverlayInspector
-from claynext.gui.components.scrub_spin import ScrubSpinBox
-from claynext.gui.components.segment_tabs import SegmentTabs
-from claynext.gui.components.text_inspector import TextInspector
+from claynext.gui.components.inspector.fx import FxInspector
+from claynext.gui.components.overlay.inspector import OverlayInspector
+from claynext.gui.components.controls.scrub_spin import ScrubSpinBox
+from claynext.gui.components.controls.tabs import SegmentTabs
+from claynext.gui.components.inspector.text import TextInspector
 from claynext.gui.components.timeline.models import TimelineClip, TimelineTrack
 from claynext.gui.icons import icon
 from claynext.models.adjust import ADJUST_FIELDS, FILTER_PRESETS
 
-from claynext.gui.components.properties_panel.audio import PropsAudio
-from claynext.gui.components.properties_panel.bind import PropsBind
-from claynext.gui.components.properties_panel.canvas import PropsCanvas
-from claynext.gui.components.properties_panel.chrome import PropsChrome
-from claynext.gui.components.properties_panel.const import DB_MAX, DB_MIN, VIDEO_TABS, db_text
+from claynext.gui.components.inspector.properties.audio import PropsAudio
+from claynext.gui.components.inspector.properties.bind import PropsBind
+from claynext.gui.components.inspector.properties.canvas import PropsCanvas
+from claynext.gui.components.inspector.properties.chrome import PropsChrome
+from claynext.gui.components.inspector.properties.const import DB_MAX, DB_MIN, VIDEO_TABS, db_text
 
 class TrackPropsPage(PropsCanvas, PropsChrome, PropsAudio, PropsBind, QWidget):
     changed = Signal()

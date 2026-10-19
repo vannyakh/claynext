@@ -15,7 +15,7 @@ from claynext.constants.theme_constants import (
 )
 from claynext.gui.components.overlay.const import TEXT_KINDS
 from claynext.gui.components.overlay.item import OverlayItem
-from claynext.gui.components.scrub_spin import ScrubSpinBox
+from claynext.gui.components.controls.scrub_spin import ScrubSpinBox
 from claynext.gui.icons import icon
 
 class OverlayInspector(QWidget):

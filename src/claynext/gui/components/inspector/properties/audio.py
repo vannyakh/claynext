@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QLabel
 
-from claynext.gui.components.properties_panel.const import db10_to_pct, db_text, pct_to_db10
+from claynext.gui.components.inspector.properties.const import db10_to_pct, db_text, pct_to_db10
 
 class PropsAudio:
     def show_level(self, level: float, on_key: bool, has_prev: bool, has_next: bool):

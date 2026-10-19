@@ -10,8 +10,8 @@ from claynext.gui.components.overlay.const import (
     HANDLE_KINDS, HANDLE_R, MEDIA_KINDS, ROTATE_GAP, TOOL_GAP, TOOL_NAMES, TOOL_SIZE,
 )
 from claynext.gui.components.overlay.item import OverlayItem
-from claynext.gui.components.shape_render import shape_px
-from claynext.gui.components.text_render import caption_width, fit_caption, item_box, wrap_text
+from claynext.gui.components.render.shape import shape_px
+from claynext.gui.components.render.text import caption_width, fit_caption, item_box, wrap_text
 from claynext.models.text_style import anim_frame
 
 class CanvasGeom:

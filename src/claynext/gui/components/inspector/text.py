@@ -14,11 +14,11 @@ from claynext.models.text_style import (
     ANIM_IN, ANIM_LOOP, ANIM_OUT, CASES, FONT_RANGE, IN_OUT_MS_RANGE, LETTER_RANGE, LOOP_MS_RANGE,
     SCALE_RANGE, SHADOW_RANGE, STROKE_RANGE, STYLE_PRESETS, TEXT_COLORS, clean_text_style, preset_values,
 )
-from claynext.gui.components.collapsible_section import CollapsibleSection
-from claynext.gui.components.scrub_spin import ScrubSpinBox
-from claynext.gui.components.segment_tabs import SegmentTabs
-from claynext.gui.components.shape_render import BLUR_SHAPES, SHAPES, shape_icon, shape_size
-from claynext.gui.components.text_render import anim_icon, preset_icon
+from claynext.gui.components.controls.section import CollapsibleSection
+from claynext.gui.components.controls.scrub_spin import ScrubSpinBox
+from claynext.gui.components.controls.tabs import SegmentTabs
+from claynext.gui.components.render.shape import BLUR_SHAPES, SHAPES, shape_icon, shape_size
+from claynext.gui.components.render.text import anim_icon, preset_icon
 
 _ANIM_SLOTS = (("anim_in", "In", ANIM_IN), ("anim_out", "Out", ANIM_OUT), ("anim_loop", "Loop", ANIM_LOOP))
 _ALIGN_TO_CANVAS = (

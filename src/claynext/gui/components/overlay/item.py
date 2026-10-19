@@ -5,7 +5,7 @@ import uuid
 from dataclasses import asdict, dataclass, field, fields
 
 from claynext.gui.components.overlay.const import TEXT_KINDS
-from claynext.gui.components.shape_render import shape_size
+from claynext.gui.components.render.shape import shape_size
 from claynext.models.text_style import clean_text_style
 
 @dataclass

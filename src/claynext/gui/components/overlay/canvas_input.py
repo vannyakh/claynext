@@ -6,9 +6,10 @@ import math
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtWidgets import QToolTip
 
+from claynext.gui.components.media_preview.const import ZOOM_WHEEL_FACTOR
 from claynext.gui.components.overlay.const import HANDLE_KINDS, MEDIA_KINDS, ROTATE_SNAP, SNAP_PCT
-from claynext.models.canvas import clean_canvas
 from claynext.gui.components.overlay.item import OverlayItem
+from claynext.models.canvas import clean_canvas
 from claynext.models.text_style import SCALE_RANGE
 
 class CanvasInput:
@@ -26,8 +27,6 @@ class CanvasInput:
             if hasattr(preview, "apply_wheel_zoom"):
                 preview.apply_wheel_zoom(event.globalPosition().toPoint(), delta)
             elif hasattr(preview, "zoom_by"):
-                from claynext.gui.components.media_preview import ZOOM_WHEEL_FACTOR
-
                 factor = ZOOM_WHEEL_FACTOR if delta > 0 else (1.0 / ZOOM_WHEEL_FACTOR)
                 preview.zoom_by(factor, self._map_to_preview(event.position()))
             event.accept()

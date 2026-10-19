@@ -10,7 +10,7 @@ from claynext.constants.theme_constants import (
     COLOR_TEXT_MUTED,
     COLOR_TEXT_SUB,
 )
-from claynext.gui.components.spinner import Spinner
+from claynext.gui.components.controls.spinner import Spinner
 from claynext.utils.config import APP_VERSION
 
 

@@ -12,7 +12,7 @@ from claynext.constants.timeline_constants import (
     ADD_TRACK_PRESETS, DUB_FOCUS_KINDS, LANE_MAX_W, LANE_MIN_W, RULER_H,
 )
 from claynext.gui.icons import icon
-from claynext.gui.components.text_styles_panel import parse_text_style
+from claynext.gui.components.inspector.styles import parse_text_style
 from claynext.gui.components.timeline.helpers import has_drop, paths_from_mime
 from claynext.gui.components.timeline.models import TimelineTrack
 from claynext.gui.components.timeline.track_header import TrackHeader
