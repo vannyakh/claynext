@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import Qt, QThreadPool
+from PySide6.QtCore import Qt, QThreadPool, QTimer
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy, QMessageBox, QFileDialog
 
 from claynext.controllers.store import get_store
-from claynext.gui.components.dock_workspace import DockWorkspace
+from claynext.gui.components.dock_workspace import DOCK_HEADER_H, DockWorkspace
+from claynext.gui.components.timeline.sequence_bar import SEQUENCE_ROW_H
 from claynext.gui.components.icon_tab_shelf import IconTabShelf
 from claynext.gui.components.log_panel import LogPanel
 from claynext.gui.components.timeline.panel import TimelinePanel
@@ -123,6 +124,10 @@ class StudioView(
         self.timeline.clip_selected.connect(self._on_timeline_clip)
         self.timeline.selection_changed.connect(self._on_timeline_selection)
         self.timeline.composition_changed.connect(self._on_composition_changed)
+        self.timeline.sequences.reordered.connect(self._reorder_composition)
+        self.timeline.sequences.rename_requested.connect(self._rename_composition)
+        self.timeline.sequences.delete_requested.connect(self._delete_composition)
+        self.timeline.sequences.export_requested.connect(self._export_composition)
         self.timeline.record_toggled.connect(self._on_record_toggled)
         self.timeline.record_message.connect(self._on_record_message)
         self.timeline.transition_split_clicked.connect(self._on_transition_split_clicked)
@@ -151,7 +156,13 @@ class StudioView(
         host.setCorner(Qt.Corner.BottomRightCorner, Qt.DockWidgetArea.BottomDockWidgetArea)
         self.timeline_stage = DockWorkspace(self)
         self.timeline_stage.setObjectName("timeline_stage")
-        self.timeline_stage.host.setCentralWidget(self.timeline)
+        stage = self.timeline_stage.host
+        stage.setCentralWidget(self.timeline)
+        # A side dock keeps the full height of the timeline, not a short strip.
+        stage.setCorner(Qt.Corner.TopLeftCorner, Qt.DockWidgetArea.LeftDockWidgetArea)
+        stage.setCorner(Qt.Corner.BottomLeftCorner, Qt.DockWidgetArea.LeftDockWidgetArea)
+        stage.setCorner(Qt.Corner.TopRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
+        stage.setCorner(Qt.Corner.BottomRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
         self.timeline_stage.add_panel(
             "sequences", "Sequences", self.timeline.sequences,
             Qt.DockWidgetArea.TopDockWidgetArea, closable=False,
@@ -213,15 +224,25 @@ class StudioView(
             dock.setProperty("dock_max_w", 420)
             dock.setMinimumWidth(180)
             dock.setMaximumWidth(420)
-            dock.setMinimumHeight(120)
+            dock.setMinimumHeight(0)
             dock.setMaximumHeight(limit)
+            dock.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+            host = self.timeline_stage.host
+            QTimer.singleShot(0, lambda d=dock, window=host: window.resizeDocks(
+                [d], [max(window.height(), 120)], Qt.Orientation.Vertical,
+            ))
         else:
             dock.setProperty("dock_min_w", None)
             dock.setProperty("dock_max_w", None)
             dock.setMinimumWidth(0)
             dock.setMaximumWidth(limit)
-            dock.setMinimumHeight(0)
-            dock.setMaximumHeight(80)
+            row_h = DOCK_HEADER_H + SEQUENCE_ROW_H + 4
+            dock.setMinimumHeight(row_h)
+            dock.setMaximumHeight(row_h)
+            host = self.timeline_stage.host
+            QTimer.singleShot(0, lambda d=dock, window=host, height=row_h: window.resizeDocks(
+                [d], [height], Qt.Orientation.Vertical,
+            ))
 
     def _float_sequences(self, floating: bool):
         self.timeline.sequences.set_follow_size(bool(floating))

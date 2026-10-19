@@ -835,7 +835,8 @@ class TimelinePanel(QWidget):
             dur = end - start if end > start else (self.canvas.duration_ms or 5000)
             extra = {"overlay": dict(ov), "path": ov.get("path", "")}
             self.canvas.add_clip(kind, label, duration_ms=dur, extra=extra, start_ms=start)
-        self._rebuild_rail()
+        if not int(getattr(self, "_sequence_load", 0)):
+            self._rebuild_rail()
 
     def update_overlay_extra(self, clip_id: str, overlay: dict):
         for clip in self.canvas.clips:
@@ -1699,9 +1700,37 @@ class TimelinePanel(QWidget):
         """Clear the open sequence so a new source dub does not reuse it."""
         self.canvas.drop_other_sequence(keep_path)
 
+    def begin_sequence(self) -> None:
+        """Swap a sequence without repainting on every clip."""
+        self._sequence_load = int(getattr(self, "_sequence_load", 0)) + 1
+        self.setUpdatesEnabled(False)
+        self.canvas.begin_quiet()
+
+    def end_sequence(self) -> None:
+        self._sequence_load = max(0, int(getattr(self, "_sequence_load", 0)) - 1)
+        if self._sequence_load:
+            return
+        self.canvas.end_quiet()
+        path = self.canvas.media_path or ""
+        if path and path not in self.canvas._waves:
+            self._load_wave(path)
+        self._load_missing_voice_waves()
+        if path and not self.canvas._frames:
+            QTimer.singleShot(400, lambda p=path: self._load_strip(p))
+        self.setUpdatesEnabled(True)
+        self.canvas.update()
+
     def set_media(self, path: str, duration_ms: int = 0):
         path = os.path.abspath(path) if path else ""
-        self.canvas.set_media(path, duration_ms)
+        current = os.path.abspath(self.canvas.media_path) if self.canvas.media_path else ""
+        if path and path == current and int(getattr(self, "_sequence_load", 0)):
+            return
+        known = int(duration_ms or 0)
+        self.canvas.set_media(path, known)
+        if int(getattr(self, "_sequence_load", 0)):
+            if path and not known:
+                self._probe_duration_later(path)
+            return
         self._rebuild_rail()
         self._refresh_meta()
         self.ruler.update()
@@ -1710,6 +1739,34 @@ class TimelinePanel(QWidget):
             self._load_wave(path)
             QTimer.singleShot(400, lambda p=path: self._load_strip(p))
         self.clips_changed.emit()
+
+    def _probe_duration_later(self, path: str) -> None:
+        """Read the movie length off the interface thread after a sequence switch."""
+        def probe(progress_callback=None):
+            from claynext.adapters.ffmpeg_adapter import get_ffmpeg_adapter
+            return int(get_ffmpeg_adapter().duration(path) * 1000)
+
+        worker = Worker(probe)
+        worker.signals.result.connect(lambda ms, media=path: self._apply_probed_duration(media, int(ms or 0)))
+        pending = getattr(self, "_duration_workers", None)
+        if not isinstance(pending, list):
+            pending = []
+            self._duration_workers = pending
+        pending.append(worker)
+
+        def _release(done=worker):
+            held = getattr(self, "_duration_workers", None)
+            if isinstance(held, list) and done in held:
+                held.remove(done)
+
+        worker.signals.finished.connect(_release)
+        self._pool.start(worker)
+
+    def _apply_probed_duration(self, path: str, duration_ms: int) -> None:
+        current = os.path.abspath(self.canvas.media_path) if self.canvas.media_path else ""
+        if not duration_ms or os.path.abspath(path) != current:
+            return
+        self.set_duration_ms(duration_ms)
 
     def set_voice_audio(self, path: str):
         self.canvas.voice_path = path if path and os.path.isfile(path) else ""
@@ -1731,6 +1788,8 @@ class TimelinePanel(QWidget):
 
     def set_dialogue(self, segments: list[dict]):
         self.canvas.set_dialogue(segments)
+        if int(getattr(self, "_sequence_load", 0)):
+            return
         self._rebuild_rail()
         self._refresh_meta()
         self._load_missing_voice_waves()

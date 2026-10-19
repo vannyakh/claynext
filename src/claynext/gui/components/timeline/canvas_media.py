@@ -62,7 +62,12 @@ class CanvasMedia:
             kept.append(clip)
         self.clips = kept
         if path:
-            dur = duration_ms or int(probe_duration(path) * 1000)
+            if duration_ms:
+                dur = duration_ms
+            elif int(getattr(self, "_quiet", 0)):
+                dur = max(int(self.duration_ms or 0), 1000)
+            else:
+                dur = int(probe_duration(path) * 1000)
             self.duration_ms = max(dur, 1000)
             video = self.ensure_track("video")
             self.clips.append(TimelineClip(
@@ -79,6 +84,8 @@ class CanvasMedia:
             self.duration_ms = 0
         self.playhead_ms = 0
         self.selected_ids.clear()
+        if int(getattr(self, "_quiet", 0)):
+            return
         self._relayout()
         self.clips_changed.emit()
 

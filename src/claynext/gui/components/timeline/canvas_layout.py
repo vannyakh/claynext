@@ -107,7 +107,18 @@ class CanvasLayout:
     def minimumSizeHint(self):
         return QSize(self.content_width(), self.total_height())
 
+    def begin_quiet(self) -> None:
+        """Hold layout and signals while a sequence is swapped in."""
+        self._quiet = int(getattr(self, "_quiet", 0)) + 1
+
+    def end_quiet(self) -> None:
+        self._quiet = max(0, int(getattr(self, "_quiet", 0)) - 1)
+        if self._quiet == 0:
+            self._relayout(notify=True)
+
     def _relayout(self, *, notify: bool = True):
+        if int(getattr(self, "_quiet", 0)):
+            return
         vw = self.parent().width() if self.parent() is not None else 0
         w = max(self.content_width(), int(vw), 1)
         h = self.total_height()

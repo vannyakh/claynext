@@ -522,6 +522,8 @@ class CanvasEdit:
             ov["id"] = clip.id
             clip.extra["overlay"] = ov
         self.clips.append(clip)
+        if int(getattr(self, "_quiet", 0)):
+            return clip
         self.selected_ids = {clip.id}
         self._relayout()
         return clip

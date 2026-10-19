@@ -216,11 +216,17 @@ QPushButton#text_cat_pill:checked {{
 }}
 #sequence_bar {{
     background-color: {COLOR_BG_SIDEBAR};
+    border: none;
+}}
+#sequence_bar[flow="row"] {{
     border-bottom: 1px solid {COLOR_BORDER};
 }}
 #sequence_scroll, #sequence_host {{
     background: transparent;
     border: none;
+}}
+#sequence_bar[flow="column"] #sequence_scroll {{
+    background-color: {COLOR_BG_SIDEBAR};
 }}
 QPushButton#sequence_chip {{
     background-color: {COLOR_BG_DARK};
@@ -243,10 +249,23 @@ QPushButton#sequence_chip:checked {{
     border-color: {accent};
     color: {COLOR_TEXT_MAIN};
 }}
+QPushButton#sequence_chip[drop="true"] {{
+    border-style: dashed;
+    border-color: {accent};
+}}
+#sequence_bar[flow="row"] QPushButton#sequence_chip {{
+    min-height: 26px;
+    max-height: 26px;
+    padding: 0 12px;
+    margin: 0;
+    outline: none;
+}}
 #sequence_bar[flow="column"] QPushButton#sequence_chip {{
-    min-height: 28px;
+    min-height: 32px;
     max-height: 32px;
-    padding: 4px 12px;
+    padding: 0 12px;
+    margin: 0;
+    outline: none;
 }}
 #timeline_meta {{
     color: {COLOR_TEXT_MUTED};
@@ -664,6 +683,15 @@ QToolButton#dub_canvas_swatch:hover {{
 }}
 QToolButton#dub_canvas_swatch:checked {{
     border: 2px solid {COLOR_ACCENT_PURPLE};
+}}
+QToolButton#dub_style_swatch {{
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    padding: 0;
+}}
+QToolButton#dub_style_swatch:hover {{
+    background: transparent;
 }}
 #dub_text_edit {{
     background-color: {COLOR_BG_DARK};

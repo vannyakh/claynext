@@ -1,7 +1,7 @@
 """CapCut-style text and shape properties: Basic (content, font, style, transform, stroke, box, shadow) and Animation."""
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QColorDialog, QFontComboBox, QGridLayout, QHBoxLayout, QLabel,
@@ -103,17 +103,24 @@ class FontChoiceBox(QFontComboBox):
         )
 
 
-def _swatch_icon(color: str, side: int = 16) -> QIcon:
-    pix = QPixmap(side * 2, side * 2)
+def _swatch_icon(color: str, side: int = 16, width: int = 0, height: int = 0) -> QIcon:
+    w = width or side
+    h = height or side
+    pix = QPixmap(w * 2, h * 2)
     pix.setDevicePixelRatio(2.0)
     pix.fill(Qt.GlobalColor.transparent)
     p = QPainter(pix)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.setPen(QColor(COLOR_BORDER))
     p.setBrush(QColor(color))
-    p.drawRoundedRect(0, 0, side - 1, side - 1, 4, 4)
+    p.drawRoundedRect(QRectF(0.5, 0.5, w - 1.5, h - 1.5), 6, 6)
     p.end()
     return QIcon(pix)
+
+
+def _field_swatch(color: str) -> QIcon:
+    """Color chip at the same height as the number field."""
+    return _swatch_icon(color, width=72, height=30)
 
 
 class TextInspector(QWidget):
@@ -214,15 +221,30 @@ class TextInspector(QWidget):
             btn.setText(text)
         return btn
 
-    def _color_button(self, key: str, title: str) -> QToolButton:
+    def _color_button(self, key: str, title: str, *, field: bool = False) -> QToolButton:
         btn = QToolButton()
-        btn.setObjectName("dub_canvas_swatch")
+        btn.setObjectName("dub_style_swatch" if field else "dub_canvas_swatch")
         btn.setToolTip(title)
-        btn.setFixedSize(QSize(30, 26))
-        btn.setIconSize(QSize(16, 16))
+        if field:
+            btn.setFixedSize(QSize(72, 30))
+            btn.setIconSize(QSize(72, 30))
+        else:
+            btn.setFixedSize(QSize(30, 26))
+            btn.setIconSize(QSize(16, 16))
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.clicked.connect(lambda _=False, k=key, t=title: self._pick_color(k, t))
         return btn
+
+    def _effect_row(self, parent: QVBoxLayout, button: QToolButton, spin: ScrubSpinBox, value_label: str) -> None:
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+        row.addWidget(self._label("Color"), 0, Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(button, 0, Qt.AlignmentFlag.AlignVCenter)
+        row.addStretch(1)
+        row.addWidget(self._label(value_label), 0, Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(spin, 0, Qt.AlignmentFlag.AlignVCenter)
+        parent.addLayout(row)
 
     @staticmethod
     def _group(layout: QVBoxLayout, visible: bool) -> QVBoxLayout:
@@ -449,29 +471,19 @@ class TextInspector(QWidget):
         self.spin_op = self._spin_row(xform, "Opacity", 0, 100, "opacity", "%")
 
         stroke, self.chk_stroke = self._section(root, "Stroke", open=True, feature="stroke_on")
-        stroke_row = QHBoxLayout()
-        stroke_row.setSpacing(10)
-        self.btn_stroke_color = self._color_button("stroke_color", "Stroke colour")
-        stroke_row.addWidget(self.btn_stroke_color)
-        stroke_row.addStretch(1)
+        self.btn_stroke_color = self._color_button("stroke_color", "Stroke colour", field=True)
         self.spin_stroke = self._spin(*STROKE_RANGE)
         self.spin_stroke.setToolTip("Stroke width")
         self.spin_stroke.valueChanged.connect(lambda v: self._set("stroke_width", int(v), turn_on="stroke_on"))
-        stroke_row.addWidget(self.spin_stroke)
-        stroke.addLayout(stroke_row)
+        self._effect_row(stroke, self.btn_stroke_color, self.spin_stroke, "Width")
 
         if not shape:
             bg, self.chk_bg = self._section(root, "Background", open=True, feature="bg_on")
-            bg_row = QHBoxLayout()
-            bg_row.setSpacing(10)
-            self.btn_bg_color = self._color_button("bg_color", "Background colour")
-            bg_row.addWidget(self.btn_bg_color)
-            bg_row.addStretch(1)
+            self.btn_bg_color = self._color_button("bg_color", "Background colour", field=True)
             self.spin_bg = self._spin(0, 100, "%")
             self.spin_bg.setToolTip("Background opacity")
             self.spin_bg.valueChanged.connect(lambda v: self._set("bg_opacity", int(v), turn_on="bg_on"))
-            bg_row.addWidget(self.spin_bg)
-            bg.addLayout(bg_row)
+            self._effect_row(bg, self.btn_bg_color, self.spin_bg, "Opacity")
         else:
             self.chk_bg = QCheckBox()
             self.chk_bg.hide()
@@ -479,16 +491,11 @@ class TextInspector(QWidget):
             self.spin_bg = self._spin(0, 100, "%")
 
         shadow, self.chk_shadow = self._section(root, "Shadow", open=True, feature="shadow_on")
-        shadow_row = QHBoxLayout()
-        shadow_row.setSpacing(10)
-        self.btn_shadow_color = self._color_button("shadow_color", "Shadow colour")
-        shadow_row.addWidget(self.btn_shadow_color)
-        shadow_row.addStretch(1)
+        self.btn_shadow_color = self._color_button("shadow_color", "Shadow colour", field=True)
         self.spin_shadow = self._spin(*SHADOW_RANGE)
         self.spin_shadow.setToolTip("Shadow distance")
         self.spin_shadow.valueChanged.connect(lambda v: self._set("shadow_dist", int(v), turn_on="shadow_on"))
-        shadow_row.addWidget(self.spin_shadow)
-        shadow.addLayout(shadow_row)
+        self._effect_row(shadow, self.btn_shadow_color, self.spin_shadow, "Distance")
 
         if shape:
             blur_sec, self.chk_blur = self._section(root, "Blur & Frosted Glass", open=True, feature="blur_on")
@@ -621,13 +628,13 @@ class TextInspector(QWidget):
         self.spin_scale.setValue(s["scale"])
         self.spin_op.setValue(s["opacity"])
         self.chk_stroke.setChecked(s["stroke_on"])
-        self.btn_stroke_color.setIcon(_swatch_icon(s["stroke_color"]))
+        self.btn_stroke_color.setIcon(_field_swatch(s["stroke_color"]))
         self.spin_stroke.setValue(s["stroke_width"])
         self.chk_bg.setChecked(s["bg_on"])
-        self.btn_bg_color.setIcon(_swatch_icon(s["bg_color"]))
+        self.btn_bg_color.setIcon(_field_swatch(s["bg_color"]) if self.btn_bg_color.objectName() == "dub_style_swatch" else _swatch_icon(s["bg_color"]))
         self.spin_bg.setValue(s["bg_opacity"])
         self.chk_shadow.setChecked(s["shadow_on"])
-        self.btn_shadow_color.setIcon(_swatch_icon(s["shadow_color"]))
+        self.btn_shadow_color.setIcon(_field_swatch(s["shadow_color"]))
         self.spin_shadow.setValue(s["shadow_dist"])
         if hasattr(self, "chk_blur"):
             self.chk_blur.setChecked(bool(s.get("blur_on", False)))

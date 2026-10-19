@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import QEvent, Qt, QSize
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer
 from PySide6.QtGui import QBrush, QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
@@ -586,13 +586,21 @@ class ScriptPanelTools:
                     self._apply_script_row(index, seg, index)
         finally:
             self.table.setUpdatesEnabled(True)
-        self._fit_script_columns()
-        self.table.resizeRowsToContents()
         self._filling_table = False
+        if getattr(self, "_sequence_switching", False):
+            QTimer.singleShot(0, self._fit_script_rows)
+        else:
+            self._fit_script_rows()
         self._refresh_character_filter()
         self._apply_script_filters()
         if hasattr(self, "timeline"):
             self.timeline.set_dialogue(self._segments)
+
+    def _fit_script_rows(self):
+        if not hasattr(self, "table"):
+            return
+        self._fit_script_columns()
+        self.table.resizeRowsToContents()
 
     def _update_script_meta(self):
         n = len(self._segments)

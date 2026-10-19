@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 
 from claynext.models.dubbing_service import DubbingEngine
@@ -704,9 +704,129 @@ class PipelineTools:
         self._apply_composition(self._composition_index)
 
     def _on_composition_changed(self, index: int):
+        if index == int(getattr(self, "_composition_index", -1)):
+            return
         self._stash_composition()
-        self._apply_composition(index)
-        self.show_timeline_player()
+        self._sequence_switching = True
+        try:
+            self.timeline.begin_sequence()
+            try:
+                self._apply_composition(index, preview=False)
+            finally:
+                self.timeline.end_sequence()
+        finally:
+            self._sequence_switching = False
+        # Let the new clips paint, then open the picture once.
+        QTimer.singleShot(0, self.show_timeline_player)
+
+    def _sequence_names(self) -> list[str]:
+        return [str(comp.get("name") or "") for comp in self._compositions]
+
+    def _map_sequence_index(self, index: int, src: int, dst: int) -> int:
+        if index < 0:
+            return index
+        if index == src:
+            return dst
+        if src < dst and src < index <= dst:
+            return index - 1
+        if dst < src and dst <= index < src:
+            return index + 1
+        return index
+
+    def _remap_task_comps(self, shift) -> None:
+        for task in getattr(self, "_tasks", None) or []:
+            comp = task.get("comp", -1)
+            if isinstance(comp, int):
+                task["comp"] = shift(comp)
+        if hasattr(self, "_refresh_tasks"):
+            self._refresh_tasks()
+
+    def _reorder_composition(self, src: int, dst: int) -> None:
+        comps = self._compositions
+        if not (0 <= src < len(comps) and 0 <= dst < len(comps)) or src == dst:
+            return
+        if getattr(self, "_dub_busy", False):
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(self, "Sequences", "Wait for the dub to finish before reordering.")
+            return
+        self._stash_composition()
+        comps.insert(dst, comps.pop(src))
+        self._composition_index = self._map_sequence_index(int(self._composition_index), src, dst)
+        self._remap_task_comps(lambda index, a=src, b=dst: self._map_sequence_index(index, a, b))
+        self.timeline.set_compositions(self._sequence_names(), self._composition_index)
+
+    def _rename_composition(self, index: int) -> None:
+        comps = self._compositions
+        if not 0 <= index < len(comps):
+            return
+        from PySide6.QtWidgets import QInputDialog
+        current = str(comps[index].get("name") or "")
+        name, ok = QInputDialog.getText(self, "Rename sequence", "Sequence name", text=current)
+        if not ok:
+            return
+        name = name.strip()
+        if not name or name == current:
+            return
+        comps[index]["name"] = name
+        self.timeline.set_compositions(self._sequence_names(), self._composition_index)
+
+    def _delete_composition(self, index: int) -> None:
+        comps = self._compositions
+        if not 0 <= index < len(comps):
+            return
+        from PySide6.QtWidgets import QMessageBox
+        if getattr(self, "_dub_busy", False):
+            QMessageBox.information(self, "Sequences", "Wait for the dub to finish before deleting a sequence.")
+            return
+        name = str(comps[index].get("name") or "this sequence")
+        answer = QMessageBox.question(
+            self,
+            "Delete sequence",
+            f"Delete “{name}”?\nThis sequence leaves the list.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        current = int(self._composition_index)
+        if index != current:
+            self._stash_composition()
+        del comps[index]
+
+        def _shift(comp: int, removed: int = index) -> int:
+            if comp == removed:
+                return -1
+            if comp > removed:
+                return comp - 1
+            return comp
+
+        self._remap_task_comps(_shift)
+        if not comps:
+            self._composition_index = -1
+            self.timeline.set_compositions([], -1)
+            return
+        if index == current:
+            self._composition_index = -1
+            new_index = min(index, len(comps) - 1)
+            self.timeline.set_compositions(self._sequence_names(), new_index)
+            self._on_composition_changed(new_index)
+            return
+        if current > index:
+            self._composition_index = current - 1
+        self.timeline.set_compositions(self._sequence_names(), self._composition_index)
+
+    def _export_composition(self, index: int) -> None:
+        if not 0 <= index < len(self._compositions):
+            return
+        if index != int(self._composition_index):
+            if getattr(self, "_dub_busy", False):
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.information(self, "Export", "Wait for the dub to finish, then export.")
+                return
+            self._on_composition_changed(index)
+            self.timeline.set_compositions(self._sequence_names(), self._composition_index)
+        if hasattr(self, "open_export_dialog"):
+            self.open_export_dialog("movie")
 
     def _stash_composition(self):
         index = getattr(self, "_composition_index", -1)
@@ -719,8 +839,9 @@ class PipelineTools:
             comp["tracks"] = self.timeline.export_tracks()
             if self._segments:
                 comp["segments"] = [dict(seg) for seg in self._segments]
+            comp["duration_ms"] = int(getattr(self.timeline.canvas, "duration_ms", 0) or 0)
 
-    def _apply_composition(self, index: int, *, legacy_overlays=None, legacy_fx=None, legacy_tracks=None):
+    def _apply_composition(self, index: int, *, legacy_overlays=None, legacy_fx=None, legacy_tracks=None, preview: bool = True):
         if index < 0 or index >= len(self._compositions):
             self._sync_timeline_visibility()
             return
@@ -739,7 +860,7 @@ class PipelineTools:
             self.act_open_out.setEnabled(bool(self._output_path and os.path.isfile(self._output_path)))
         media = self._output_path if self._output_path and os.path.isfile(self._output_path) else comp.get("source") or ""
         if media:
-            self.timeline.set_media(media)
+            self.timeline.set_media(media, int(comp.get("duration_ms") or 0))
         self._fill_table(comp.get("segments") or [])
         bed = str(comp.get("bed") or "")
         has_bed = bool(bed and os.path.isfile(bed))
@@ -772,10 +893,11 @@ class PipelineTools:
         source = str(comp.get("source") or "")
         if not has_bed and not comp.get("output") and source and os.path.isfile(source):
             self._build_speech_bed(index, source)
-        if self._player_mode == "timeline":
-            self.show_timeline_player()
-        else:
-            self._sync_player_header()
+        if preview:
+            if self._player_mode == "timeline":
+                self.show_timeline_player()
+            else:
+                self._sync_player_header()
         self._sync_timeline_visibility()
         self._refresh_tasks()
 
