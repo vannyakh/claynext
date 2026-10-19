@@ -300,6 +300,41 @@ class PreviewTools:
             return
         if hasattr(self, "timeline") and self.timeline.has_footage() and ms > 0:
             self.timeline.set_duration_ms(ms)
+            self._sync_master_transport()
+
+    def _master_bounds(self) -> tuple[int, int, int] | None:
+        """Timeline start, file in-point, and length. Always the current master, even when it is the whole file."""
+        if not hasattr(self, "timeline"):
+            return None
+        clip = self.timeline.canvas.master_clip()
+        if clip is None or clip.duration_ms <= 0:
+            return None
+        return int(clip.start_ms), int(clip.extra.get("in_ms") or 0), int(clip.duration_ms)
+
+    def _file_ms_for_timeline(self, ms: int) -> int:
+        bounds = self._master_bounds()
+        if bounds is None:
+            return max(0, int(ms))
+        start, inn, dur = bounds
+        return max(inn, min(inn + dur - 1, inn + int(ms) - start))
+
+    def _timeline_ms_for_file(self, file_ms: int) -> int:
+        bounds = self._master_bounds()
+        if bounds is None:
+            return max(0, int(file_ms))
+        start, inn, dur = bounds
+        rel = max(0, min(dur, int(file_ms) - inn))
+        return start + rel
+
+    def _sync_master_transport(self):
+        if not hasattr(self, "playback"):
+            return
+        bounds = self._master_bounds() if self._player_mode == "timeline" else None
+        if bounds is None:
+            self.playback.set_window(0, 0)
+            return
+        _start, inn, dur = bounds
+        self.playback.set_window(inn, dur)
 
     def _on_timeline_mix(self, source: float, voice: float, bed: float = 0.0):
         self._timeline_gains = (source, voice, bed)
@@ -310,7 +345,8 @@ class PreviewTools:
         if self._player_mode != "timeline":
             self._timeline_resume_ms = ms
             self.show_timeline_player()
-        self.preview.seek_ms(ms)
+        self._hold_playhead = True
+        self.preview.seek_ms(self._file_ms_for_timeline(ms))
         self._reset_clip_lanes()
         self._sync_voice_clip(ms)
         self._sync_preview_overlays()
@@ -340,8 +376,14 @@ class PreviewTools:
     def _sync_voice_clip(self, ms: int):
         if not hasattr(self, "timeline"):
             return
+        bounds = self._master_bounds()
+        outside = False
+        if bounds is not None:
+            start, _inn, dur = bounds
+            outside = ms < start or ms >= start + dur
         for take, lane in self._clip_lanes.items():
-            self._sync_clip_lane(lane, self.timeline.canvas.voice_clip_at(ms, take=take), ms)
+            clip = None if outside else self.timeline.canvas.voice_clip_at(ms, take=take)
+            self._sync_clip_lane(lane, clip, ms)
 
     def _sync_clip_lane(self, lane: list, clip, ms: int):
         player, out, current = lane
@@ -413,24 +455,39 @@ class PreviewTools:
     def _on_player_position(self, ms: int):
         if self._player_mode != "timeline":
             return
-        if hasattr(self, "timeline"):
-            self.timeline.set_playhead_ms(ms)
-            self._sync_preview_overlays()
-            self._sync_voice_clip(ms)
-            if self.prop_stack.currentIndex() == 0:
-                self._sync_props_audio()
+        if getattr(self, "_hold_playhead", False):
+            self._hold_playhead = False
+            timeline_ms = self.timeline.canvas.playhead_ms if hasattr(self, "timeline") else ms
+            if hasattr(self, "timeline"):
+                self._sync_preview_overlays()
+                self._sync_voice_clip(timeline_ms)
+        else:
+            bounds = self._master_bounds()
+            if bounds is not None and self._main_playing():
+                _start, inn, dur = bounds
+                if ms >= inn + dur:
+                    self.preview.player.pause()
+                    self.preview.seek_ms(max(inn, inn + dur - 1))
+                    ms = max(inn, inn + dur - 1)
+            timeline_ms = self._timeline_ms_for_file(ms)
+            if hasattr(self, "timeline"):
+                self.timeline.set_playhead_ms(timeline_ms)
+                self._sync_preview_overlays()
+                self._sync_voice_clip(timeline_ms)
+                if self.prop_stack.currentIndex() == 0:
+                    self._sync_props_audio()
         row = -1
         for i, seg in enumerate(self._segments):
             start = int(timestamp_to_sec(seg.get("start", "")) * 1000)
             end = int(timestamp_to_sec(seg.get("end", "")) * 1000)
             if end <= start:
                 end = start + 1
-            if start <= ms < end:
+            if start <= timeline_ms < end:
                 row = i
                 break
         if hasattr(self, "overlay") and hasattr(self, "timeline"):
             cues = self.timeline.canvas.caption_cues()
-            start, end, caption = next((cue for cue in cues if cue[0] <= ms < cue[1]), (0, 0, ""))
+            start, end, caption = next((cue for cue in cues if cue[0] <= timeline_ms < cue[1]), (0, 0, ""))
             self.overlay.set_live_caption(caption, start, end, has_lines=bool(cues))
         if self._filling_table or not self._segments:
             return

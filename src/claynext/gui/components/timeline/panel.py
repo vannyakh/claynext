@@ -655,6 +655,11 @@ class TimelinePanel(QWidget):
 
     def overlay_clips(self, ms: int | None = None) -> list[TimelineClip]:
         t = self.canvas.playhead_ms if ms is None else int(ms)
+        span = self.canvas.master_span()
+        if span:
+            start, length = span
+            if not (start <= t < start + length):
+                return []
         return [
             c for c in self.canvas.clips
             if c.kind in OVERLAY_KINDS and c.start_ms <= t < c.end_ms and not self._track_hidden(c)

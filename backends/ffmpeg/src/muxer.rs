@@ -36,6 +36,9 @@ pub struct MuxOptions {
     pub video_preset: String,
     /// When set, video is re-encoded with this ffmpeg filter graph.
     pub video_filter: String,
+    /// Trim both inputs to this window, in seconds. Video uses it as `-ss`/`-t`.
+    pub start_seconds: Option<f64>,
+    pub duration_seconds: Option<f64>,
 }
 
 impl Default for MuxOptions {
@@ -49,6 +52,8 @@ impl Default for MuxOptions {
             video_crf: 18,
             video_preset: "medium".into(),
             video_filter: String::new(),
+            start_seconds: None,
+            duration_seconds: None,
         }
     }
 }
@@ -108,10 +113,20 @@ where
         "pipe:2",
     ]);
 
+    if let Some(start) = options.start_seconds {
+        if start > 0.0 {
+            cmd.args(["-ss", &format!("{:.3}", start)]);
+        }
+    }
+    if let Some(dur) = options.duration_seconds {
+        if dur > 0.0 {
+            cmd.args(["-t", &format!("{:.3}", dur)]);
+        }
+    }
     // Video input (0)
     cmd.args(["-i", video_input.to_str().unwrap_or_default()]);
 
-    // Audio input (1) with optional sync delay offset
+    // Audio input (1). The mix is already the master window, so it is not seeked.
     if let Some(delay) = options.audio_delay_seconds {
         if delay != 0.0 {
             cmd.args(["-itsoffset", &format!("{:.3}", delay)]);

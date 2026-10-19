@@ -3,45 +3,19 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import Qt, QRectF, QSize, QThreadPool, QTimer
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtCore import Qt, QSize, QThreadPool, QTimer
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QPushButton,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QPushButton, QFrame,
 )
 
-from claynext.constants.theme_constants import COLOR_BORDER
-
+from claynext.gui.dialogs.export_dialog import (
+    ExportTitleBar, frameless_shell, place_export_dialog, rounded_still,
+)
 from claynext.gui.worker import Worker
 
-
-def _rounded_thumb(pix: QPixmap, max_size: QSize, radius: int, pixel_ratio: float) -> QPixmap:
-    """Scale the still to its own aspect and clip it to a rounded border."""
-    ratio = pixel_ratio if pixel_ratio > 0 else 1.0
-    target = QSize(int(max_size.width() * ratio), int(max_size.height() * ratio))
-    scaled = pix.scaled(
-        target,
-        Qt.AspectRatioMode.KeepAspectRatio,
-        Qt.TransformationMode.SmoothTransformation,
-    )
-    image = QPixmap(scaled.size())
-    image.setDevicePixelRatio(ratio)
-    image.fill(Qt.GlobalColor.transparent)
-    logical = QRectF(0, 0, scaled.width() / ratio, scaled.height() / ratio)
-    painter = QPainter(image)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    clip = QPainterPath()
-    clip.addRoundedRect(logical.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)
-    painter.setClipPath(clip)
-    painter.drawPixmap(logical.toRect(), scaled)
-    painter.setClipping(False)
-    painter.setPen(QPen(QColor(COLOR_BORDER), 1))
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.drawRoundedRect(logical.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)
-    painter.end()
-    return image
-
-_THUMB_MAX = QSize(280, 240)
-_THUMB_RADIUS = 12
+_THUMB_MAX = QSize(132, 176)
+_THUMB_RADIUS = 8
 
 
 class ExportProgressDialog(QDialog):
@@ -53,7 +27,8 @@ class ExportProgressDialog(QDialog):
         self.setWindowTitle(title or "Export")
         self.setModal(True)
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
-        self.setMinimumWidth(420)
+        self.setMinimumWidth(520)
+        self._placed = False
         self._closed = False
         self._target = 0.0
         self._shown = 0.0
@@ -62,30 +37,27 @@ class ExportProgressDialog(QDialog):
         self._timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._timer.timeout.connect(self._tick)
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(18, 18, 18, 16)
-        root.setSpacing(12)
+        root, rule = frameless_shell(self)
+        root.addWidget(ExportTitleBar(self, title or "Export"))
+        root.addWidget(rule)
 
-        self.thumb = QLabel("Loading preview…")
-        self.thumb.setObjectName("export_thumb")
-        self.thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        root.addWidget(self.thumb, alignment=Qt.AlignmentFlag.AlignHCenter)
-
-        heading = QLabel(title or "Export")
-        heading.setObjectName("dub_panel_title")
-        root.addWidget(heading)
+        content = QHBoxLayout()
+        content.setContentsMargins(16, 4, 16, 8)
+        content.setSpacing(16)
+        details = QVBoxLayout()
+        details.setSpacing(10)
 
         self.name = QLabel(os.path.basename(dest) if dest else "")
         self.name.setObjectName("export_filename")
         self.name.setWordWrap(True)
         if dest:
             self.name.setToolTip(dest)
-        root.addWidget(self.name)
+        details.addWidget(self.name)
 
         self.status = QLabel("Preparing export…")
         self.status.setObjectName("export_status")
         self.status.setWordWrap(True)
-        root.addWidget(self.status)
+        details.addWidget(self.status)
 
         row = QHBoxLayout()
         row.setSpacing(10)
@@ -101,18 +73,40 @@ class ExportProgressDialog(QDialog):
         self.percent.setMinimumWidth(54)
         self.percent.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         row.addWidget(self.percent)
-        root.addLayout(row)
+        details.addLayout(row)
+        details.addStretch(1)
+        content.addLayout(details, 1)
+
+        card = QFrame()
+        card.setObjectName("export_preview_card")
+        card.setFixedWidth(156)
+        card_lay = QVBoxLayout(card)
+        card_lay.setContentsMargins(10, 10, 10, 10)
+        self.thumb = QLabel("Preview")
+        self.thumb.setObjectName("export_thumb")
+        self.thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.thumb.setMinimumSize(120, 80)
+        card_lay.addWidget(self.thumb, 0, Qt.AlignmentFlag.AlignCenter)
+        content.addWidget(card, 0, Qt.AlignmentFlag.AlignVCenter)
+        root.addLayout(content)
 
         buttons = QHBoxLayout()
+        buttons.setContentsMargins(16, 0, 16, 0)
         buttons.addStretch(1)
         self.btn_close = QPushButton("Close")
-        self.btn_close.setObjectName("btn_primary")
+        self.btn_close.setObjectName("api_keys_btn_primary")
         self.btn_close.setVisible(False)
         self.btn_close.clicked.connect(self.accept)
         buttons.addWidget(self.btn_close)
         root.addLayout(buttons)
 
         self._load_thumb(source)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._placed:
+            self._placed = True
+            place_export_dialog(self)
 
     def _load_thumb(self, source: str) -> None:
         if not source or not os.path.isfile(source):
@@ -150,7 +144,7 @@ class ExportProgressDialog(QDialog):
         if pix.isNull():
             self.thumb.setText("No preview")
             return
-        rounded = _rounded_thumb(pix, _THUMB_MAX, _THUMB_RADIUS, self.devicePixelRatioF())
+        rounded = rounded_still(pix, _THUMB_MAX, _THUMB_RADIUS, self.devicePixelRatioF())
         self.thumb.setPixmap(rounded)
         self.thumb.setText("")
         ratio = rounded.devicePixelRatio() or 1.0

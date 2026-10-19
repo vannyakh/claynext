@@ -124,6 +124,43 @@ def controls_qss(accent: str, wash: str) -> str:
     font-weight: 700;
     background: transparent;
 }}
+QDialog#exportDialog, QDialog#exportProgressDialog {{
+    background: transparent;
+}}
+#export_shell {{
+    background-color: {COLOR_BG_DARK};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 12px;
+}}
+#export_title_bar {{
+    background: transparent;
+    border: none;
+}}
+#export_title {{
+    color: {COLOR_TEXT_MAIN};
+    font-size: 14px;
+    font-weight: 600;
+    background: transparent;
+}}
+#export_title_rule {{
+    background-color: {COLOR_BORDER};
+    border: none;
+    min-height: 1px;
+    max-height: 1px;
+}}
+#export_close {{
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+}}
+#export_close:hover {{
+    background-color: rgba(244, 63, 94, 0.22);
+}}
+#export_preview_card {{
+    background-color: {COLOR_BG_CARD};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 10px;
+}}
 QProgressBar#export_progress {{
     border: 1px solid {COLOR_BORDER};
     border-radius: 6px;

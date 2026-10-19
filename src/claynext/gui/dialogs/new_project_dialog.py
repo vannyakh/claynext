@@ -1,19 +1,9 @@
 """Clean New Project dialog — templates, essentials, live canvas preview."""
 from __future__ import annotations
 
-import os
-from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal, QThreadPool
-from PySide6.QtGui import (
-    QColor,
-    QDragEnterEvent,
-    QDropEvent,
-    QLinearGradient,
-    QPainter,
-    QPen,
-)
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -25,298 +15,29 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QSizePolicy,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-from claynext.constants.theme_constants import (
-    COLOR_BG_DARK,
-    COLOR_BORDER,
-    COLOR_TEXT_MAIN,
-    COLOR_TEXT_MUTED,
-    COLOR_TEXT_SUB,
-    primary_color,
+from claynext.constants.project_constants import (
+    NEW_PROJECT_FIELD_H,
+    TEMPLATES,
+    canvas_dimensions,
+    template_by_id,
 )
-from claynext.models.dub_project import PROJECT_DIR, _slug
-from claynext.adapters.ffmpeg_service import probe_media
-from claynext.gui.icons import icon
-from claynext.gui.worker import Worker
+from claynext.gui.dialogs.new_project_widgets import (
+    CanvasPreviewWidget,
+    TemplateCard,
+    labeled_field,
+)
 from claynext.gui.dialogs.project_settings_dialog import (
     ASPECT_CHOICES,
     FPS_CHOICES,
     RESOLUTION_CHOICES,
     default_project_settings,
 )
-
-_FIELD_H = 28
-
-
-@dataclass(frozen=True)
-class ProjectTemplate:
-    id: str
-    title: str
-    size_label: str
-    icon: str
-    aspect: str
-    resolution: str
-    fps: str
-
-    @property
-    def label(self) -> str:
-        """Single-line chip text: name · size (no aspect ratio)."""
-        return f"{self.title} · {self.size_label}"
-
-
-TEMPLATES: tuple[ProjectTemplate, ...] = (
-    ProjectTemplate("hd_landscape", "YouTube", "1080p · 30fps", "video", "16:9", "1080p", "30.00 fps"),
-    ProjectTemplate("vertical_shorts", "TikTok Reels", "1080p · 30fps", "aspect", "9:16", "1080p", "30.00 fps"),
-    ProjectTemplate("cinema_4k", "Cinema 4K", "2160p · 24fps", "sparkles", "16:9", "2160p", "24.00 fps"),
-    ProjectTemplate("square_post", "Instagram", "1080p · 30fps", "grid", "1:1", "1080p", "30.00 fps"),
-    ProjectTemplate("portrait_feed", "Portrait", "1080p · 30fps", "image", "4:5", "1080p", "30.00 fps"),
-    ProjectTemplate("blank", "Custom", "Original · Adapted", "plus", "Original", "Adapted", "Original"),
-)
-
-
-def _canvas_dimensions(aspect: str, resolution: str) -> tuple[int, int]:
-    base_h = {"2160p": 2160, "1080p": 1080, "720p": 720, "Adapted": 1080}.get(resolution, 1080)
-    if aspect == "16:9":
-        return int(round(base_h * 16 / 9)), base_h
-    if aspect == "9:16":
-        return base_h, int(round(base_h * 16 / 9))
-    if aspect == "1:1":
-        return base_h, base_h
-    if aspect == "4:3":
-        return int(round(base_h * 4 / 3)), base_h
-    if aspect == "4:5":
-        return base_h, int(round(base_h * 5 / 4))
-    return 1920, 1080
-
-
-def _field(label: str, widget: QWidget) -> QWidget:
-    wrap = QWidget()
-    lay = QVBoxLayout(wrap)
-    lay.setContentsMargins(0, 0, 0, 0)
-    lay.setSpacing(3)
-    lbl = QLabel(label)
-    lbl.setObjectName("new_project_field_lbl")
-    lay.addWidget(lbl)
-    lay.addWidget(widget)
-    return wrap
-
-
-class TemplateCard(QToolButton):
-    """Flat chip: icon + long size text (no nested card chrome)."""
-
-    def __init__(self, template: ProjectTemplate, parent=None):
-        super().__init__(parent)
-        self.template = template
-        self.setObjectName("new_project_template")
-        self.setCheckable(True)
-        self.setAutoExclusive(True)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.setIcon(icon(template.icon, color=COLOR_TEXT_SUB, size=14))
-        self.setIconSize(QSize(14, 14))
-        self.setText(template.label)
-        self.setToolTip(template.label)
-        self.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
-        self.setFixedHeight(_FIELD_H)
-
-
-class CanvasPreviewWidget(QWidget):
-    """Aspect-ratio frame only — labels live outside so nothing overlaps."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._aspect = "16:9"
-        self.setMinimumHeight(88)
-        self.setMaximumHeight(96)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-
-    def update_canvas(self, aspect: str):
-        self._aspect = aspect
-        self.update()
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        rect = self.rect().adjusted(1, 1, -1, -1)
-        painter.setBrush(QColor(COLOR_BG_DARK))
-        painter.setPen(QPen(QColor(COLOR_BORDER), 1))
-        painter.drawRoundedRect(rect, 8, 8)
-
-        grid = QPen(QColor(255, 255, 255, 10), 1, Qt.PenStyle.DotLine)
-        painter.setPen(grid)
-        for x in range(rect.left() + 16, rect.right(), 16):
-            painter.drawLine(x, rect.top() + 6, x, rect.bottom() - 6)
-        for y in range(rect.top() + 16, rect.bottom(), 16):
-            painter.drawLine(rect.left() + 6, y, rect.right() - 6, y)
-
-        ratio = {
-            "16:9": 16 / 9,
-            "9:16": 9 / 16,
-            "1:1": 1.0,
-            "4:3": 4 / 3,
-            "4:5": 4 / 5,
-        }.get(self._aspect, 16 / 9)
-
-        avail_w = max(10.0, float(rect.width()) - 40)
-        avail_h = max(10.0, float(rect.height()) - 28)
-        if avail_w / avail_h > ratio:
-            h = avail_h
-            w = h * ratio
-        else:
-            w = avail_w
-            h = w / ratio
-
-        cx = rect.center().x()
-        cy = rect.center().y()
-        frame = QRectF(cx - w / 2, cy - h / 2, w, h)
-
-        accent = QColor(primary_color())
-        grad = QLinearGradient(frame.topLeft(), frame.bottomRight())
-        grad.setColorAt(0.0, QColor(24, 34, 52, 220))
-        grad.setColorAt(1.0, QColor(12, 18, 28, 240))
-        painter.setBrush(grad)
-        painter.setPen(QPen(accent, 1.5))
-        painter.drawRoundedRect(frame, 3, 3)
-
-        painter.setPen(QPen(accent, 1))
-        painter.drawLine(QPointF(cx - 4, cy), QPointF(cx + 4, cy))
-        painter.drawLine(QPointF(cx, cy - 4), QPointF(cx, cy + 4))
-
-
-class StarterMediaStrip(QFrame):
-    media_changed = Signal(str, dict)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("new_project_drop_zone")
-        self.setAcceptDrops(True)
-        self._path = ""
-        self._info: dict = {}
-        self._build()
-
-    def _build(self):
-        root = QVBoxLayout(self)
-        root.setContentsMargins(10, 8, 10, 8)
-        root.setSpacing(0)
-
-        self.empty = QWidget()
-        row = QHBoxLayout(self.empty)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(8)
-
-        ic = QLabel()
-        ic.setPixmap(icon("video", color=COLOR_TEXT_SUB, size=16).pixmap(16, 16))
-        row.addWidget(ic)
-
-        text = QVBoxLayout()
-        text.setSpacing(1)
-        title = QLabel("Add Initial Footage / Audio (Optional)")
-        title.setObjectName("new_project_field_lbl")
-        sub = QLabel("Drag & drop or browse · MP4, MKV, MOV, WAV, MP3")
-        sub.setObjectName("new_project_hint")
-        text.addWidget(title)
-        text.addWidget(sub)
-        row.addLayout(text, 1)
-
-        browse = QPushButton("Browse…")
-        browse.setObjectName("btn_secondary")
-        browse.setCursor(Qt.CursorShape.PointingHandCursor)
-        browse.setFixedHeight(_FIELD_H)
-        browse.clicked.connect(self._browse)
-        row.addWidget(browse)
-        root.addWidget(self.empty)
-
-        self.loaded = QWidget()
-        loaded_row = QHBoxLayout(self.loaded)
-        loaded_row.setContentsMargins(0, 0, 0, 0)
-        loaded_row.setSpacing(8)
-        ic2 = QLabel()
-        ic2.setPixmap(icon("video", color=primary_color(), size=16).pixmap(16, 16))
-        loaded_row.addWidget(ic2)
-        col = QVBoxLayout()
-        col.setSpacing(1)
-        self.lbl_name = QLabel()
-        self.lbl_name.setObjectName("new_project_field_lbl")
-        self.lbl_meta = QLabel()
-        self.lbl_meta.setObjectName("new_project_hint")
-        col.addWidget(self.lbl_name)
-        col.addWidget(self.lbl_meta)
-        loaded_row.addLayout(col, 1)
-        clear = QPushButton()
-        clear.setObjectName("btn_secondary")
-        clear.setIcon(icon("trash", color=COLOR_TEXT_MUTED, size=13))
-        clear.setFixedSize(_FIELD_H, _FIELD_H)
-        clear.setCursor(Qt.CursorShape.PointingHandCursor)
-        clear.clicked.connect(self.clear_media)
-        loaded_row.addWidget(clear)
-        root.addWidget(self.loaded)
-        self.loaded.hide()
-
-    def dragEnterEvent(self, event: QDragEnterEvent):
-        if event.mimeData().hasUrls():
-            ext = Path(event.mimeData().urls()[0].toLocalFile()).suffix.lower()
-            if ext in {".mp4", ".mkv", ".mov", ".avi", ".webm", ".wav", ".mp3", ".flac", ".m4a"}:
-                event.acceptProposedAction()
-                return
-        event.ignore()
-
-    def dropEvent(self, event: QDropEvent):
-        urls = event.mimeData().urls()
-        if urls:
-            path = urls[0].toLocalFile()
-            if os.path.isfile(path):
-                self.load_media(path)
-                event.acceptProposedAction()
-
-    def _browse(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select Footage or Audio",
-            str(Path.home()),
-            "Media (*.mp4 *.mkv *.mov *.avi *.webm *.wav *.mp3 *.flac *.m4a);;All (*.*)",
-        )
-        if path:
-            self.load_media(path)
-
-    def load_media(self, path: str):
-        if not path or not os.path.isfile(path):
-            return
-        self._path = path
-        worker = Worker(probe_media, path)
-        worker.signals.result.connect(self._on_probed)
-        QThreadPool.globalInstance().start(worker)
-
-    def _on_probed(self, info: dict):
-        self._info = dict(info or {})
-        self.lbl_name.setText(os.path.basename(self._path))
-        parts = []
-        if self._info.get("width") and self._info.get("height"):
-            parts.append(f"{self._info['width']}×{self._info['height']}")
-        if self._info.get("fps"):
-            parts.append(f"{float(self._info['fps']):.2f} fps")
-        self.lbl_meta.setText(" · ".join(parts) if parts else "Media attached")
-        self.empty.hide()
-        self.loaded.show()
-        self.media_changed.emit(self._path, self._info)
-
-    def clear_media(self):
-        self._path = ""
-        self._info = {}
-        self.loaded.hide()
-        self.empty.show()
-        self.media_changed.emit("", {})
-
-    def current_path(self) -> str:
-        return self._path
-
-    def current_info(self) -> dict:
-        return self._info
+from claynext.gui.icons import icon
+from claynext.models.dub_project import PROJECT_DIR, _slug
 
 
 class NewProjectDialog(QDialog):
@@ -363,7 +84,7 @@ class NewProjectDialog(QDialog):
         cancel = QPushButton("Cancel")
         cancel.setObjectName("btn_secondary")
         cancel.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel.setFixedHeight(_FIELD_H)
+        cancel.setFixedHeight(NEW_PROJECT_FIELD_H)
         cancel.setMinimumWidth(84)
         cancel.clicked.connect(self.reject)
         footer.addWidget(cancel)
@@ -372,7 +93,7 @@ class NewProjectDialog(QDialog):
         self.btn_create.setObjectName("btn_primary")
         self.btn_create.setIcon(icon("plus", color="#ffffff", size=13))
         self.btn_create.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_create.setFixedHeight(_FIELD_H)
+        self.btn_create.setFixedHeight(NEW_PROJECT_FIELD_H)
         self.btn_create.setMinimumWidth(120)
         self.btn_create.setDefault(True)
         self.btn_create.clicked.connect(self.accept)
@@ -406,10 +127,10 @@ class NewProjectDialog(QDialog):
         lay.addWidget(self._kicker("PROJECT DETAILS"))
         self.edit_name = QLineEdit()
         self.edit_name.setObjectName("home_search")
-        self.edit_name.setFixedHeight(_FIELD_H)
+        self.edit_name.setFixedHeight(NEW_PROJECT_FIELD_H)
         self.edit_name.setPlaceholderText("Project name")
         self.edit_name.textChanged.connect(self._refresh_summary)
-        lay.addWidget(_field("Project Name", self.edit_name))
+        lay.addWidget(labeled_field("Project Name", self.edit_name))
 
         loc_lbl = QLabel("Save Location")
         loc_lbl.setObjectName("new_project_field_lbl")
@@ -418,30 +139,23 @@ class NewProjectDialog(QDialog):
         loc_row.setSpacing(6)
         self.edit_location = QLineEdit()
         self.edit_location.setObjectName("home_search")
-        self.edit_location.setFixedHeight(_FIELD_H)
+        self.edit_location.setFixedHeight(NEW_PROJECT_FIELD_H)
         self.edit_location.setReadOnly(True)
         self.edit_location.textChanged.connect(self._refresh_summary)
         loc_row.addWidget(self.edit_location, 1)
         browse = QPushButton("Browse…")
         browse.setObjectName("btn_secondary")
         browse.setCursor(Qt.CursorShape.PointingHandCursor)
-        browse.setFixedHeight(_FIELD_H)
+        browse.setFixedHeight(NEW_PROJECT_FIELD_H)
         browse.clicked.connect(self._browse_location)
         loc_row.addWidget(browse)
         default = QPushButton("Default")
         default.setObjectName("btn_secondary")
         default.setCursor(Qt.CursorShape.PointingHandCursor)
-        default.setFixedHeight(_FIELD_H)
+        default.setFixedHeight(NEW_PROJECT_FIELD_H)
         default.clicked.connect(lambda: self.edit_location.setText(str(PROJECT_DIR)))
         loc_row.addWidget(default)
         lay.addLayout(loc_row)
-
-        # Starter footage
-        lay.addSpacing(2)
-        lay.addWidget(self._kicker("STARTER FOOTAGE (OPTIONAL)"))
-        self.media_strip = StarterMediaStrip(self)
-        self.media_strip.media_changed.connect(self._on_media_changed)
-        lay.addWidget(self.media_strip)
 
         # Canvas
         lay.addSpacing(2)
@@ -450,22 +164,22 @@ class NewProjectDialog(QDialog):
         row.setSpacing(8)
         self.combo_aspect = QComboBox()
         self.combo_aspect.setObjectName("asr_option_combo")
-        self.combo_aspect.setFixedHeight(_FIELD_H)
+        self.combo_aspect.setFixedHeight(NEW_PROJECT_FIELD_H)
         self.combo_aspect.addItems(ASPECT_CHOICES)
         self.combo_aspect.currentTextChanged.connect(self._refresh_summary)
         self.combo_res = QComboBox()
         self.combo_res.setObjectName("asr_option_combo")
-        self.combo_res.setFixedHeight(_FIELD_H)
+        self.combo_res.setFixedHeight(NEW_PROJECT_FIELD_H)
         self.combo_res.addItems(RESOLUTION_CHOICES)
         self.combo_res.currentTextChanged.connect(self._refresh_summary)
         self.combo_fps = QComboBox()
         self.combo_fps.setObjectName("asr_option_combo")
-        self.combo_fps.setFixedHeight(_FIELD_H)
+        self.combo_fps.setFixedHeight(NEW_PROJECT_FIELD_H)
         self.combo_fps.addItems(FPS_CHOICES)
         self.combo_fps.currentTextChanged.connect(self._refresh_summary)
-        row.addWidget(_field("Aspect Ratio", self.combo_aspect), 1)
-        row.addWidget(_field("Resolution", self.combo_res), 1)
-        row.addWidget(_field("Frame Rate", self.combo_fps), 1)
+        row.addWidget(labeled_field("Aspect Ratio", self.combo_aspect), 1)
+        row.addWidget(labeled_field("Resolution", self.combo_res), 1)
+        row.addWidget(labeled_field("Frame Rate", self.combo_fps), 1)
         lay.addLayout(row)
         lay.addStretch(1)
         return col
@@ -525,20 +239,6 @@ class NewProjectDialog(QDialog):
         lay.addLayout(grid)
 
         lay.addSpacing(10)
-        line2 = QFrame()
-        line2.setObjectName("prop_divider")
-        line2.setFrameShape(QFrame.Shape.HLine)
-        lay.addWidget(line2)
-        lay.addSpacing(8)
-
-        lay.addWidget(self._kicker("TARGET PROJECT FILE"))
-        lay.addSpacing(4)
-        self.lbl_dest = QLabel()
-        self.lbl_dest.setObjectName("new_project_path_preview")
-        self.lbl_dest.setWordWrap(True)
-        lay.addWidget(self.lbl_dest)
-
-        lay.addSpacing(8)
         self.lbl_status = QLabel("✓ Ready to create")
         self.lbl_status.setObjectName("new_project_pill_ready")
         self.lbl_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -561,50 +261,14 @@ class NewProjectDialog(QDialog):
 
     def _select_template(self, template_id: str, *, apply_values: bool = True):
         self._template_id = template_id
-        accent = primary_color()
         for tid, btn in self._template_buttons.items():
-            active = tid == template_id
-            btn.setChecked(active)
-            btn.setIcon(icon(btn.template.icon, color=accent if active else COLOR_TEXT_SUB, size=14))
+            btn.setChecked(tid == template_id)
         if not apply_values:
             return
-        tmpl = next((t for t in TEMPLATES if t.id == template_id), TEMPLATES[0])
+        tmpl = template_by_id(template_id)
         self._set_combo(self.combo_aspect, tmpl.aspect)
         self._set_combo(self.combo_res, tmpl.resolution)
         self._set_combo(self.combo_fps, tmpl.fps)
-        self._refresh_summary()
-
-    def _on_media_changed(self, path: str, info: dict):
-        if not path or not info:
-            self._refresh_summary()
-            return
-        name = self.edit_name.text().strip()
-        if not name or name.lower() in {"untitled", "untitled project"}:
-            stem = Path(path).stem.replace("_", " ").strip().title()
-            if stem:
-                self.edit_name.setText(stem)
-
-        aspect = str(info.get("aspect") or "")
-        if aspect in ASPECT_CHOICES:
-            self._set_combo(self.combo_aspect, aspect)
-        h = int(info.get("height") or 0)
-        w = int(info.get("width") or 0)
-        dim = max(w, h)
-        if dim >= 3800 or h >= 2000:
-            self._set_combo(self.combo_res, "2160p")
-        elif dim >= 1900 or h >= 1000:
-            self._set_combo(self.combo_res, "1080p")
-        elif dim >= 1200 or h >= 700:
-            self._set_combo(self.combo_res, "720p")
-        fps_val = float(info.get("fps") or 0)
-        if fps_val > 0:
-            for opt in FPS_CHOICES:
-                try:
-                    if abs(float(opt.replace("fps", "").strip()) - fps_val) < 0.1:
-                        self._set_combo(self.combo_fps, opt)
-                        break
-                except ValueError:
-                    continue
         self._refresh_summary()
 
     def _refresh_summary(self):
@@ -613,11 +277,11 @@ class NewProjectDialog(QDialog):
         fps = self.combo_fps.currentText()
         self.canvas.update_canvas(aspect)
 
-        pw, ph = _canvas_dimensions(aspect, res)
+        pw, ph = canvas_dimensions(aspect, res)
         size_txt = f"{aspect} · {pw}×{ph}" if aspect not in {"Original", "Adapted"} else f"{aspect} · {pw}×{ph}"
         self.lbl_canvas_size.setText(size_txt)
 
-        preset = next((t.title for t in TEMPLATES if t.id == self._template_id), "Custom")
+        preset = template_by_id(self._template_id).title
         self.val_preset.setText(preset)
         self.val_canvas.setText(f"{pw} × {ph}")
         self.val_fps.setText(fps)
@@ -625,7 +289,6 @@ class NewProjectDialog(QDialog):
         name = self.edit_name.text().strip() or "Untitled"
         folder = Path(self.edit_location.text().strip() or str(PROJECT_DIR))
         dest = folder / f"{_slug(name)}.claynext.json"
-        self.lbl_dest.setText(str(dest))
 
         if not self.edit_name.text().strip():
             self.lbl_status.setObjectName("new_project_pill_error")
@@ -655,9 +318,6 @@ class NewProjectDialog(QDialog):
         self._set_combo(self.combo_aspect, str(data.get("aspect") or "16:9"))
         self._set_combo(self.combo_res, str(data.get("resolution") or "1080p"))
         self._set_combo(self.combo_fps, str(data.get("fps") or "30.00 fps"))
-        media = str(data.get("media") or "").strip()
-        if media and os.path.isfile(media):
-            self.media_strip.load_media(media)
 
     def result_settings(self) -> dict:
         out = dict(self._data)
@@ -665,7 +325,7 @@ class NewProjectDialog(QDialog):
             "name": self.edit_name.text().strip() or "Untitled",
             "save_to": self.edit_location.text().strip() or str(PROJECT_DIR),
             "timeline_name": "Timeline 01",
-            "media": self.media_strip.current_path(),
+            "media": "",
             "import_mode": "original",
             "color_space": "Rec. 709 SDR",
             "aspect": self.combo_aspect.currentText(),

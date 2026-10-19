@@ -252,7 +252,10 @@ fn main() {
                 let audio = Path::new(&args[3]);
                 let output = Path::new(&args[4]);
                 let options = parse_mux_flags(&args[5..]);
-                let total = media_duration(video);
+                let total = options
+                    .duration_seconds
+                    .filter(|secs| *secs > 0.0)
+                    .unwrap_or_else(|| media_duration(video));
                 let message = if options.copy_video && options.video_filter.is_empty() {
                     "Muxing video…"
                 } else {
@@ -430,6 +433,18 @@ fn parse_mux_flags(args: &[String]) -> MuxOptions {
                 if let Some(value) = args.get(i + 1) {
                     options.video_filter = value.clone();
                     options.copy_video = false;
+                }
+                i += 2;
+            }
+            "--start" => {
+                if let Some(value) = args.get(i + 1).and_then(|s| s.parse().ok()) {
+                    options.start_seconds = Some(value);
+                }
+                i += 2;
+            }
+            "--duration" => {
+                if let Some(value) = args.get(i + 1).and_then(|s| s.parse().ok()) {
+                    options.duration_seconds = Some(value);
                 }
                 i += 2;
             }

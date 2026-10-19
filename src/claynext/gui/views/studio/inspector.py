@@ -290,6 +290,7 @@ class InspectorTools:
         if not hasattr(self, "overlay"):
             return
         self._sync_preview_fx()
+        self._sync_master_transport()
         self.overlay.set_playhead(self.timeline.canvas.playhead_ms)
         clips = self.timeline.overlay_clips()
         ids = tuple((c.id, c.start_ms, c.duration_ms) for c in clips)

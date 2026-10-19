@@ -1008,6 +1008,28 @@ def _envelope(keys: list[tuple[int, float]], total: int, fallback: float):
     return np.interp(np.arange(total, dtype=np.float64), times, gains).astype(np.float32)
 
 
+def _fit_window(rows: list[dict] | None, start_ms: int, end_ms: int) -> list[dict]:
+    """Keep the part of each timed row that sits inside the master, then start that part at 0."""
+    kept: list[dict] = []
+    for row in rows or []:
+        begin = int(row.get("start_ms") or 0)
+        finish = int(row.get("end_ms") or 0)
+        if finish <= begin:
+            finish = begin + int(row.get("duration_ms") or 0)
+        left, right = max(begin, start_ms), min(finish, end_ms)
+        if right - left < 40:
+            continue
+        nxt = dict(row)
+        nxt["start_ms"] = left - start_ms
+        nxt["end_ms"] = right - start_ms
+        if "duration_ms" in row or row.get("duration_ms"):
+            nxt["duration_ms"] = right - left
+        if "in_ms" in row and begin < start_ms:
+            nxt["in_ms"] = int(row.get("in_ms") or 0) + (start_ms - begin)
+        kept.append(nxt)
+    return kept
+
+
 def mix_timeline_audio(
     video_path: str,
     dst_wav: str,
@@ -1019,6 +1041,7 @@ def mix_timeline_audio(
     bed_keys: list[tuple[int, float]] | None = None,
     include_footage: bool = True,
     work_dir: str | None = None,
+    window: tuple[int, int, int] | None = None,
     progress_callback=None,
 ) -> str:
     """Footage audio follows its key points; the speech-free bed fills in where speech is ducked."""
@@ -1036,6 +1059,17 @@ def mix_timeline_audio(
 
     ping(5, "Reading footage audio…")
     source = _read_wav48(video_path, root, "footage")
+    if window:
+        timeline_start, file_in, dur = (int(window[0]), int(window[1]), int(window[2]))
+        i0 = max(0, int(file_in * 48))
+        count = max(1, int(dur * 48))
+        source = source[i0:i0 + count]
+        if len(source) < count:
+            source = np.pad(source, ((0, count - len(source)), (0, 0)))
+        footage_keys = [(int(ms) - timeline_start, gain) for ms, gain in footage_keys]
+        if bed_keys:
+            bed_keys = [(int(ms) - timeline_start, gain) for ms, gain in bed_keys]
+        voice_clips = _fit_window(voice_clips, timeline_start, timeline_start + dur)
     total = len(source)
     if include_footage:
         ping(25, "Applying footage key points…")
@@ -1097,6 +1131,7 @@ def render_timeline(
     reencode: bool = False,
     video_filter: str = "",
     work_dir: str | None = None,
+    window: tuple[int, int, int] | None = None,
     progress_callback=None,
 ) -> str:
     """Mix the timeline audio, then mux it under the movie picture."""
@@ -1110,8 +1145,33 @@ def render_timeline(
     mix_path = mix_timeline_audio(
         video_path, str(root / "timeline_mix.wav"), voice_clips, footage_keys,
         footage_gain=footage_gain, bed_path=bed_path, bed_keys=bed_keys,
-        work_dir=str(root), progress_callback=lambda p, m: ping(float(p) * 0.55, m),
+        work_dir=str(root), window=window, progress_callback=lambda p, m: ping(float(p) * 0.55, m),
     )
+    video_start = video_duration = None
+    if window:
+        timeline_start, file_in, dur = (int(window[0]), int(window[1]), int(window[2]))
+        video_start = file_in / 1000.0
+        video_duration = dur / 1000.0
+        overlays = _fit_window(overlays, timeline_start, timeline_start + dur)
+        if segments:
+            shifted = []
+            for seg in segments:
+                row = dict(seg)
+                begin = float(row.get("start_sec") or 0)
+                finish = float(row.get("end_sec") or 0)
+                if not begin and row.get("start"):
+                    begin = _ts_to_sec(str(row.get("start") or ""))
+                if not finish and row.get("end"):
+                    finish = _ts_to_sec(str(row.get("end") or ""))
+                left, right = max(begin, timeline_start / 1000.0), min(finish, (timeline_start + dur) / 1000.0)
+                if right - left < 0.04:
+                    continue
+                row["start_sec"] = left - timeline_start / 1000.0
+                row["end_sec"] = right - timeline_start / 1000.0
+                row.pop("start", None)
+                row.pop("end", None)
+                shifted.append(row)
+            segments = shifted
 
     def _map_encode(pct: float, msg: str, lo: float, hi: float) -> None:
         span = max(0.0, min(100.0, float(pct)))
@@ -1121,6 +1181,7 @@ def render_timeline(
         muxed = str(root / "timeline_mux.mp4")
         mux_video(
             video_path, mix_path, muxed, audio_bitrate=audio_bitrate, video_filter=video_filter,
+            video_start=video_start, video_duration=video_duration,
             progress_callback=lambda pct, msg: _map_encode(pct, msg, 55, 86),
         )
         compose_overlays(
@@ -1131,6 +1192,7 @@ def render_timeline(
         mux_video(
             video_path, mix_path, output_path,
             audio_bitrate=audio_bitrate, reencode=reencode, video_filter=video_filter,
+            video_start=video_start, video_duration=video_duration,
             progress_callback=lambda pct, msg: _map_encode(pct, msg, 55, 99),
         )
     ping(100, "Export complete")
@@ -1145,6 +1207,8 @@ def mux_video(
     audio_bitrate: str = "256k",
     reencode: bool = False,
     video_filter: str = "",
+    video_start: float | None = None,
+    video_duration: float | None = None,
     progress_callback=None,
 ) -> str:
     reencode = reencode or bool(video_filter)
@@ -1162,6 +1226,7 @@ def mux_video(
             RustFfmpegAdapter.mux_with_progress(
                 video_path, audio_path, output_path,
                 reencode=reencode, audio_bitrate=audio_bitrate, video_filter=video_filter,
+                start_sec=video_start, duration_sec=video_duration,
                 progress_callback=_ping,
             )
             _ping(100, "Export complete")
@@ -1175,13 +1240,15 @@ def mux_video(
 
     video_codec = ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p"] if reencode else ["-c:v", "copy"]
     vf = ["-vf", video_filter] if video_filter else []
-    duration = probe_duration(video_path)
+    duration = float(video_duration) if video_duration else probe_duration(video_path)
+    seek = ["-ss", f"{float(video_start):.3f}"] if video_start and video_start > 0 else []
+    limit = ["-t", f"{float(video_duration):.3f}"] if video_duration and video_duration > 0 else []
 
     def _on_fraction(frac: float) -> None:
         _ping(frac * 100.0, label)
 
     proc = run_ffmpeg_progress([
-        "-y", "-i", video_path, "-i", audio_path,
+        "-y", *seek, *limit, "-i", video_path, "-i", audio_path,
         "-map", "0:v:0", "-map", "1:a:0",
         *vf, *video_codec, "-c:a", "aac", "-b:a", audio_bitrate,
         "-shortest", "-movflags", "+faststart",

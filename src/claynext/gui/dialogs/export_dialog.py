@@ -3,10 +3,17 @@ from __future__ import annotations
 
 import os
 
+from PySide6.QtCore import Qt, QPoint, QRectF, QSize, QThreadPool
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox, QLineEdit,
-    QPushButton, QCheckBox, QFileDialog, QFrame,
+    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
+    QLineEdit, QPushButton, QCheckBox, QFileDialog, QFrame, QWidget, QToolButton,
+    QGraphicsDropShadowEffect,
 )
+
+from claynext.constants.theme_constants import COLOR_BORDER, COLOR_TEXT_MUTED
+from claynext.gui.icons import icon
+from claynext.gui.worker import Worker
 
 EXPORT_KINDS = (
     ("movie", "Dubbed movie (timeline mix)", "mp4"),
@@ -20,44 +27,162 @@ EXPORT_KINDS = (
 _EXT = {kind: ext for kind, _label, ext in EXPORT_KINDS}
 _MOVIE = {"movie", "source"}
 _SCRIPT = {"srt", "vtt", "json"}
+_CARD_MAX = QSize(132, 176)
+_CARD_RADIUS = 8
+
+
+def rounded_still(
+    pix: QPixmap, max_size: QSize, radius: int, pixel_ratio: float, *, border: bool = False,
+) -> QPixmap:
+    """Scale a still to its own aspect and clip it with a rounded border."""
+    ratio = pixel_ratio if pixel_ratio > 0 else 1.0
+    target = QSize(int(max_size.width() * ratio), int(max_size.height() * ratio))
+    scaled = pix.scaled(
+        target,
+        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    image = QPixmap(scaled.size())
+    image.setDevicePixelRatio(ratio)
+    image.fill(Qt.GlobalColor.transparent)
+    logical = QRectF(0, 0, scaled.width() / ratio, scaled.height() / ratio)
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    clip = QPainterPath()
+    clip.addRoundedRect(logical.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)
+    painter.setClipPath(clip)
+    painter.drawPixmap(logical.toRect(), scaled)
+    painter.setClipping(False)
+    if border:
+        painter.setPen(QPen(QColor(COLOR_BORDER), 1))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(logical.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)
+    painter.end()
+    return image
+
+
+class ExportTitleBar(QWidget):
+    """Drag handle and close control for a frameless export window."""
+
+    def __init__(self, window: QDialog, title: str):
+        super().__init__(window)
+        self._window = window
+        self._origin: QPoint | None = None
+        self.setObjectName("export_title_bar")
+        self.setFixedHeight(42)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(16, 0, 8, 0)
+        lay.setSpacing(8)
+        label = QLabel(title)
+        label.setObjectName("export_title")
+        close = QToolButton()
+        close.setObjectName("export_close")
+        close.setIcon(icon("win-close", color=COLOR_TEXT_MUTED, size=12))
+        close.setFixedSize(28, 28)
+        close.setCursor(Qt.CursorShape.PointingHandCursor)
+        close.setToolTip("Close")
+        close.clicked.connect(window.reject)
+        lay.addWidget(label)
+        lay.addStretch(1)
+        lay.addWidget(close)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._origin = event.globalPosition().toPoint() - self._window.frameGeometry().topLeft()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._origin is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self._window.move(event.globalPosition().toPoint() - self._origin)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._origin = None
+        super().mouseReleaseEvent(event)
+
+
+def frameless_shell(dialog: QDialog) -> tuple[QVBoxLayout, QFrame]:
+    """Replace the system title bar with a rounded studio frame."""
+    dialog.setWindowFlags(
+        Qt.WindowType.Dialog
+        | Qt.WindowType.FramelessWindowHint
+        | Qt.WindowType.NoDropShadowWindowHint
+    )
+    dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+    outer = QVBoxLayout(dialog)
+    outer.setContentsMargins(18, 16, 18, 22)
+    shell = QFrame()
+    shell.setObjectName("export_shell")
+    shadow = QGraphicsDropShadowEffect(shell)
+    shadow.setBlurRadius(28)
+    shadow.setOffset(0, 8)
+    shadow.setColor(QColor(0, 0, 0, 170))
+    shell.setGraphicsEffect(shadow)
+    outer.addWidget(shell)
+    body = QVBoxLayout(shell)
+    body.setContentsMargins(0, 0, 0, 14)
+    body.setSpacing(0)
+    rule = QFrame()
+    rule.setObjectName("export_title_rule")
+    rule.setFrameShape(QFrame.Shape.NoFrame)
+    rule.setFixedHeight(1)
+    return body, rule
+
+
+def place_export_dialog(dialog: QDialog) -> None:
+    """Center the custom frame on its parent window."""
+    dialog.adjustSize()
+    parent = dialog.parentWidget()
+    if parent is not None and parent.isVisible():
+        center = parent.mapToGlobal(parent.rect().center())
+    else:
+        screen = dialog.screen() or QApplication.primaryScreen()
+        if screen is None:
+            return
+        center = screen.availableGeometry().center()
+    geo = dialog.frameGeometry()
+    geo.moveCenter(center)
+    dialog.move(geo.topLeft())
 
 
 class ExportDialog(QDialog):
-    """Pick what to export, where it goes, and how the movie is encoded."""
+    """Pick what to export and where it goes, with a small preview of the movie."""
 
     def __init__(
-        self, parent=None, *, folder: str, stem: str, summary: str,
+        self, parent=None, *, folder: str = "", stem: str = "export", summary: str = "",
         saved: dict | None = None, script_only: bool = False,
+        source: str = "", preview: QPixmap | None = None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Export script" if script_only else "Export")
         self.setObjectName("exportDialog")
-        self.setMinimumWidth(480 if script_only else 520)
         self.setModal(True)
+        self._placed = False
         self._stem = stem or "export"
         self._script_only = bool(script_only)
+        self._source = source or ""
         saved = saved or {}
+        _ = summary
+        if not folder:
+            from claynext.utils.paths import OUTPUTS_DIR
+            folder = str(OUTPUTS_DIR)
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(18, 18, 18, 16)
-        root.setSpacing(12)
+        body, rule = frameless_shell(self)
+        body.addWidget(ExportTitleBar(self, "Export script" if script_only else "Export"))
+        body.addWidget(rule)
 
-        title = QLabel("Export script" if script_only else "Export")
-        title.setObjectName("dub_panel_title")
-        root.addWidget(title)
-        self.summary = QLabel(summary)
-        self.summary.setObjectName("dub_switch_hint")
-        self.summary.setWordWrap(True)
-        root.addWidget(self.summary)
+        content = QHBoxLayout()
+        content.setContentsMargins(16, 4, 16, 8)
+        content.setSpacing(16)
 
-        line = QFrame()
-        line.setObjectName("dub_config_divider")
-        line.setFixedHeight(1)
-        root.addWidget(line)
         box = QFrame()
         box.setObjectName("dub_config_section")
         grid = QGridLayout(box)
-        grid.setContentsMargins(0, 4, 0, 4)
+        grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
 
@@ -115,16 +240,24 @@ class ExportDialog(QDialog):
         self.chk_overlays.setChecked(saved.get("overlays", True) is not False)
         grid.addWidget(self.chk_overlays, 6, 1, 1, 2)
         grid.setColumnStretch(1, 1)
-        root.addWidget(box)
+        content.addWidget(box, 1)
 
-        self.lbl_target = QLabel("")
-        self.lbl_target.setObjectName("dub_switch_hint")
-        self.lbl_target.setWordWrap(True)
-        root.addWidget(self.lbl_target)
-        self.edit_name.textChanged.connect(self._sync_target)
-        self.edit_folder.textChanged.connect(self._sync_target)
+        self.preview_card = QFrame()
+        self.preview_card.setObjectName("export_preview_card")
+        self.preview_card.setFixedWidth(156)
+        card = QVBoxLayout(self.preview_card)
+        card.setContentsMargins(10, 10, 10, 10)
+        card.setSpacing(0)
+        self.thumb = QLabel("Preview")
+        self.thumb.setObjectName("export_thumb")
+        self.thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.thumb.setMinimumSize(120, 80)
+        card.addWidget(self.thumb, 0, Qt.AlignmentFlag.AlignCenter)
+        content.addWidget(self.preview_card, 0, Qt.AlignmentFlag.AlignVCenter)
+        body.addLayout(content)
 
         actions = QHBoxLayout()
+        actions.setContentsMargins(16, 4, 16, 0)
         actions.addStretch(1)
         cancel = QPushButton("Cancel")
         cancel.setObjectName("api_keys_btn")
@@ -135,13 +268,32 @@ class ExportDialog(QDialog):
         self.btn_export.clicked.connect(self.accept)
         actions.addWidget(cancel)
         actions.addWidget(self.btn_export)
-        root.addLayout(actions)
+        body.addLayout(actions)
+
+        self.edit_name.textChanged.connect(self._sync_target)
+        self.edit_folder.textChanged.connect(self._sync_target)
         self._sync()
+        if self._script_only:
+            self.preview_card.hide()
+            self.setMinimumWidth(460)
+        else:
+            self.setMinimumWidth(640)
+            if preview is not None and not preview.isNull():
+                self._apply_pix(preview)
+            else:
+                self._load_thumb(self._source)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._placed:
+            self._placed = True
+            place_export_dialog(self)
 
     @staticmethod
     def _label(text: str) -> QLabel:
         label = QLabel(text)
         label.setObjectName("asr_field_label")
+        label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         return label
 
     @staticmethod
@@ -179,9 +331,49 @@ class ExportDialog(QDialog):
             self.edit_folder.setText(folder)
 
     def _sync_target(self):
-        path = self.target_path()
-        self.lbl_target.setText(f"Saves to {path}" if path else "Choose a folder and a file name.")
-        self.btn_export.setEnabled(bool(path))
+        self.btn_export.setEnabled(bool(self.target_path()))
+
+    def _load_thumb(self, source: str) -> None:
+        if not source or not os.path.isfile(source):
+            self.thumb.setText("No preview")
+            return
+        from claynext.models.thumbnails import thumb_path_for
+
+        for width in (480, 160):
+            cached = thumb_path_for(source, width)
+            if cached.is_file():
+                self._apply_pix(QPixmap(str(cached)))
+                if width >= 480:
+                    return
+        worker = Worker(self._extract, source)
+        self._thumb_worker = worker
+        worker.signals.result.connect(self._on_thumb)
+        worker.signals.finished.connect(self._clear_thumb_worker)
+        QThreadPool.globalInstance().start(worker)
+
+    def _clear_thumb_worker(self) -> None:
+        self._thumb_worker = None
+
+    @staticmethod
+    def _extract(source: str, progress_callback=None) -> str | None:
+        from claynext.models.thumbnails import ensure_thumbnail
+
+        return ensure_thumbnail(source, 480)
+
+    def _on_thumb(self, path) -> None:
+        if not path:
+            return
+        self._apply_pix(QPixmap(str(path)))
+
+    def _apply_pix(self, pix: QPixmap) -> None:
+        if pix.isNull():
+            self.thumb.setText("No preview")
+            return
+        rounded = rounded_still(pix, _CARD_MAX, _CARD_RADIUS, self.devicePixelRatioF())
+        self.thumb.setPixmap(rounded)
+        self.thumb.setText("")
+        ratio = rounded.devicePixelRatio() or 1.0
+        self.thumb.setFixedSize(int(rounded.width() / ratio), int(rounded.height() / ratio))
 
     def target_path(self) -> str:
         folder = self.edit_folder.text().strip()
@@ -203,4 +395,3 @@ class ExportDialog(QDialog):
             "audio": self.combo_audio.currentData() or "256k",
             "overlays": self.chk_overlays.isChecked(),
         }
-

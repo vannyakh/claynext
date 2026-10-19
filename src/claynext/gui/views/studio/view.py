@@ -23,7 +23,10 @@ from claynext.gui.views.studio.pipeline import PipelineTools
 from claynext.gui.views.studio.preview import PreviewTools
 from claynext.gui.views.studio.project import ProjectTools
 from claynext.gui.views.studio.inspector import InspectorTools
-from claynext.gui.views.studio.script import ScriptTools
+from claynext.gui.views.studio.script_edit import ScriptEditTools
+from claynext.gui.views.studio.script_export import ScriptExportTools
+from claynext.gui.views.studio.script_jobs import ScriptJobTools
+from claynext.gui.views.studio.script_panel import ScriptPanelTools
 from claynext.gui.views.studio.tasks import TaskTools
 from claynext.gui.views.studio.voices import VoiceTools
 from claynext.gui.views.studio.workspace import WorkspaceTools
@@ -37,7 +40,10 @@ class StudioView(
     ProjectTools,
     ConfigTools,
     CaptionTools,
-    ScriptTools,
+    ScriptPanelTools,
+    ScriptExportTools,
+    ScriptJobTools,
+    ScriptEditTools,
     TaskTools,
     VoiceTools,
     PipelineTools,
@@ -265,6 +271,9 @@ class StudioView(
             self._status(f"Exported subtitles to {os.path.basename(path)}")
 
     def _on_export_video(self):
+        if hasattr(self, "open_export_dialog"):
+            self.open_export_dialog("movie")
+            return
         from claynext.gui.dialogs.export_dialog import ExportDialog
         dlg = ExportDialog(self)
         dlg.exec()

@@ -294,6 +294,8 @@ class RustFfmpegAdapter:
         video_filter: str = "",
         crf: int = 18,
         preset: str = "medium",
+        start_sec: float | None = None,
+        duration_sec: float | None = None,
         progress_callback: Callable[[float, str], None] | None = None,
     ) -> None:
         """Mux (and optionally re-encode) through claynext-ffmpeg, streaming encode percent.
@@ -319,6 +321,10 @@ class RustFfmpegAdapter:
             args += ["--reencode", "--crf", str(int(crf)), "--preset", preset or "medium"]
         if video_filter:
             args += ["--vf", video_filter]
+        if start_sec and start_sec > 0:
+            args += ["--start", f"{float(start_sec):.3f}"]
+        if duration_sec and duration_sec > 0:
+            args += ["--duration", f"{float(duration_sec):.3f}"]
 
         def _on_line(line: str) -> None:
             parsed = _parse_progress_event(line)

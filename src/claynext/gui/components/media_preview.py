@@ -167,6 +167,8 @@ class MediaPlaybackWidget(QWidget):
         self._curr_pos = 0
         self._curr_dur = 0
         self._time_format_mode = "compact"
+        self._origin = 0
+        self._length = 0
         self._init_ui()
         self.set_enabled(False)
 
@@ -652,16 +654,39 @@ class MediaPlaybackWidget(QWidget):
     def _fmt_ms(self, ms: int) -> str:
         return self._format_time_code(ms, getattr(self, "_time_format_mode", "compact"))
 
+    def set_window(self, origin_ms: int, length_ms: int):
+        """Show and seek a slice of the file. Length 0 follows the whole file."""
+        self._origin = max(0, int(origin_ms))
+        self._length = max(0, int(length_ms))
+        if self._length:
+            self.slider.setRange(0, self._length)
+            shown = max(0, min(self._length, self._curr_pos - self._origin))
+            self.slider.blockSignals(True)
+            self.slider.setValue(shown)
+            self.slider.blockSignals(False)
+            self._update_time_badge(pos=shown, dur=self._length)
+
+    def _shown_pos(self, file_ms: int) -> int:
+        shown = int(file_ms) - self._origin
+        if self._length:
+            return max(0, min(self._length, shown))
+        return max(0, shown)
+
     @Slot(int)
     def _on_position(self, pos: int):
+        shown = self._shown_pos(pos)
         if not self._seeking:
             self.slider.blockSignals(True)
-            self.slider.setValue(pos)
+            self.slider.setValue(shown)
             self.slider.blockSignals(False)
-        self._update_time_badge(pos=pos)
+        self._update_time_badge(pos=shown)
 
     @Slot(int)
     def _on_duration(self, dur: int):
+        if self._length:
+            self.slider.setRange(0, self._length)
+            self._update_time_badge(dur=self._length)
+            return
         self.slider.setRange(0, max(0, dur))
         self._update_time_badge(dur=dur)
 
@@ -671,7 +696,7 @@ class MediaPlaybackWidget(QWidget):
     def _on_seek_end(self):
         self._seeking = False
         if self._preview:
-            self._preview.seek_ms(self.slider.value())
+            self._preview.seek_ms(self._origin + self.slider.value())
 
     def _on_seek_moved(self, value: int):
         self._update_time_badge(pos=value)

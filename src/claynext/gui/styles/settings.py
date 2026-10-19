@@ -424,8 +424,9 @@ QToolButton#new_project_template {{
     border: 1px solid {COLOR_BORDER};
     border-radius: 6px;
     padding: 0 8px;
-    font-size: 10.5px;
+    font-size: 12px;
     font-weight: 600;
+    text-align: center;
 }}
 QToolButton#new_project_template:hover {{
     border-color: {primary};

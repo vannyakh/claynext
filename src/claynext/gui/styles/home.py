@@ -301,7 +301,7 @@ QToolButton#new_project_template {{
     padding: 6px 10px;
     font-size: 12px;
     font-weight: 600;
-    text-align: left;
+    text-align: center;
 }}
 QToolButton#new_project_template:hover {{
     background: {COLOR_BG_CARD_HOVER};
