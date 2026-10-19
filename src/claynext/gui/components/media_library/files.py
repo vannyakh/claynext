@@ -47,7 +47,7 @@ class LibraryFiles:
             if abs_path in seen or not os.path.isfile(abs_path):
                 continue
             ext = os.path.splitext(abs_path)[1].lower()
-            if ext not in self.MEDIA_EXTS:
+            if ext in IMAGE_EXTS or ext not in self.MEDIA_EXTS:
                 continue
             seen.append(abs_path)
         self._paths = seen
@@ -66,28 +66,40 @@ class LibraryFiles:
 
     def add_files(self, paths: list[str], *, select_last: bool = True):
         added = []
+        images = []
         for path in paths:
             if not path:
                 continue
             abs_path = os.path.abspath(path)
             ext = os.path.splitext(abs_path)[1].lower()
-            if ext not in self.MEDIA_EXTS:
-                continue
-            if abs_path in self._paths:
-                continue
             if not os.path.isfile(abs_path):
+                continue
+            if ext in IMAGE_EXTS:
+                if abs_path not in images:
+                    images.append(abs_path)
+                continue
+            if ext not in self.MEDIA_EXTS or abs_path in self._paths:
                 continue
             self._paths.append(abs_path)
             added.append(abs_path)
 
+        if images:
+            self.images_added.emit(images)
+
         if not added:
+            if images:
+                noun = "image" if len(images) == 1 else "images"
+                self.status_message.emit(f"Placed {len(images)} {noun} on the canvas")
             return
 
         self._refresh_items()
         self._apply_view_mode()
         self._update_count()
         self.files_changed.emit(len(self._paths))
-        self.status_message.emit(f"Added {len(added)} media file(s)")
+        note = f"Added {len(added)} media file(s)"
+        if images:
+            note += f" · placed {len(images)} image(s) on the canvas"
+        self.status_message.emit(note)
 
         if select_last:
             self.select_paths(added)
@@ -97,7 +109,7 @@ class LibraryFiles:
             self,
             "Add Media Files",
             "",
-            "Media Files (*.mp4 *.mkv *.avi *.mov *.webm *.mp3 *.wav *.flac *.png *.jpg *.jpeg *.webp *.gif);;All Files (*.*)",
+            "Media Files (*.mp4 *.mkv *.avi *.mov *.webm *.m4v *.mp3 *.wav *.flac *.m4a *.aac *.ogg);;All Files (*.*)",
         )
         if paths:
             self.add_files(paths)

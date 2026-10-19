@@ -7,7 +7,7 @@ Backends (first available wins):
 
 Install:
   uv sync --extra demucs-mlx   # macOS arm64
-  uv sync --extra demucs       # PyTorch Demucs (any platform)
+  uv sync --extra demucs       # PyTorch Demucs (not Intel macOS)
 """
 from __future__ import annotations
 

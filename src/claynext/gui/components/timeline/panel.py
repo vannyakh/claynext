@@ -34,7 +34,7 @@ from claynext.gui.components.render.text import (
     burn_metrics, caption_width, fit_caption, font_for, measure_box, wrap_text,
 )
 from claynext.gui.components.timeline.canvas import TimelineCanvas
-from claynext.gui.components.timeline.helpers import fmt_ms, fmt_tc, kind_for_path, paths_from_mime
+from claynext.gui.components.timeline.helpers import fmt_ms, fmt_tc, image_frame, kind_for_path, paths_from_mime
 from claynext.gui.components.timeline.lane_rail import LaneRail
 from claynext.gui.components.timeline.models import TimelineClip
 from claynext.gui.components.timeline.recorder import VoiceRecorder
@@ -760,6 +760,9 @@ class TimelinePanel(QWidget):
 
     def export_overlays(self, include_hidden: bool = False, aspect: float | None = None) -> list[dict]:
         """Overlay clips for saving or burning; with the picture `aspect`, live captions carry their wrapped lines."""
+        from claynext.gui.components.inspector.google_fonts import register_google_fonts
+
+        register_google_fonts()
         rows = []
         for clip in self.canvas.clips:
             if clip.kind not in OVERLAY_KINDS:
@@ -1403,9 +1406,11 @@ class TimelinePanel(QWidget):
         self.canvas.update()
         self.selection_changed.emit("", tid)
 
-    def _on_files_dropped(self, paths: list, track_id: str):
+    def _on_files_dropped(self, paths: list, track_id: str, at: tuple[float, float] | None = None, into_selected: bool = True):
         track = self.canvas.track_by_id(track_id) if track_id else None
         replaced_video = False
+        filled_frame = False
+        drop_at = at
         for path in paths:
             path = os.path.abspath(path) if path else ""
             kind = kind_for_path(path)
@@ -1417,6 +1422,12 @@ class TimelinePanel(QWidget):
                 self.media_dropped.emit(path)
                 replaced_video = True
                 continue
+            if kind == "image" and into_selected and not filled_frame:
+                frame = self._selected_frame()
+                if frame is not None:
+                    self.replace_overlay_path(frame.id, path)
+                    filled_frame = True
+                    continue
             target = track if track and (track.kind == kind or track.kind in {kind, "image", "audio"}) else None
             if target is None:
                 target = self.canvas.ensure_track(kind if kind != "audio" else "audio")
@@ -1431,6 +1442,19 @@ class TimelinePanel(QWidget):
                 fit = self.canvas.fit_master_placement(kind)
                 if fit:
                     start, dur = fit
+            if kind == "image":
+                width, height = image_frame(path, self._picture_aspect())
+                place = drop_at or (0.5, 0.5)
+                drop_at = None
+                extra["overlay"] = {
+                    "path": path,
+                    "text": os.path.basename(path),
+                    "x": place[0],
+                    "y": place[1],
+                    "w": width,
+                    "h": height,
+                    "lock_aspect": True,
+                }
             self.canvas.add_clip(
                 kind, os.path.basename(path), duration_ms=dur, extra=extra,
                 track_id=target.id, start_ms=start,
@@ -1875,6 +1899,49 @@ class TimelinePanel(QWidget):
             }
             for clip in self.canvas.footage_clips()
         ]
+
+    def add_images(self, paths: list[str], at: tuple[float, float] | None = None, into_selected: bool = True) -> None:
+        """Place pictures as canvas elements. They are not library media."""
+        self._on_files_dropped(list(paths or []), "", at=at, into_selected=into_selected)
+
+    def replace_overlay_path(self, clip_id: str, path: str) -> None:
+        """Swap the picture inside an image element and keep its frame."""
+        path = os.path.abspath(path) if path else ""
+        if not path or not os.path.isfile(path):
+            return
+        from claynext.gui.components.render.shape import FRAME_SHAPES
+
+        for clip in self.canvas.clips:
+            overlay = dict(clip.extra.get("overlay") or {})
+            framed = clip.kind == "shape" and str(overlay.get("shape") or "") in FRAME_SHAPES
+            if clip.id != clip_id or (clip.kind not in {"image", "logo"} and not framed):
+                continue
+            overlay["path"] = path
+            overlay["text"] = os.path.basename(path)
+            overlay["lock_aspect"] = True
+            clip.extra["overlay"] = overlay
+            clip.extra["path"] = path
+            if not framed:
+                clip.label = os.path.basename(path)
+            self.canvas.update()
+            self.clips_changed.emit()
+            return
+
+    def _selected_frame(self):
+        from claynext.gui.components.render.shape import FRAME_SHAPES
+
+        for clip_id in self.canvas.selected_ids:
+            clip = self.canvas.clip_by_id(clip_id)
+            overlay = (clip.extra.get("overlay") or {}) if clip is not None else {}
+            if clip is not None and clip.kind == "shape" and str(overlay.get("shape") or "") in FRAME_SHAPES:
+                return clip
+        return None
+
+    def _picture_aspect(self) -> float:
+        from claynext.models.canvas import ratio_value
+
+        ratio = ratio_value(self.footage_canvas().get("ratio", "original"), None)
+        return float(ratio) if ratio else 16 / 9
 
     def footage_canvas(self) -> dict:
         """Canvas of the first footage clip (ratio, video transform, background)."""

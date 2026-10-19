@@ -248,6 +248,9 @@ class InspectorTools:
             if item is not None:
                 self.timeline.canvas.selected_ids = {item.id}
             self.timeline.canvas.duplicate_selected()
+            return
+        if name == "replace":
+            self._replace_selected_image()
 
     def _on_overlay_edited(self, item):
         if getattr(self, "_syncing_overlays", False) or item is None:
@@ -327,6 +330,27 @@ class InspectorTools:
         x, y = self.overlay.aligned_position(item, where)
         editor.set_position(x, y)
 
+    def _replace_selected_image(self):
+        from claynext.gui.components.render.shape import FRAME_SHAPES
+
+        item = self.overlay.selected_item()
+        framed = item is not None and item.kind in {"shape", "mask"} and item.shape in FRAME_SHAPES
+        if item is None or (item.kind not in {"image", "logo"} and not framed):
+            return
+        from PySide6.QtWidgets import QFileDialog
+
+        path, _ = QFileDialog.getOpenFileName(
+            self.overlay,
+            "Replace image",
+            "",
+            "Images (*.png *.jpg *.jpeg *.webp *.gif *.bmp)",
+        )
+        if not path:
+            return
+        self.overlay._pix.pop(path, None)
+        self.timeline.replace_overlay_path(item.id, path)
+        self._sync_preview_overlays(force=True)
+
     def _remove_selected_overlay(self):
         clip = self.track_props.clip
         target = clip.id if clip is not None and clip.kind in OVERLAY_KINDS else ""
@@ -345,7 +369,15 @@ class InspectorTools:
         self._sync_master_transport()
         self.overlay.set_playhead(self.timeline.canvas.playhead_ms)
         clips = self.timeline.overlay_clips()
-        ids = tuple((c.id, c.start_ms, c.duration_ms) for c in clips)
+        ids = tuple(
+            (
+                c.id,
+                c.start_ms,
+                c.duration_ms,
+                str((c.extra.get("overlay") or {}).get("path") or c.extra.get("path") or ""),
+            )
+            for c in clips
+        )
         if not force and ids == self._shown_overlay_ids:
             return
         self._shown_overlay_ids = ids

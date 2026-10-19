@@ -732,6 +732,18 @@ def _filter_path(path: str) -> str:
     return path.replace("\\", "/").replace(":", "\\:").replace("'", r"\'")
 
 
+def _ass_video_filter(last: str, ass_path: str) -> str:
+    """Burn styled text with the same Google Font files the preview draws."""
+    from claynext.models.google_fonts import fetch_google_fonts
+    from claynext.utils.paths import FONT_DIR
+
+    fetch_google_fonts()
+    spec = f"ass='{_filter_path(ass_path)}'"
+    if any(FONT_DIR.glob("*.ttf")):
+        spec += f":fontsdir='{_filter_path(str(FONT_DIR))}'"
+    return f"[{last}]{spec}[vout]"
+
+
 def _write_overlay_ass(
     overlays: list[dict],
     segments: list[dict] | None,
@@ -751,6 +763,8 @@ def _write_overlay_ass(
         clip_start = float(item.get("start_ms") or 0) / 1000.0
         clip_end = float(item.get("end_ms") or 0) / 1000.0 or 36000.0
         if kind == "shape":
+            if _picture_overlay(item):
+                continue
             events += shape_events(item, clip_start, clip_end, width, height)
             continue
         live = bool(item.get("live")) and kind == "caption"
@@ -809,6 +823,19 @@ def _write_overlay_ass(
     return path
 
 
+def _picture_overlay(item: dict) -> bool:
+    """A logo, image, or filled picture frame that should burn as a still."""
+    if item.get("hidden"):
+        return False
+    path = str(item.get("path") or "")
+    if not path or not os.path.isfile(path):
+        return False
+    kind = str(item.get("kind") or "")
+    if kind in {"logo", "image"}:
+        return True
+    return kind == "shape" and str(item.get("shape") or "").startswith("frame_")
+
+
 def compose_overlays(
     video_path: str,
     overlays: list[dict],
@@ -825,12 +852,7 @@ def compose_overlays(
     root = Path(work_dir or Path(output_path).parent)
     root.mkdir(parents=True, exist_ok=True)
     width, height = probe_size(video_path)
-    images = [
-        it for it in rows
-        if str(it.get("kind") or "") in {"logo", "image"}
-        and not it.get("hidden")
-        and os.path.isfile(str(it.get("path") or ""))
-    ]
+    images = [it for it in rows if _picture_overlay(it)]
     ass_path = _write_overlay_ass(rows, segments, str(root), width, height)
     if not images and not ass_path:
         return video_path
@@ -861,7 +883,7 @@ def compose_overlays(
         filters.append(f"[{last}][{lab}]overlay=x={x_expr}:y={y_expr}:format=auto[{nxt}]")
         last = nxt
     if ass_path:
-        filters.append(f"[{last}]ass='{_filter_path(ass_path)}'[vout]")
+        filters.append(_ass_video_filter(last, ass_path))
         vmap = "[vout]"
     elif last == "0:v":
         vmap = "0:v"

@@ -5,6 +5,7 @@ for Translation, TTS, and ASR models from Hugging Face.
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import threading
@@ -15,141 +16,31 @@ from claynext.models.llm_keys import get_key_pool
 from claynext.utils.config import MODELS_DIR
 
 _download_lock = threading.Lock()
+_CATALOG_PATH = Path(__file__).with_name("models.json")
 
-# Curated registry of Hugging Face models for Claynext Studio
-HF_MODEL_REGISTRY: list[dict[str, Any]] = [
-    # ─── Translation (Offline NMT) ──────────────────────────────
-    {
-        "id": "JustFrederik/nllb-200-distilled-600M-ct2-int8",
-        "name": "NLLB-200 (600M INT8 · CTranslate2)",
-        "category": "translate",
-        "size_label": "~620 MB",
-        "description": "200 languages (Khmer, Chinese, Vietnamese, English, etc.). Fast CPU INT8 offline translation.",
-        "backend": "ctranslate2",
-        "essential_file": "model.bin",
-    },
-    {
-        "id": "facebook/nllb-200-distilled-600M",
-        "name": "NLLB-200 (600M · Transformers)",
-        "category": "translate",
-        "size_label": "~2.4 GB",
-        "description": "Meta NLLB-200 standard seq2seq translation checkpoint for 200 languages.",
-        "backend": "transformers",
-        "essential_file": "sentencepiece.bpe.model",
-    },
-    # ─── TTS (Neural Speech Synthesis) ─────────────────────────
-    {
-        "id": "KittenML/kitten-tts-nano-0.8-fp32",
-        "name": "Kitten Nano (15M FP32 · Ultra-Fast)",
-        "category": "tts",
-        "size_label": "~60 MB",
-        "description": "Ultra-lightweight 15M ONNX neural speech model. 8 built-in voices. Runs smoothly on any CPU.",
-        "backend": "kittentts",
-        "essential_file": "config.json",
-    },
-    {
-        "id": "KittenML/kitten-tts-nano-0.8-int8",
-        "name": "Kitten Nano (15M INT8 · Quantized)",
-        "category": "tts",
-        "size_label": "~25 MB",
-        "description": "Quantized 15M INT8 ONNX neural speech model. Minimal memory footprint.",
-        "backend": "kittentts",
-        "essential_file": "config.json",
-    },
-    {
-        "id": "KittenML/kitten-tts-micro-0.8",
-        "name": "Kitten Micro (40M · Balanced)",
-        "category": "tts",
-        "size_label": "~160 MB",
-        "description": "40M ONNX neural speech model with balanced speed and expressiveness.",
-        "backend": "kittentts",
-        "essential_file": "config.json",
-    },
-    {
-        "id": "KittenML/kitten-tts-mini-0.8",
-        "name": "Kitten Mini (80M · High Quality)",
-        "category": "tts",
-        "size_label": "~320 MB",
-        "description": "80M ONNX neural speech model with rich vocal dynamics and pitch contours.",
-        "backend": "kittentts",
-        "essential_file": "config.json",
-    },
-    {
-        "id": "openbmb/VoxCPM2",
-        "name": "VoxCPM2 (2B · Multilingual 48kHz)",
-        "category": "tts",
-        "size_label": "~4 GB+",
-        "description": "OpenBMB tokenizer-free TTS · 30 languages, voice design & cloning, 48kHz output. Install: uv sync --extra voxcpm",
-        "backend": "voxcpm",
-        "essential_file": "config.json",
-    },
-    {
-        "id": "openbmb/VoxCPM1.5",
-        "name": "VoxCPM1.5 (Balanced · Cloning)",
-        "category": "tts",
-        "size_label": "~2 GB+",
-        "description": "OpenBMB VoxCPM1.5 with high-fidelity voice cloning. Install: uv sync --extra voxcpm",
-        "backend": "voxcpm",
-        "essential_file": "config.json",
-    },
-    {
-        "id": "openbmb/VoxCPM-0.5B",
-        "name": "VoxCPM 0.5B (Lighter)",
-        "category": "tts",
-        "size_label": "~1 GB+",
-        "description": "Smaller VoxCPM checkpoint for faster local synthesis. Install: uv sync --extra voxcpm",
-        "backend": "voxcpm",
-        "essential_file": "config.json",
-    },
-    # ─── ASR (Whisper Speech Recognition) ──────────────────────
-    {
-        "id": "Systran/faster-whisper-tiny",
-        "name": "Whisper Tiny (CTranslate2)",
-        "category": "asr",
-        "size_label": "~75 MB",
-        "description": "Fastest Whisper model. Instant CPU transcription.",
-        "backend": "ctranslate2",
-        "essential_file": "model.bin",
-    },
-    {
-        "id": "Systran/faster-whisper-small",
-        "name": "Whisper Small (CTranslate2)",
-        "category": "asr",
-        "size_label": "~460 MB",
-        "description": "Balanced Whisper model. Excellent accuracy for dialogue & subtitles.",
-        "backend": "ctranslate2",
-        "essential_file": "model.bin",
-    },
-    {
-        "id": "Systran/faster-whisper-medium",
-        "name": "Whisper Medium (CTranslate2)",
-        "category": "asr",
-        "size_label": "~1.5 GB",
-        "description": "High accuracy multi-speaker speech transcription.",
-        "backend": "ctranslate2",
-        "essential_file": "model.bin",
-    },
-    # ─── Audio stem separation (movie music / dialogue isolation) ──
-    {
-        "id": "mlx-community/demucs-mlx",
-        "name": "Demucs MLX (Apple Silicon · Stems)",
-        "category": "audio",
-        "size_label": "~160 MB+",
-        "description": "HTDemucs music source separation on Apple Silicon (vocals / drums / bass / other). Install: uv sync --extra demucs-mlx. Auto-downloads on first use.",
-        "backend": "demucs-mlx",
-        "essential_file": "htdemucs.safetensors",
-    },
-    # ─── Gender (ASR dialogue analysis) ───────────────────────────
-    {
-        "id": "prithivMLmods/Common-Voice-Gender-Detection",
-        "name": "Common-Voice Gender Detection",
-        "category": "asr",
-        "size_label": "~360 MB",
-        "description": "Wav2Vec2 binary gender classifier (female/male) for dubbing ASR analysis. Install: uv sync --extra gender",
-        "backend": "transformers",
-        "essential_file": "config.json",
-    },
-]
+
+def _load_catalog() -> list[dict[str, Any]]:
+    """Model and LLM list from models.json."""
+    try:
+        payload = json.loads(_CATALOG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    rows = payload.get("models") if isinstance(payload, dict) else payload
+    if not isinstance(rows, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if isinstance(row, dict) and row.get("id") and row.get("name"):
+            item = dict(row)
+            item.setdefault("install", "hf")
+            item.setdefault("category", "")
+            item.setdefault("description", "")
+            item.setdefault("size_label", "")
+            out.append(item)
+    return out
+
+
+HF_MODEL_REGISTRY: list[dict[str, Any]] = _load_catalog()
 
 
 def _hf_token() -> Optional[str]:
@@ -169,15 +60,82 @@ def get_model_meta(repo_id: str) -> Optional[dict[str, Any]]:
 
 
 def get_model_registry(category: Optional[str] = None) -> list[dict[str, Any]]:
-    """Return model entries, optionally filtered by category ('translate', 'tts', 'asr')."""
+    """Return model entries, optionally filtered by category ('translate', 'tts', 'asr', 'llm')."""
+    pulled = _ollama_names()
     out = []
     for item in HF_MODEL_REGISTRY:
         if category and item["category"] != category:
             continue
         entry = dict(item)
-        entry["is_downloaded"] = is_model_downloaded(item["id"])
+        state = model_install_state(entry, pulled)
+        entry.update(state)
+        entry["is_downloaded"] = state["ready"]
         out.append(entry)
     return out
+
+
+def model_install_state(item: dict[str, Any], ollama_names: set[str] | None = None) -> dict[str, Any]:
+    """How the settings row should offer this model on the current machine."""
+    from claynext.models.features import feature_for_extra
+
+    extra = str(item.get("extra") or "")
+    if extra:
+        feature = feature_for_extra(extra)
+        if feature is not None and not feature.get("supported"):
+            return {
+                "ready": False,
+                "action": "unsupported",
+                "status": "Unsupported",
+                "hint": feature.get("hint") or "Not available on this platform.",
+            }
+    kind = str(item.get("install") or "hf")
+    if kind == "cloud":
+        return {
+            "ready": False,
+            "action": "cloud",
+            "status": "Cloud",
+            "hint": item.get("description") or "Uses an API key. Nothing is downloaded.",
+        }
+    if kind == "ollama":
+        name = str(item.get("ollama") or item.get("id") or "")
+        names = ollama_names if ollama_names is not None else _ollama_names()
+        pulled = name in names
+        return {
+            "ready": pulled,
+            "action": "ready" if pulled else "install",
+            "status": "Downloaded" if pulled else "Available",
+            "hint": item.get("description") or "",
+        }
+    downloaded = is_model_downloaded(str(item.get("id") or ""))
+    return {
+        "ready": downloaded,
+        "action": "ready" if downloaded else "install",
+        "status": "Downloaded" if downloaded else "Available",
+        "hint": item.get("description") or "",
+    }
+
+
+def _ollama_names() -> set[str]:
+    if shutil.which("ollama") is None:
+        return set()
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            ["ollama", "list"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
+    names: set[str] = set()
+    for line in (proc.stdout or "").splitlines()[1:]:
+        token = line.split()
+        if token:
+            names.add(token[0])
+    return names
 
 
 def _candidate_cache_dirs(repo_id: str) -> list[Path]:
@@ -327,17 +285,75 @@ def _progress_tqdm(progress_callback, display_name: str):
     return _Tqdm
 
 
+def _ensure_feature(extra: str, progress_callback) -> None:
+    from claynext.models.features import feature_for_extra, install_uv_extra
+
+    feature = feature_for_extra(extra)
+    if feature is None:
+        return
+    if not feature.get("supported"):
+        raise RuntimeError(feature.get("hint") or "This feature cannot be installed on this platform.")
+    if feature.get("installed"):
+        return
+
+    def _mapped(pct: int, msg: str) -> None:
+        if progress_callback:
+            progress_callback(max(0, min(40, int(pct) * 40 // 100)), msg)
+
+    install_uv_extra(extra, progress_callback=_mapped)
+
+
+def _pull_ollama(name: str, progress_callback) -> str:
+    import subprocess
+
+    if shutil.which("ollama") is None:
+        raise RuntimeError("Ollama is not installed. Install Ollama, then pull this model.")
+    if progress_callback:
+        progress_callback(8, f"Pulling {name}…")
+    proc = subprocess.Popen(
+        ["ollama", "pull", name],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    assert proc.stdout is not None
+    last = f"Pulling {name}…"
+    for raw in proc.stdout:
+        line = raw.strip()
+        if line:
+            last = line[:140]
+            if progress_callback:
+                progress_callback(50, last)
+    code = proc.wait()
+    if code != 0:
+        raise RuntimeError(last or f"ollama pull {name} failed")
+    if progress_callback:
+        progress_callback(100, f"Installed {name}")
+    return name
+
+
 def install_model(
     repo_id: str,
     progress_callback: Optional[Callable[[int, str], None]] = None,
 ) -> str:
-    """Install a model in a child process. The caller only supervises progress."""
+    """Install a catalog model. Hugging Face weights run in a child process."""
     import subprocess
     import sys
 
     repo_id = (repo_id or "").strip()
     if not repo_id:
-        raise ValueError("Missing Hugging Face repository id")
+        raise ValueError("Missing model id")
+    meta = get_model_meta(repo_id) or {}
+    kind = str(meta.get("install") or "hf")
+    extra = str(meta.get("extra") or "")
+    if extra:
+        _ensure_feature(extra, progress_callback)
+    if kind == "cloud":
+        raise RuntimeError("This model runs in the cloud. Add an API key in Settings. Nothing is downloaded.")
+    if kind == "ollama":
+        return _pull_ollama(str(meta.get("ollama") or repo_id), progress_callback)
 
     def _progress(pct: int, msg: str) -> None:
         if progress_callback is None:

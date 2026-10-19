@@ -6,6 +6,7 @@ Settings live under Store tool ``studio``.
 """
 from __future__ import annotations
 
+import platform
 from typing import Any
 
 from claynext.utils.config import DEFAULT_CONFIG
@@ -73,6 +74,21 @@ def _mlx_platform_ok() -> bool:
     return demucs_mlx_supported()
 
 
+def torch_wheels_available() -> bool:
+    """PyTorch 2.4+ has wheels for Apple Silicon, Windows, and Linux, not Intel macOS."""
+    if platform.system() == "Darwin" and platform.machine().lower() in {"x86_64", "amd64", "i386"}:
+        return False
+    return True
+
+
+def _unsupported_reason(feature_id: str) -> str:
+    if feature_id == "demucs_mlx":
+        return "Apple Silicon only. This Mac cannot run Demucs MLX."
+    if not torch_wheels_available():
+        return "PyTorch has no Intel macOS build, so this feature cannot be installed here."
+    return "This platform cannot install this feature."
+
+
 FEATURE_REGISTRY: list[dict[str, Any]] = [
     {
         "id": "demucs_mlx",
@@ -90,7 +106,7 @@ FEATURE_REGISTRY: list[dict[str, Any]] = [
         "extra": "demucs",
         "hint": "Meta htdemucs stem separation. uv sync --extra demucs",
         "detect": _detect_demucs,
-        "supported": lambda: True,
+        "supported": torch_wheels_available,
     },
     {
         "id": "voxcpm",
@@ -99,7 +115,7 @@ FEATURE_REGISTRY: list[dict[str, Any]] = [
         "extra": "voxcpm",
         "hint": "Local multilingual neural TTS. uv sync --extra voxcpm",
         "detect": _detect_voxcpm,
-        "supported": lambda: True,
+        "supported": torch_wheels_available,
     },
     {
         "id": "whisperx",
@@ -108,7 +124,7 @@ FEATURE_REGISTRY: list[dict[str, Any]] = [
         "extra": "whisperx",
         "hint": "Aligned ASR with speaker diarization. uv sync --extra whisperx",
         "detect": _detect_whisperx,
-        "supported": lambda: True,
+        "supported": torch_wheels_available,
     },
     {
         "id": "gender_audio",
@@ -117,7 +133,7 @@ FEATURE_REGISTRY: list[dict[str, Any]] = [
         "extra": "gender",
         "hint": "Wav2Vec2 audio gender for dub casting. uv sync --extra gender",
         "detect": _detect_gender_audio,
-        "supported": lambda: True,
+        "supported": torch_wheels_available,
     },
 ]
 
@@ -125,6 +141,17 @@ FEATURE_REGISTRY: list[dict[str, Any]] = [
 def list_features() -> list[dict[str, Any]]:
     """Return registry entries (without callables), each with live status fields."""
     return [feature_status(item["id"]) for item in FEATURE_REGISTRY]
+
+
+def feature_for_extra(extra: str) -> dict[str, Any] | None:
+    """Status of the feature that owns a uv extra name, if one is registered."""
+    key = (extra or "").strip()
+    if not key:
+        return None
+    for item in FEATURE_REGISTRY:
+        if item["extra"] == key or item["id"] == key:
+            return feature_status(item["id"])
+    return None
 
 
 def _entry(feature_id: str) -> dict[str, Any] | None:
@@ -155,6 +182,7 @@ def feature_status(feature_id: str) -> dict[str, Any]:
         }
     supported = bool(item["supported"]())
     installed = bool(item["detect"]()) if supported else False
+    hint = item["hint"] if supported else _unsupported_reason(item["id"])
     if not supported:
         status = "Unsupported"
     elif installed:
@@ -166,7 +194,7 @@ def feature_status(feature_id: str) -> dict[str, Any]:
         "label": item["label"],
         "category": item["category"],
         "extra": item["extra"],
-        "hint": item["hint"],
+        "hint": hint,
         "installed": installed,
         "supported": supported,
         "status": status,
@@ -251,6 +279,9 @@ def install_uv_extra(extra: str, progress_callback=None) -> dict[str, Any]:
     extra = (extra or "").strip()
     if not extra:
         raise ValueError("Missing uv extra name")
+    for item in FEATURE_REGISTRY:
+        if extra in {item["id"], item["extra"]} and not bool(item["supported"]()):
+            raise RuntimeError(_unsupported_reason(item["id"]))
 
     uv = shutil.which("uv")
     if not uv:

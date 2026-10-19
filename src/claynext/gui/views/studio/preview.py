@@ -52,6 +52,7 @@ class PreviewTools:
         self.overlay.items_changed.connect(self._on_overlays_changed)
         self.overlay.item_edited.connect(self._on_overlay_edited)
         self.overlay.command.connect(self._on_overlay_command)
+        self.overlay.external_drop.connect(self._on_overlay_drop)
         self.overlay.video_clicked.connect(self._select_footage_from_preview)
         self.overlay.video_transform.connect(self._on_video_transform)
         self.preview.canvas_edited.connect(self._on_player_canvas_edited)
@@ -426,6 +427,34 @@ class PreviewTools:
             return
         self.log.info(message)
         self._store_project_session()
+
+    def _on_overlay_drop(self, payload: dict):
+        """A shelf element or file released on the preview lands on the canvas there."""
+        from claynext.gui.components.timeline.helpers import kind_for_path
+
+        x = float(payload.get("x") or 0.5)
+        y = float(payload.get("y") or 0.5)
+        style = payload.get("style")
+        paths = [p for p in (payload.get("paths") or []) if p]
+        target = str(payload.get("target_id") or "")
+        if isinstance(style, dict) and style:
+            placed = dict(style)
+            if str(placed.get("kind") or "") != "transition":
+                placed["x"] = x
+                placed["y"] = y
+            self._add_text_style(placed)
+            return
+        images = [p for p in paths if kind_for_path(p) == "image"]
+        other = [p for p in paths if kind_for_path(p) != "image"]
+        if target and images:
+            self.timeline.replace_overlay_path(target, images[0])
+            images = images[1:]
+        if images:
+            self.timeline.add_images(images, at=(x, y), into_selected=False)
+        if other:
+            self.timeline._on_files_dropped(other, "")
+        if images or target:
+            self._sync_preview_overlays(force=True)
 
     def _on_timeline_drop(self, path: str):
         if not path or not os.path.isfile(path):

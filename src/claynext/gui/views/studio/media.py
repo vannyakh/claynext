@@ -25,6 +25,7 @@ class MediaTools:
         self.media_lib.status_message.connect(self._on_media_status)
         self.media_lib.files_changed.connect(self._on_library_count)
         self.media_lib.localize_requested.connect(self.start_dubbing)
+        self.media_lib.images_added.connect(self._place_image_elements)
         layout.addWidget(self.media_lib, 1)
         return panel
 
@@ -52,14 +53,22 @@ class MediaTools:
     def browse_media(self):
         self.media_lib.browse_add()
 
+    def _place_image_elements(self, paths: list[str]):
+        pictures = [p for p in paths or [] if p and os.path.isfile(p)]
+        if not pictures or not hasattr(self, "timeline"):
+            return
+        self.timeline.add_images(pictures)
+        name = os.path.basename(pictures[-1])
+        self.log.info(f"Image element · {name}" if len(pictures) == 1 else f"Image elements · {len(pictures)}")
+
     def on_file_selected(self, file_path: str):
         if not file_path or not os.path.isfile(file_path):
             self._on_library_deselected()
             return
-        self.store.upsert_media(file_path)
         if os.path.splitext(file_path)[1].lower() in IMAGE_EXTS:
-            self.log.info(f"Image source · {os.path.basename(file_path)}")
+            self._place_image_elements([file_path])
             return
+        self.store.upsert_media(file_path)
         self.store.mark_opened(file_path)
         self.preview_source(file_path)
 
@@ -67,6 +76,7 @@ class MediaTools:
         if not file_path or not os.path.isfile(file_path):
             return
         if os.path.splitext(file_path)[1].lower() in IMAGE_EXTS:
+            self._place_image_elements([file_path])
             return
         self.store.upsert_media(file_path)
         if file_path not in self.media_lib.paths():
@@ -102,12 +112,23 @@ class MediaTools:
         if getattr(self, "_startup_project_path", ""):
             return
         rows = self.store.list_library()
-        paths = [r["path"] for r in rows if os.path.isfile(r["path"])]
+        paths = []
+        dropped_images = False
+        for row in rows:
+            path = row["path"]
+            if not os.path.isfile(path):
+                continue
+            if os.path.splitext(path)[1].lower() in IMAGE_EXTS:
+                dropped_images = True
+                continue
+            paths.append(path)
         last = self.store.last_opened_path()
         self._syncing_library = True
         if paths:
             self.media_lib.set_paths(paths, select=last if last in paths else None, quiet=True)
         self._syncing_library = False
+        if dropped_images:
+            self.store.sync_library(paths)
         if hasattr(self, "_restore_project_session"):
             self._restore_project_session()
 

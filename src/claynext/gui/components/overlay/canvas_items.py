@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QMenu
 
 from claynext.constants.theme_constants import COLOR_TEXT_MAIN
 from claynext.gui.components.overlay.const import HANDLE_KINDS, MEDIA_KINDS
+from claynext.gui.components.render.shape import FRAME_SHAPES
 from claynext.gui.components.overlay.item import OverlayItem, default_item
 from claynext.gui.icons import icon
 
@@ -58,6 +59,9 @@ class CanvasItems:
             action.triggered.connect(lambda *_args, fn=slot: fn())
             return action
 
+        if item.kind in MEDIA_KINDS or (item.kind in {"shape", "mask"} and item.shape in FRAME_SHAPES):
+            act("Replace image", lambda: self.command.emit("replace"), icon_name="image")
+            menu.addSeparator()
         act("Flip Horizontal", lambda: self._toggle_flip(item, "h"), checked=item.flip_h)
         act("Flip Vertical", lambda: self._toggle_flip(item, "v"), checked=item.flip_v)
         menu.addSeparator()

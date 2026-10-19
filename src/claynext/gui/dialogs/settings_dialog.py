@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QCheckBox,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
     QLineEdit, QPushButton, QFileDialog, QTabWidget, QWidget, QSpinBox,
-    QTableWidget, QTableWidgetItem, QHeaderView, QProgressBar, QMessageBox,
+    QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
     QScrollArea, QFrame, QSizePolicy, QAbstractItemView,
 )
 from PySide6.QtCore import Qt, QThreadPool
-from PySide6.QtGui import QColor
 from claynext.utils.config import DEFAULT_CONFIG, MODELS_DIR, OUTPUTS_DIR
+from claynext.gui.components.settings.panel import ModelsPanel
+from claynext.gui.components.settings.toggle import SettingsToggle, bind_toggle_label
 from claynext.gui.icons import icon
 from claynext.gui.worker import Worker
-from claynext.models.hf_hub import get_model_registry, install_model, is_model_downloaded
 from claynext.models.features import (
     DEMUCS_MODELS,
     FEATURE_SETTING_KEYS,
@@ -36,8 +36,6 @@ class SettingsDialog(QDialog):
         self._feature_cards: list[QFrame] = []
         self._feature_controls: dict[str, dict] = {}
         self._feature_installing: str | None = None
-        self._model_installing: str | None = None
-        self._model_buttons: dict[str, QPushButton] = {}
         self.init_ui()
         self._load_from_store()
 
@@ -51,7 +49,9 @@ class SettingsDialog(QDialog):
         self.tabs.addTab(self._build_general_tab(), icon("settings", size=13), "General")
         self.tabs.addTab(self._build_features_tab(), icon("sparkles", size=13), "Features")
         self.tabs.addTab(self._build_api_keys_tab(), icon("lock", size=13), "API Keys")
-        self.tabs.addTab(self._build_models_tab(), icon("cpu", size=13), "Models")
+        self.models_panel = ModelsPanel()
+        self.models_panel.installed.connect(self._populate_features_cards)
+        self.tabs.addTab(self.models_panel, icon("cpu", size=13), "Models")
         self.tabs.addTab(self._build_hardware_paths_tab(), icon("gpu", size=13), "Hardware")
         self.tabs.addTab(self._build_appearance_tab(), icon("shapes", size=13), "Appearance")
         layout.addWidget(self.tabs, 1)
@@ -121,6 +121,33 @@ class SettingsDialog(QDialog):
         return lbl
 
     @staticmethod
+    def _setting_row(label: str, *fields: QWidget, grow: bool = False) -> QWidget:
+        """One settings line: label on the left, control on the right."""
+        row = QWidget()
+        row.setObjectName("settings_row")
+        lay = QHBoxLayout(row)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(12)
+        text = QLabel(label)
+        text.setObjectName("settings_row_label")
+        lay.addWidget(text, 0, Qt.AlignmentFlag.AlignVCenter)
+        if not grow:
+            lay.addStretch(1)
+        for index, field in enumerate(fields):
+            stretch = 1 if grow and index == 0 else 0
+            lay.addWidget(field, stretch, Qt.AlignmentFlag.AlignVCenter)
+        return row
+
+    def _toggle_row(self, label: str, *, checked: bool = False) -> tuple[SettingsToggle, QWidget]:
+        toggle = SettingsToggle()
+        toggle.setChecked(checked)
+        row = self._setting_row(label, toggle)
+        text = row.findChild(QLabel, "settings_row_label")
+        if text is not None:
+            bind_toggle_label(text, toggle)
+        return toggle, row
+
+    @staticmethod
     def _scroll_page() -> tuple[QWidget, QVBoxLayout]:
         page = QWidget()
         outer = QVBoxLayout(page)
@@ -141,23 +168,22 @@ class SettingsDialog(QDialog):
 
     def _build_general_tab(self) -> QWidget:
         page, lay = self._scroll_page()
-        lay.addWidget(self._field_label("Language"))
         self.combo_lang = QComboBox()
         self.combo_lang.setFixedHeight(28)
+        self.combo_lang.setFixedWidth(280)
         self.combo_lang.addItems([
             "English (US)", "Vietnamese (Tiếng Việt)", "Japanese (日本語)", "Chinese (中文)",
         ])
-        lay.addWidget(self.combo_lang)
+        lay.addWidget(self._setting_row("Language", self.combo_lang))
 
         lay.addWidget(self._divider())
 
-        self.chk_updates = QCheckBox("Check for updates on startup")
-        self.chk_auto_open = QCheckBox("Open export folder when complete")
-        self.chk_keep_awake = QCheckBox("Prevent sleep during processing")
-        self.chk_notify = QCheckBox("Show completion notifications")
-        for chk in (self.chk_updates, self.chk_auto_open, self.chk_keep_awake, self.chk_notify):
-            chk.setChecked(True)
-            lay.addWidget(chk)
+        self.chk_updates, updates_row = self._toggle_row("Check for updates on startup", checked=True)
+        self.chk_auto_open, open_row = self._toggle_row("Open export folder when complete", checked=True)
+        self.chk_keep_awake, awake_row = self._toggle_row("Prevent sleep during processing", checked=True)
+        self.chk_notify, notify_row = self._toggle_row("Show completion notifications", checked=True)
+        for row in (updates_row, open_row, awake_row, notify_row):
+            lay.addWidget(row)
         lay.addStretch(1)
         return page
 
@@ -351,43 +377,33 @@ class SettingsDialog(QDialog):
 
         lay.addWidget(self._divider())
 
-        lay.addWidget(self._field_label("Stem separation"))
         self.lbl_stem_status = QLabel()
         self.lbl_stem_status.setObjectName("settings_section_hint")
         self.lbl_stem_status.setWordWrap(True)
-        lay.addWidget(self.lbl_stem_status)
+        self.lbl_stem_status.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        lay.addWidget(self._setting_row("Stem separation", self.lbl_stem_status, grow=True))
 
-        row = QHBoxLayout()
-        row.setSpacing(14)
-        left = QVBoxLayout()
-        left.setSpacing(5)
-        left.addWidget(self._field_label("Mode"))
         self.combo_stem_mode = QComboBox()
         self.combo_stem_mode.setFixedHeight(28)
+        self.combo_stem_mode.setFixedWidth(280)
         self.combo_stem_mode.addItem("Auto — Demucs when installed", "auto")
         self.combo_stem_mode.addItem("Force Demucs", "demucs")
         self.combo_stem_mode.addItem("FFmpeg mid-side only", "ffmpeg")
         self.combo_stem_mode.currentIndexChanged.connect(self._refresh_stem_status_label)
-        left.addWidget(self.combo_stem_mode)
-        row.addLayout(left, 1)
+        lay.addWidget(self._setting_row("Mode", self.combo_stem_mode))
 
-        right = QVBoxLayout()
-        right.setSpacing(5)
-        right.addWidget(self._field_label("Demucs model"))
         self.combo_demucs_model = QComboBox()
         self.combo_demucs_model.setFixedHeight(28)
+        self.combo_demucs_model.setFixedWidth(280)
         for name in DEMUCS_MODELS:
             self.combo_demucs_model.addItem(name, name)
         self.combo_demucs_model.currentIndexChanged.connect(self._refresh_stem_status_label)
-        right.addWidget(self.combo_demucs_model)
-        row.addLayout(right, 1)
-        lay.addLayout(row)
+        lay.addWidget(self._setting_row("Demucs model", self.combo_demucs_model))
 
-        lay.addSpacing(4)
-        self.chk_prefer_whisperx = QCheckBox("Prefer WhisperX for dubbing ASR")
-        self.chk_prefer_voxcpm = QCheckBox("Prefer VoxCPM voices in TTS Studio")
-        lay.addWidget(self.chk_prefer_whisperx)
-        lay.addWidget(self.chk_prefer_voxcpm)
+        self.chk_prefer_whisperx, whisper_row = self._toggle_row("Prefer WhisperX for dubbing ASR")
+        self.chk_prefer_voxcpm, vox_row = self._toggle_row("Prefer VoxCPM voices in TTS Studio")
+        lay.addWidget(whisper_row)
+        lay.addWidget(vox_row)
 
         self._populate_features_cards()
         lay.addStretch(1)
@@ -429,6 +445,7 @@ class SettingsDialog(QDialog):
         tip = (item.get("hint") or "").split(". uv sync")[0].strip()
         if tip:
             title.setToolTip(tip)
+            row.setToolTip(tip)
         lay.addWidget(title, 0, Qt.AlignmentFlag.AlignVCenter)
 
         cat = QLabel(str(item.get("category", "")).upper())
@@ -454,6 +471,8 @@ class SettingsDialog(QDialog):
             pill.setProperty("tone", "missing")
         pill.style().unpolish(pill)
         pill.style().polish(pill)
+        if tip:
+            pill.setToolTip(tip)
         lay.addWidget(pill, 0, Qt.AlignmentFlag.AlignVCenter)
 
         action: QWidget | None = None
@@ -488,6 +507,12 @@ class SettingsDialog(QDialog):
 
     def _install_feature(self, feature_id: str, extra: str, label: str):
         if self._feature_installing:
+            return
+        from claynext.models.features import feature_status
+
+        current = feature_status(feature_id)
+        if not current.get("supported"):
+            QMessageBox.information(self, "Unsupported", current.get("hint") or f"{label} cannot be installed on this Mac.")
             return
         self._feature_installing = feature_id
         self._set_feature_row_progress(feature_id, 0, busy=True)
@@ -564,240 +589,45 @@ class SettingsDialog(QDialog):
             text = "Fallback bed · FFmpeg · install Demucs for AI isolation"
         self.lbl_stem_status.setText(text)
 
-    # ─── Models ──────────────────────────────────────────────────────
-
-    def _build_models_tab(self) -> QWidget:
-        page = QWidget()
-        lay = QVBoxLayout(page)
-        lay.setContentsMargins(14, 12, 14, 12)
-        lay.setSpacing(10)
-
-        top = QHBoxLayout()
-        top.setSpacing(8)
-        top.addWidget(self._field_label("Models"), 0, Qt.AlignmentFlag.AlignVCenter)
-        top.addStretch(1)
-
-        self.combo_model_filter = QComboBox()
-        self.combo_model_filter.setObjectName("settings_filter_combo")
-        self.combo_model_filter.setFixedHeight(26)
-        self.combo_model_filter.addItem("All types", "")
-        self.combo_model_filter.addItem("Translate", "translate")
-        self.combo_model_filter.addItem("TTS", "tts")
-        self.combo_model_filter.addItem("ASR", "asr")
-        self.combo_model_filter.addItem("Audio", "audio")
-        self.combo_model_filter.currentIndexChanged.connect(self._populate_models_table)
-        top.addWidget(self.combo_model_filter, 0, Qt.AlignmentFlag.AlignVCenter)
-        lay.addLayout(top)
-
-        pull_row = QHBoxLayout()
-        pull_row.setSpacing(6)
-        self.edit_custom_repo = QLineEdit()
-        self.edit_custom_repo.setFixedHeight(26)
-        self.edit_custom_repo.setPlaceholderText("owner/repo — e.g. prithivMLmods/Common-Voice-Gender-Detection")
-        self.btn_install_custom = QPushButton("Install")
-        self.btn_install_custom.setObjectName("btn_primary")
-        self.btn_install_custom.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_install_custom.setFixedHeight(26)
-        self.btn_install_custom.setMinimumWidth(92)
-        self.btn_install_custom.clicked.connect(self._pull_custom_repo)
-        pull_row.addWidget(self.edit_custom_repo, 1)
-        pull_row.addWidget(self.btn_install_custom)
-        lay.addLayout(pull_row)
-
-        self.models_table = QTableWidget()
-        self.models_table.setObjectName("settings_models_table")
-        self.models_table.setColumnCount(5)
-        self.models_table.setHorizontalHeaderLabels(["Model", "Type", "Size", "Status", ""])
-        hdr_view = self.models_table.horizontalHeader()
-        hdr_view.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        hdr_view.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        hdr_view.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        hdr_view.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        hdr_view.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self.models_table.setColumnWidth(3, 108)
-        self.models_table.setColumnWidth(4, 104)
-        self.models_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.models_table.setTextElideMode(Qt.TextElideMode.ElideRight)
-        self.models_table.verticalHeader().setVisible(False)
-        self.models_table.verticalHeader().setDefaultSectionSize(40)
-        self.models_table.setShowGrid(False)
-        self.models_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        self.models_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        lay.addWidget(self.models_table, 1)
-
-        self.model_prog_box = QWidget()
-        self.model_prog_box.hide()
-        p_lay = QVBoxLayout(self.model_prog_box)
-        p_lay.setContentsMargins(0, 0, 0, 0)
-        p_lay.setSpacing(4)
-        self.lbl_model_prog = QLabel("Installing model…")
-        self.lbl_model_prog.setObjectName("settings_section_hint")
-        self.lbl_model_prog.setStyleSheet("color: #6366f1; font-weight: 600;")
-        self.bar_model_prog = QProgressBar()
-        self.bar_model_prog.setFixedHeight(5)
-        p_lay.addWidget(self.lbl_model_prog)
-        p_lay.addWidget(self.bar_model_prog)
-        lay.addWidget(self.model_prog_box)
-
-        self._populate_models_table()
-        return page
-
-    def _populate_models_table(self, *_args):
-        filt = ""
-        if hasattr(self, "combo_model_filter"):
-            filt = self.combo_model_filter.currentData() or ""
-        models = get_model_registry()
-        if filt:
-            models = [m for m in models if str(m.get("category", "")).lower() == filt]
-
-        self.models_table.setRowCount(0)
-        self._model_buttons = {}
-        busy = self._model_installing
-        for row, item in enumerate(models):
-            self.models_table.insertRow(row)
-            name = QTableWidgetItem(item["name"])
-            name.setToolTip(item["id"])
-            self.models_table.setItem(row, 0, name)
-
-            cat_item = QTableWidgetItem(str(item.get("category", "")).upper())
-            cat_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.models_table.setItem(row, 1, cat_item)
-
-            size_item = QTableWidgetItem(item.get("size_label", ""))
-            size_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.models_table.setItem(row, 2, size_item)
-
-            repo_id = item["id"]
-            is_down = is_model_downloaded(repo_id)
-            installing = busy == repo_id
-            if installing:
-                status_text, status_color = "Installing", "#6366f1"
-            elif is_down:
-                status_text, status_color = "Downloaded", "#10b981"
-            else:
-                status_text, status_color = "Available", "#64748b"
-            status_item = QTableWidgetItem(status_text)
-            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            status_item.setForeground(QColor(status_color))
-            self.models_table.setItem(row, 3, status_item)
-
-            btn = QPushButton("Ready" if is_down else "Install")
-            btn.setObjectName("settings_model_btn")
-            btn.setProperty("tone", "ready" if is_down else "install")
-            btn.style().unpolish(btn)
-            btn.style().polish(btn)
-            btn.setEnabled((not is_down) and not busy)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setFixedHeight(24)
-            btn.setMinimumWidth(78)
-            if installing:
-                btn.setText("…")
-                btn.setEnabled(False)
-            btn.clicked.connect(lambda _=False, rid=repo_id: self._pull_repo(rid))
-            self._model_buttons[repo_id] = btn
-            wrap = QWidget()
-            wrap_l = QHBoxLayout(wrap)
-            wrap_l.setContentsMargins(6, 6, 8, 6)
-            wrap_l.addStretch(1)
-            wrap_l.addWidget(btn)
-            self.models_table.setCellWidget(row, 4, wrap)
-
-    def _pull_custom_repo(self):
-        repo_id = self.edit_custom_repo.text().strip()
-        if not repo_id:
-            QMessageBox.warning(self, "Missing Repo", "Enter a valid Hugging Face repository ID.")
-            return
-        self._pull_repo(repo_id)
-
-    def _pull_repo(self, repo_id: str):
-        if self._model_installing:
-            return
-        self._model_installing = repo_id
-        self.btn_install_custom.setEnabled(False)
-        self._populate_models_table()
-        self.model_prog_box.show()
-        self.lbl_model_prog.setText(f"Installing {repo_id}…")
-        self.bar_model_prog.setValue(2)
-
-        def _task(progress_callback=None):
-            return install_model(repo_id, progress_callback=progress_callback)
-
-        worker = Worker(_task)
-        worker.signals.progress.connect(self._on_model_pull_progress)
-        worker.signals.result.connect(self._on_model_pull_complete)
-        worker.signals.error.connect(self._on_model_pull_error)
-        self.thread_pool.start(worker)
-
-    def _on_model_pull_progress(self, val: int, msg: str):
-        self.bar_model_prog.setValue(val)
-        self.lbl_model_prog.setText(msg)
-        repo_id = self._model_installing
-        btn = self._model_buttons.get(repo_id or "")
-        if btn is not None:
-            btn.setText(f"{max(0, min(99, int(val)))}%")
-
-    def _on_model_pull_complete(self, _path):
-        self._model_installing = None
-        self.btn_install_custom.setEnabled(True)
-        self.model_prog_box.hide()
-        self._populate_models_table()
-        self._populate_features_cards()
-        QMessageBox.information(self, "Installed", "Model installed into the local cache.")
-
-    def _on_model_pull_error(self, err_msg, stack):
-        self._model_installing = None
-        self.btn_install_custom.setEnabled(True)
-        self.model_prog_box.hide()
-        self._populate_models_table()
-        QMessageBox.critical(self, "Install failed", f"Could not install model:\n{err_msg}")
-
     # ─── Hardware ────────────────────────────────────────────────────
 
     def _build_hardware_paths_tab(self) -> QWidget:
         page, lay = self._scroll_page()
 
-        lay.addWidget(self._field_label("Preferred device"))
         self.combo_device = QComboBox()
         self.combo_device.setFixedHeight(28)
+        self.combo_device.setFixedWidth(280)
         self.combo_device.addItems([
             "CUDA (NVIDIA GPU)", "DirectML (AMD / Intel GPU)", "CPU Threadpool (Fallback)",
         ])
-        lay.addWidget(self.combo_device)
+        lay.addWidget(self._setting_row("Preferred device", self.combo_device))
 
-        lay.addWidget(self._field_label("Worker threads"))
         self.spin_threads = QSpinBox()
         self.spin_threads.setFixedHeight(28)
+        self.spin_threads.setFixedWidth(88)
         self.spin_threads.setRange(1, 16)
         self.spin_threads.setValue(4)
-        lay.addWidget(self.spin_threads)
+        lay.addWidget(self._setting_row("Worker threads", self.spin_threads))
 
         lay.addWidget(self._divider())
 
-        lay.addWidget(self._field_label("Models cache"))
-        models_box = QHBoxLayout()
-        models_box.setSpacing(6)
         self.txt_models_dir = QLineEdit(str(MODELS_DIR))
         self.txt_models_dir.setFixedHeight(28)
         btn_b_models = QPushButton("Browse")
         btn_b_models.setObjectName("btn_secondary")
+        btn_b_models.setFixedHeight(28)
         btn_b_models.setFixedWidth(74)
         btn_b_models.clicked.connect(lambda: self.browse_folder(self.txt_models_dir))
-        models_box.addWidget(self.txt_models_dir, 1)
-        models_box.addWidget(btn_b_models)
-        lay.addLayout(models_box)
+        lay.addWidget(self._setting_row("Models cache", self.txt_models_dir, btn_b_models, grow=True))
 
-        lay.addWidget(self._field_label("Default exports"))
-        outputs_box = QHBoxLayout()
-        outputs_box.setSpacing(6)
         self.txt_outputs_dir = QLineEdit(str(OUTPUTS_DIR))
         self.txt_outputs_dir.setFixedHeight(28)
         btn_b_outputs = QPushButton("Browse")
         btn_b_outputs.setObjectName("btn_secondary")
+        btn_b_outputs.setFixedHeight(28)
         btn_b_outputs.setFixedWidth(74)
         btn_b_outputs.clicked.connect(lambda: self.browse_folder(self.txt_outputs_dir))
-        outputs_box.addWidget(self.txt_outputs_dir, 1)
-        outputs_box.addWidget(btn_b_outputs)
-        lay.addLayout(outputs_box)
+        lay.addWidget(self._setting_row("Default exports", self.txt_outputs_dir, btn_b_outputs, grow=True))
 
         lay.addStretch(1)
         return page
@@ -807,28 +637,27 @@ class SettingsDialog(QDialog):
     def _build_appearance_tab(self) -> QWidget:
         page, lay = self._scroll_page()
 
-        lay.addWidget(self._field_label("Theme"))
         self.combo_theme = QComboBox()
         self.combo_theme.setFixedHeight(28)
+        self.combo_theme.setFixedWidth(280)
         self.combo_theme.addItems(["CamDot Dark Obsidian (Default)", "System Light Mode"])
-        lay.addWidget(self.combo_theme)
+        lay.addWidget(self._setting_row("Theme", self.combo_theme))
 
-        lay.addWidget(self._field_label("Accent"))
         self.combo_accent = QComboBox()
         self.combo_accent.setFixedHeight(28)
+        self.combo_accent.setFixedWidth(280)
         self.combo_accent.addItems([
             "Indigo / Purple (#6366f1)",
             "Emerald Green (#10b981)",
             "Cyan Blue (#06b6d4)",
             "Rose Pink (#f43f5e)",
         ])
-        lay.addWidget(self.combo_accent)
+        lay.addWidget(self._setting_row("Accent", self.combo_accent))
 
         lay.addWidget(self._divider())
 
-        self.chk_anim = QCheckBox("Enable UI micro-animations")
-        self.chk_anim.setChecked(True)
-        lay.addWidget(self.chk_anim)
+        self.chk_anim, anim_row = self._toggle_row("Enable UI micro-animations", checked=True)
+        lay.addWidget(anim_row)
 
         lay.addStretch(1)
         return page

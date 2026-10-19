@@ -23,12 +23,14 @@ class OverlayCanvas(CanvasView, CanvasGeom, CanvasItems, CanvasPaint, CanvasInpu
     video_transform = Signal(dict)
     video_transform_done = Signal()
     view_tool_changed = Signal(str)
+    external_drop = Signal(dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("overlay_canvas")
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMouseTracking(True)
+        self.setAcceptDrops(True)
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.items: list[OverlayItem] = []
         self.selected_id = ""

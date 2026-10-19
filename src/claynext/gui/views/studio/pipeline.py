@@ -530,6 +530,7 @@ class PipelineTools:
             self._focus_script_shelf()
         output = res.get("output_path") or ""
         count = res.get("segments_dubbed", len(segs))
+        chaining = bool(self._dub_queue)
         self._remember_composition(
             output,
             segs,
@@ -539,12 +540,16 @@ class PipelineTools:
             bed=str(res.get("bed_path") or ""),
             dialogue=str(res.get("dialogue_path") or ""),
             duck=True,
+            apply=not chaining,
         )
-        if self.chk_auto_captions.isChecked():
+        if chaining and self.chk_auto_captions.isChecked() and self._compositions:
+            self._compositions[-1]["pending_captions"] = True
+        elif self.chk_auto_captions.isChecked():
             self._ensure_auto_captions(force=True)
         if self.store.get_setting("dub", "export_srt", "0") == "1":
             self._auto_export_srt_on_finish()
-        self._stash_composition()
+        if not chaining:
+            self._stash_composition()
         self._store_project_session()
         if output:
             self.log.success(f"Dubbed {count} line(s) → {os.path.basename(output)}")
@@ -679,6 +684,7 @@ class PipelineTools:
     def _remember_composition(
         self, output: str, segments: list, source: str, language: str, voice: str,
         bed: str = "", dialogue: str = "", duck: bool = False, footage: list | None = None,
+        apply: bool = True,
     ):
         self._stash_composition()
         number = len(self._compositions) + 1
@@ -701,7 +707,8 @@ class PipelineTools:
             self._composition_index,
         )
         self._link_task(self._composition_index, source)
-        self._apply_composition(self._composition_index)
+        if apply:
+            self._apply_composition(self._composition_index)
 
     def _on_composition_changed(self, index: int):
         if index == int(getattr(self, "_composition_index", -1)):
@@ -890,6 +897,9 @@ class PipelineTools:
             else:
                 self.log.info(f"Auto duck · footage at {self.slider_duck.value()}% under {spans} voice span(s)")
         self._restore_composition_graphics(comp, legacy_overlays, legacy_fx, legacy_tracks)
+        if comp.pop("pending_captions", False):
+            self._ensure_auto_captions(force=True)
+            self._stash_composition()
         source = str(comp.get("source") or "")
         if not has_bed and not comp.get("output") and source and os.path.isfile(source):
             self._build_speech_bed(index, source)
@@ -1022,16 +1032,23 @@ class PipelineTools:
         self._sync_timeline_button()
 
     def _on_error(self, err_msg, stack):
-        self._dub_queue = []
-        self._set_busy(False)
         if str(err_msg) == "Dub stopped":
+            self._dub_queue = []
+            self._set_busy(False)
             self._fail_tasks("Stopped", status="cancelled")
             self.log.info("Dub stopped")
             return
-        self._fail_tasks(str(err_msg))
+        self._fail_active_task(str(err_msg))
+        self.log.error(f"Dubbing failed · {err_msg}")
+        if self._dub_queue:
+            self.selected_file = self._dub_queue.pop(0)
+            left = len(self._dub_queue) + 1
+            self.log.info(f"Auto chain next · {os.path.basename(self.selected_file)} · {left} left")
+            self._launch_dub_job()
+            return
+        self._set_busy(False)
         self._store_project_session()
         self._show_error("Dubbing failed", str(err_msg))
-        self.log.error(f"Dubbing failed · {err_msg}")
         if stack:
             self.log.debug(stack.splitlines()[-1])
 

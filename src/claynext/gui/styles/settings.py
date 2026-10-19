@@ -167,6 +167,16 @@ QLabel#settings_field_label {{
     font-size: 10.5px;
     font-weight: 600;
 }}
+QWidget#settings_row {{
+    background: transparent;
+    min-height: 28px;
+}}
+QLabel#settings_row_label {{
+    color: {COLOR_TEXT_MAIN};
+    font-size: 11px;
+    font-weight: 500;
+    background: transparent;
+}}
 
 QWidget#settings_divider_wrap {{
     background: transparent;
@@ -286,7 +296,7 @@ QTableWidget#settings_api_keys_table {{
 }}
 QTableWidget#settings_models_table::item,
 QTableWidget#settings_api_keys_table::item {{
-    padding: 4px 8px;
+    padding: 4px 12px 4px 8px;
     font-size: 11.5px;
     color: {COLOR_TEXT_MAIN};
     border: none;

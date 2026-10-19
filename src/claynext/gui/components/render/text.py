@@ -79,9 +79,21 @@ def burn_metrics(family: str, bold: bool = False, italic: bool = False) -> dict:
     return {"asc": asc, "desc": desc, "line": asc + desc, "win_asc": win_asc, "win_desc": win_desc}
 
 
+def drop_measure_cache() -> None:
+    """Forget measured faces after new font files are registered."""
+    _covering.cache_clear()
+    burn_metrics.cache_clear()
+    _base_path.cache_clear()
+    _wrap.cache_clear()
+
+
 def font_for(family: str, text: str) -> str:
-    """`family` when it supports every script in `text`; otherwise an installed font that does.
-    libass falls back differently from Qt, so naming the font keeps the burn-in the same size as the preview."""
+    """`family` when it can draw `text`; otherwise an installed font that can.
+    A chosen Google Font keeps its name so the burn-in loads that same file."""
+    from claynext.models.google_fonts import is_google_font
+
+    if is_google_font(family):
+        return family
     needed = _scripts(text or "")
     return _covering(family, needed) if needed else family
 

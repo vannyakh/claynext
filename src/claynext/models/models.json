@@ -1,0 +1,237 @@
+{
+  "models": [
+    {
+      "id": "JustFrederik/nllb-200-distilled-600M-ct2-int8",
+      "name": "NLLB-200 (600M INT8 · CTranslate2)",
+      "category": "translate",
+      "size_label": "~620 MB",
+      "description": "200 languages, including Khmer. Fast CPU INT8 offline translation.",
+      "backend": "ctranslate2",
+      "essential_file": "model.bin",
+      "install": "hf"
+    },
+    {
+      "id": "facebook/nllb-200-distilled-600M",
+      "name": "NLLB-200 (600M · Transformers)",
+      "category": "translate",
+      "size_label": "~2.4 GB",
+      "description": "Meta NLLB-200 checkpoint for 200 languages.",
+      "backend": "transformers",
+      "essential_file": "sentencepiece.bpe.model",
+      "install": "hf"
+    },
+    {
+      "id": "KittenML/kitten-tts-nano-0.8-fp32",
+      "name": "Kitten Nano (15M FP32 · Ultra-Fast)",
+      "category": "tts",
+      "size_label": "~60 MB",
+      "description": "15M ONNX speech model with 8 built-in voices. Runs on CPU.",
+      "backend": "kittentts",
+      "essential_file": "config.json",
+      "install": "hf"
+    },
+    {
+      "id": "KittenML/kitten-tts-nano-0.8-int8",
+      "name": "Kitten Nano (15M INT8 · Quantized)",
+      "category": "tts",
+      "size_label": "~25 MB",
+      "description": "Smallest Kitten voice. Low memory.",
+      "backend": "kittentts",
+      "essential_file": "config.json",
+      "install": "hf"
+    },
+    {
+      "id": "KittenML/kitten-tts-micro-0.8",
+      "name": "Kitten Micro (40M · Balanced)",
+      "category": "tts",
+      "size_label": "~160 MB",
+      "description": "40M ONNX speech model. Balance of speed and tone.",
+      "backend": "kittentts",
+      "essential_file": "config.json",
+      "install": "hf"
+    },
+    {
+      "id": "KittenML/kitten-tts-mini-0.8",
+      "name": "Kitten Mini (80M · High Quality)",
+      "category": "tts",
+      "size_label": "~320 MB",
+      "description": "80M ONNX speech model with fuller pitch and tone.",
+      "backend": "kittentts",
+      "essential_file": "config.json",
+      "install": "hf"
+    },
+    {
+      "id": "openbmb/VoxCPM2",
+      "name": "VoxCPM2 (2B · Multilingual 48kHz)",
+      "category": "tts",
+      "size_label": "~4 GB+",
+      "description": "30 languages, voice design and cloning, 48 kHz.",
+      "backend": "voxcpm",
+      "essential_file": "config.json",
+      "install": "hf",
+      "extra": "voxcpm"
+    },
+    {
+      "id": "openbmb/VoxCPM1.5",
+      "name": "VoxCPM1.5 (Balanced · Cloning)",
+      "category": "tts",
+      "size_label": "~2 GB+",
+      "description": "VoxCPM1.5 voice cloning.",
+      "backend": "voxcpm",
+      "essential_file": "config.json",
+      "install": "hf",
+      "extra": "voxcpm"
+    },
+    {
+      "id": "openbmb/VoxCPM-0.5B",
+      "name": "VoxCPM 0.5B (Lighter)",
+      "category": "tts",
+      "size_label": "~1 GB+",
+      "description": "Smaller VoxCPM checkpoint for faster local speech.",
+      "backend": "voxcpm",
+      "essential_file": "config.json",
+      "install": "hf",
+      "extra": "voxcpm"
+    },
+    {
+      "id": "Systran/faster-whisper-tiny",
+      "name": "Whisper Tiny (CTranslate2)",
+      "category": "asr",
+      "size_label": "~75 MB",
+      "description": "Fastest Whisper. Good for a quick pass on CPU.",
+      "backend": "ctranslate2",
+      "essential_file": "model.bin",
+      "install": "hf"
+    },
+    {
+      "id": "Systran/faster-whisper-base",
+      "name": "Whisper Base (CTranslate2)",
+      "category": "asr",
+      "size_label": "~150 MB",
+      "description": "Small step up from Tiny. Still light on an Intel Mac.",
+      "backend": "ctranslate2",
+      "essential_file": "model.bin",
+      "install": "hf"
+    },
+    {
+      "id": "Systran/faster-whisper-small",
+      "name": "Whisper Small (CTranslate2)",
+      "category": "asr",
+      "size_label": "~460 MB",
+      "description": "Balanced Whisper for dialogue and subtitles.",
+      "backend": "ctranslate2",
+      "essential_file": "model.bin",
+      "install": "hf"
+    },
+    {
+      "id": "Systran/faster-whisper-medium",
+      "name": "Whisper Medium (CTranslate2)",
+      "category": "asr",
+      "size_label": "~1.5 GB",
+      "description": "Higher accuracy for multi-speaker speech.",
+      "backend": "ctranslate2",
+      "essential_file": "model.bin",
+      "install": "hf"
+    },
+    {
+      "id": "Systran/faster-whisper-large-v3",
+      "name": "Whisper Large v3 (CTranslate2)",
+      "category": "asr",
+      "size_label": "~3 GB",
+      "description": "Best local Whisper for Khmer and other languages. Heavier on CPU.",
+      "backend": "ctranslate2",
+      "essential_file": "model.bin",
+      "install": "hf"
+    },
+    {
+      "id": "mlx-community/demucs-mlx",
+      "name": "Demucs MLX (Apple Silicon · Stems)",
+      "category": "audio",
+      "size_label": "~160 MB+",
+      "description": "Music and vocal separation on Apple Silicon.",
+      "backend": "demucs-mlx",
+      "essential_file": "htdemucs.safetensors",
+      "install": "hf",
+      "extra": "demucs-mlx"
+    },
+    {
+      "id": "prithivMLmods/Common-Voice-Gender-Detection",
+      "name": "Common-Voice Gender Detection",
+      "category": "asr",
+      "size_label": "~360 MB",
+      "description": "Audio gender classifier for dub casting.",
+      "backend": "transformers",
+      "essential_file": "config.json",
+      "install": "hf",
+      "extra": "gender"
+    },
+    {
+      "id": "qwen2.5:1.5b",
+      "name": "Qwen 2.5 1.5B",
+      "category": "llm",
+      "size_label": "~1 GB",
+      "description": "Light local rewrite model for an Intel Mac.",
+      "backend": "ollama",
+      "install": "ollama",
+      "ollama": "qwen2.5:1.5b"
+    },
+    {
+      "id": "qwen2.5:3b",
+      "name": "Qwen 2.5 3B",
+      "category": "llm",
+      "size_label": "~2 GB",
+      "description": "Small multilingual local model. Fits a laptop.",
+      "backend": "ollama",
+      "install": "ollama",
+      "ollama": "qwen2.5:3b"
+    },
+    {
+      "id": "qwen2.5:7b",
+      "name": "Qwen 2.5 7B",
+      "category": "llm",
+      "size_label": "~4.7 GB",
+      "description": "Default local model for dub rewrites.",
+      "backend": "ollama",
+      "install": "ollama",
+      "ollama": "qwen2.5:7b"
+    },
+    {
+      "id": "llama3.2:3b",
+      "name": "Llama 3.2 3B",
+      "category": "llm",
+      "size_label": "~2 GB",
+      "description": "Compact general local model.",
+      "backend": "ollama",
+      "install": "ollama",
+      "ollama": "llama3.2:3b"
+    },
+    {
+      "id": "aya-expanse:8b",
+      "name": "Aya Expanse 8B",
+      "category": "llm",
+      "size_label": "~5 GB",
+      "description": "Multilingual local model, useful for Khmer and mixed dialogue.",
+      "backend": "ollama",
+      "install": "ollama",
+      "ollama": "aya-expanse:8b"
+    },
+    {
+      "id": "gemini-2.5-flash",
+      "name": "Gemini 2.5 Flash",
+      "category": "llm",
+      "size_label": "Cloud",
+      "description": "Cloud rewrite model. Uses a Gemini API key. Nothing is downloaded.",
+      "backend": "gemini",
+      "install": "cloud"
+    },
+    {
+      "id": "gemini-2.0-flash",
+      "name": "Gemini 2.0 Flash",
+      "category": "llm",
+      "size_label": "Cloud",
+      "description": "Cloud rewrite model. Uses a Gemini API key. Nothing is downloaded.",
+      "backend": "gemini",
+      "install": "cloud"
+    }
+  ]
+}

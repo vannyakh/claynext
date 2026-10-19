@@ -36,7 +36,10 @@ def run_list(args: argparse.Namespace) -> int:
         return 0
     width = max(len(r["label"]) for r in rows)
     for r in rows:
-        print(f"{r['label']:<{width}}  {r['status']:<14}  extra={r.get('extra') or '-'}")
+        line = f"{r['label']:<{width}}  {r['status']:<14}  extra={r.get('extra') or '-'}"
+        if r["status"] == "Unsupported" and r.get("hint"):
+            line += f"  · {r['hint']}"
+        print(line)
     return 0
 
 

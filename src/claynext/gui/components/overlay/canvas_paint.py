@@ -85,9 +85,11 @@ class CanvasPaint:
                 if not item.hidden:
                     p.save()
                     self._apply_flip(p, item, center)
+                    paint_style = dict(style)
+                    paint_style["path"] = item.path
                     paint_shape(
                         p,
-                        style,
+                        paint_style,
                         item.shape,
                         (box.width(), box.height()),
                         center,

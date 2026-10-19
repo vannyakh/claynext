@@ -812,7 +812,7 @@ class TaskTools:
 
     # ── Task model ──────────────────────────────────────────────────────
 
-    def _add_task(self, source: str, status: str = "queued", comp: int = -1) -> dict:
+    def _add_task(self, source: str, status: str = "queued", comp: int = -1, *, refresh: bool = True) -> dict:
         self._task_seq += 1
         task = {
             "id": self._task_seq,
@@ -827,7 +827,8 @@ class TaskTools:
         }
         self._tasks.append(task)
         self._request_task_thumb(source)
-        self._refresh_tasks()
+        if refresh:
+            self._refresh_tasks()
         return task
 
     def _task_by_id(self, task_id: int) -> dict | None:
@@ -835,7 +836,8 @@ class TaskTools:
 
     def _queue_tasks(self, sources: list[str]):
         for source in sources:
-            self._add_task(source)
+            self._add_task(source, refresh=False)
+        self._refresh_tasks()
         if hasattr(self, "shelf"):
             self.shelf.show_key("tasks")
 
@@ -895,6 +897,16 @@ class TaskTools:
             self._refresh_tasks()
             return
         self._add_task(source, status="done", comp=comp_index)
+
+    def _fail_active_task(self, message: str, status: str = "failed"):
+        """Mark only the running movie. The rest of a batch stays queued."""
+        task = self._task_by_id(self._active_task)
+        if task and task["status"] in _ACTIVE:
+            task["status"] = status
+            task["message"] = message
+            task.pop("control", None)
+        self._active_task = -1
+        self._refresh_tasks()
 
     def _fail_tasks(self, message: str, status: str = "failed"):
         task = self._task_by_id(self._active_task)
@@ -1110,7 +1122,16 @@ class TaskTools:
         worker = Worker(_load)
         worker.signals.result.connect(lambda pix, p=path: self._on_task_thumb(p, pix))
         worker.signals.error.connect(lambda *_a, p=path: self._thumb_pending.discard(p))
-        QThreadPool.globalInstance().start(worker)
+        self._task_thumb_pool().start(worker)
+
+    def _task_thumb_pool(self) -> QThreadPool:
+        """Thumbnails stay off the dub pool so a long batch is not stuck behind them."""
+        pool = getattr(self, "_thumb_pool", None)
+        if pool is None:
+            pool = QThreadPool(self)
+            pool.setMaxThreadCount(1)
+            self._thumb_pool = pool
+        return pool
 
     def _on_task_thumb(self, path: str, pix: QPixmap):
         self._thumb_pending.discard(path)

@@ -53,3 +53,22 @@ def kind_for_path(path: str) -> str:
         return "audio"
     return ""
 
+
+def image_frame(path: str, canvas_aspect: float = 16 / 9, max_frac: float = 0.62) -> tuple[float, float]:
+    """Normalized width and height so the element frame matches the picture on the canvas."""
+    from PySide6.QtGui import QImageReader
+
+    aspect = canvas_aspect if canvas_aspect and canvas_aspect > 0 else 16 / 9
+    size = QImageReader(path).size()
+    pw, ph = size.width(), size.height()
+    if pw <= 0 or ph <= 0:
+        return 0.42, 0.42
+    img_aspect = pw / float(ph)
+    if img_aspect >= aspect:
+        width = max_frac
+        height = width * aspect / img_aspect
+    else:
+        height = max_frac
+        width = height * img_aspect / aspect
+    return round(max(0.08, min(0.92, width)), 4), round(max(0.08, min(0.92, height)), 4)
+

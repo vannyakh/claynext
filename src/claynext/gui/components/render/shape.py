@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 import math
+import os
 
 import numpy as np
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
@@ -58,6 +59,16 @@ ELEMENTS: tuple[tuple[str, str, str, tuple[float, float], str], ...] = (
     ("badge", "Badge Ribbon", "callouts", (0.36, 0.36), "Award / label seal badge"),
     ("tag", "Tag Plate", "callouts", (0.42, 0.25), "Price / label tag cutout"),
 
+    # Image frames — drop or replace a picture inside the shape
+    ("frame_square", "Square Frame", "frames", (0.42, 0.42), "Square picture frame"),
+    ("frame_portrait", "Portrait Frame", "frames", (0.34, 0.48), "Tall picture frame"),
+    ("frame_landscape", "Landscape Frame", "frames", (0.52, 0.34), "Wide picture frame"),
+    ("frame_rounded", "Rounded Frame", "frames", (0.44, 0.36), "Rounded picture frame"),
+    ("frame_circle", "Circle Frame", "frames", (0.40, 0.40), "Circular picture frame"),
+    ("frame_arch", "Arch Frame", "frames", (0.36, 0.48), "Arch window picture frame"),
+    ("frame_brush", "Brush Frame", "frames", (0.40, 0.48), "Brush-edge picture frame"),
+    ("frame_torn", "Torn Frame", "frames", (0.38, 0.50), "Torn-edge picture frame"),
+
     # Icons & Symbols
     ("check", "Check Mark", "icons", (0.3, 0.3), "Check verification mark"),
     ("cross", "Cross Mark", "icons", (0.3, 0.3), "Error / cancel cross"),
@@ -66,6 +77,10 @@ ELEMENTS: tuple[tuple[str, str, str, tuple[float, float], str], ...] = (
 )
 
 BLUR_SHAPES = frozenset({"blur_rect", "blur_circle", "frosted_glass", "mosaic", "vignette_blur"})
+FRAME_SHAPES = frozenset({
+    "frame_square", "frame_portrait", "frame_landscape", "frame_rounded",
+    "frame_circle", "frame_arch", "frame_brush", "frame_torn",
+})
 
 # Backwards-compatible aliases for existing imports
 SHAPES: tuple[tuple[str, str], ...] = tuple((k, l) for k, l, *rest in ELEMENTS)
@@ -169,6 +184,34 @@ def _raw(key: str, aspect: float) -> QPainterPath:
         hole = QPainterPath()
         hole.addEllipse(QRectF(-w * 0.32, -h * 0.14, w * 0.12, h * 0.28))
         path = tag_poly.subtracted(hole)
+
+    # Picture frames. shape_path normalizes these onto the element box.
+    elif key in ("frame_square", "frame_portrait", "frame_landscape"):
+        path.addRect(QRectF(-0.5, -0.5, 1.0, 1.0))
+    elif key == "frame_rounded":
+        path.addRoundedRect(QRectF(-0.5, -0.5, 1.0, 1.0), 0.12, 0.12)
+    elif key == "frame_circle":
+        path.addEllipse(QRectF(-0.5, -0.5, 1.0, 1.0))
+    elif key == "frame_arch":
+        path.moveTo(-0.5, 0.5)
+        path.lineTo(-0.5, -0.05)
+        path.cubicTo(-0.5, -0.62, 0.5, -0.62, 0.5, -0.05)
+        path.lineTo(0.5, 0.5)
+        path.closeSubpath()
+    elif key == "frame_brush":
+        path.moveTo(-0.46, -0.40)
+        path.cubicTo(-0.15, -0.62, 0.22, -0.28, 0.50, -0.46)
+        path.cubicTo(0.66, -0.05, 0.36, 0.22, 0.48, 0.50)
+        path.cubicTo(0.05, 0.66, -0.28, 0.34, -0.50, 0.44)
+        path.cubicTo(-0.66, 0.02, -0.32, -0.18, -0.46, -0.40)
+        path.closeSubpath()
+    elif key == "frame_torn":
+        path = _polygon([
+            (-0.42, -0.50), (-0.12, -0.36), (0.14, -0.50), (0.40, -0.34), (0.50, -0.46),
+            (0.38, -0.12), (0.52, 0.16), (0.36, 0.38), (0.48, 0.50),
+            (0.10, 0.38), (-0.16, 0.52), (-0.38, 0.36), (-0.50, 0.46),
+            (-0.36, 0.10), (-0.52, -0.16), (-0.34, -0.34),
+        ])
 
     # Icons & Symbols
     elif key == "check":
@@ -352,7 +395,9 @@ def paint_shape(
             shade.setAlphaF(0.8)
             p.fillPath(path.translated(d, d), shade)
 
-        if key == "dashed_line":
+        if key in FRAME_SHAPES:
+            _paint_frame(p, path, key, w, h, style)
+        elif key == "dashed_line":
             p.setPen(
                 QPen(
                     QColor(style.get("color", "#f8fafc")),
@@ -389,6 +434,36 @@ def paint_shape(
         )
 
     p.restore()
+
+
+def _paint_frame(p: QPainter, path: QPainterPath, key: str, w: float, h: float, style: dict) -> None:
+    """Clip a picture into the frame, or draw an empty drop target."""
+    image_path = str(style.get("path") or "")
+    pix = QPixmap(image_path) if image_path and os.path.isfile(image_path) else QPixmap()
+    if not pix.isNull():
+        p.save()
+        p.setClipPath(path)
+        side_w = max(1, int(math.ceil(w)))
+        side_h = max(1, int(math.ceil(h)))
+        scaled = pix.scaled(
+            side_w,
+            side_h,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        p.drawPixmap(
+            QPointF(-scaled.width() / 2.0, -scaled.height() / 2.0),
+            scaled,
+        )
+        p.restore()
+        weight = 8.0 if key == "frame_brush" else 1.8
+        p.strokePath(path, QPen(QColor("#f8fafc"), weight, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        return
+    p.fillPath(path, QColor(248, 250, 252, 28))
+    p.strokePath(
+        path,
+        QPen(QColor(248, 250, 252, 200), 1.6, Qt.PenStyle.DashLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin),
+    )
 
 
 def shape_drawing(key: str, aspect: float) -> list[list]:
@@ -521,6 +596,35 @@ def element_tile_pixmap(key: str) -> QPixmap:
 
         p.restore()
 
+    elif key in FRAME_SHAPES:
+        bg_grad = QLinearGradient(0, 0, 0, h)
+        bg_grad.setColorAt(0.0, QColor(14, 42, 58))
+        bg_grad.setColorAt(1.0, QColor(8, 28, 40))
+        p.fillPath(card_path, bg_grad)
+
+        base = sample_cinematic_image().copy()
+        bh, bw = base.shape[:2]
+        src_img = QImage(base.data, bw, bh, 3 * bw, QImage.Format.Format_RGB888).copy()
+        ew, eh = shape_size(key)
+        fit = 0.72 * min(w, h) / max(ew, eh)
+        elem_w, elem_h = ew * fit, eh * fit
+        elem_path = QTransform.fromScale(elem_h, elem_h).map(shape_path(key, round(ew / max(eh, 1e-3), 3)))
+        elem_path.translate(w / 2, h / 2)
+        photo = src_img.scaled(
+            max(1, int(elem_w)),
+            max(1, int(elem_h)),
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        p.save()
+        p.setClipPath(elem_path)
+        p.drawImage(
+            QPointF(w / 2 - photo.width() / 2, h / 2 - photo.height() / 2),
+            photo,
+        )
+        p.restore()
+        p.strokePath(elem_path, QPen(QColor(255, 255, 255, 210), 2.0))
+
     else:
         bg_grad = QLinearGradient(0, 0, 0, h)
         bg_grad.setColorAt(0.0, QColor(20, 29, 44))
@@ -574,7 +678,11 @@ def shape_icon(key: str, color: str = "#e7ecf3", side: int = 40) -> QIcon:
     path = QTransform.fromScale(h * fit, h * fit).map(shape_path(key, round(w / h, 3)))
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     p.translate(side / 2, side / 2)
-    if key in BLUR_SHAPES:
+    if key in FRAME_SHAPES:
+        p.setPen(QPen(QColor(color), 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        p.setBrush(QColor(255, 255, 255, 40))
+        p.drawPath(path)
+    elif key in BLUR_SHAPES:
         p.fillPath(path, QColor(99, 102, 241, 140))
         p.strokePath(path, QPen(QColor("#ffffff"), 1.5, Qt.PenStyle.DashLine))
     elif key == "dashed_line":

@@ -47,10 +47,11 @@ class MediaLibraryWidget(LibraryFiles, LibrarySelect, QWidget):
     files_changed = Signal(int)
     status_message = Signal(str)
     localize_requested = Signal()
+    images_added = Signal(list)
 
     AUDIO_EXTS = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg"}
     IMAGE_EXTS = IMAGE_EXTS
-    MEDIA_EXTS = VIDEO_EXTS | AUDIO_EXTS | IMAGE_EXTS
+    MEDIA_EXTS = VIDEO_EXTS | AUDIO_EXTS
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -59,7 +60,7 @@ class MediaLibraryWidget(LibraryFiles, LibrarySelect, QWidget):
         self._paths: list[str] = []
         self._had_selection = False
         self._view_mode = "list"
-        self._filter = "all"  # all | video | audio | image
+        self._filter = "all"  # all | video | audio
         self._query = ""
         self._thumb_pool = QThreadPool.globalInstance()
         self._thumb_signals = _ThumbSignals()
@@ -92,7 +93,7 @@ class MediaLibraryWidget(LibraryFiles, LibrarySelect, QWidget):
         self.btn_add.setObjectName("media_lib_add_btn")
         self.btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_add.setFixedHeight(22)
-        self.btn_add.setToolTip("Import video, audio, or images into the library")
+        self.btn_add.setToolTip("Import video or audio. Images become canvas elements.")
         self.btn_add.clicked.connect(self.browse_add)
         row1.addWidget(self.btn_add, 0, Qt.AlignmentFlag.AlignVCenter)
 
@@ -142,7 +143,7 @@ class MediaLibraryWidget(LibraryFiles, LibrarySelect, QWidget):
         self.filter_group = QButtonGroup(self)
         self.filter_group.setExclusive(True)
         self._filter_buttons: dict[str, QPushButton] = {}
-        for key, label in (("all", "All"), ("video", "Video"), ("audio", "Audio"), ("image", "Images")):
+        for key, label in (("all", "All"), ("video", "Video"), ("audio", "Audio")):
             btn = QPushButton(label)
             btn.setObjectName("media_lib_filter_chip")
             btn.setCheckable(True)
@@ -172,7 +173,7 @@ class MediaLibraryWidget(LibraryFiles, LibrarySelect, QWidget):
         empty_lay.setContentsMargins(16, 20, 16, 20)
         empty_lay.setSpacing(8)
         empty_lay.addStretch(1)
-        self.empty = QLabel("Drop video, audio, or images")
+        self.empty = QLabel("Drop video or audio")
         self.empty.setObjectName("media_lib_empty")
         self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty.setWordWrap(True)
@@ -270,7 +271,7 @@ class MediaLibraryWidget(LibraryFiles, LibrarySelect, QWidget):
         self._filter_actions = {}
         group = QActionGroup(self)
         group.setExclusive(True)
-        for key, label in (("all", "All media"), ("video", "Video only"), ("audio", "Audio only"), ("image", "Images")):
+        for key, label in (("all", "All media"), ("video", "Video only"), ("audio", "Audio only")):
             act = QAction(label, self)
             act.setCheckable(True)
             act.setChecked(key == self._filter)
@@ -286,7 +287,7 @@ class MediaLibraryWidget(LibraryFiles, LibrarySelect, QWidget):
         return menu
 
     def _set_filter(self, key: str):
-        self._filter = key if key in ("all", "video", "audio", "image") else "all"
+        self._filter = key if key in ("all", "video", "audio") else "all"
         for k, act in self._filter_actions.items():
             act.blockSignals(True)
             act.setChecked(k == self._filter)
@@ -314,8 +315,6 @@ class MediaLibraryWidget(LibraryFiles, LibrarySelect, QWidget):
             paths = [p for p in paths if os.path.splitext(p)[1].lower() in VIDEO_EXTS]
         elif self._filter == "audio":
             paths = [p for p in paths if os.path.splitext(p)[1].lower() in self.AUDIO_EXTS]
-        elif self._filter == "image":
-            paths = [p for p in paths if os.path.splitext(p)[1].lower() in IMAGE_EXTS]
         if self._query:
             paths = [p for p in paths if self._query in os.path.basename(p).lower()]
         return paths
@@ -324,10 +323,9 @@ class MediaLibraryWidget(LibraryFiles, LibrarySelect, QWidget):
         n_total = len(self._paths)
         n_video = sum(1 for p in self._paths if os.path.splitext(p)[1].lower() in VIDEO_EXTS)
         n_audio = sum(1 for p in self._paths if os.path.splitext(p)[1].lower() in self.AUDIO_EXTS)
-        n_image = sum(1 for p in self._paths if os.path.splitext(p)[1].lower() in IMAGE_EXTS)
 
-        counts = {"all": n_total, "video": n_video, "audio": n_audio, "image": n_image}
-        labels = {"all": "All", "video": "Video", "audio": "Audio", "image": "Images"}
+        counts = {"all": n_total, "video": n_video, "audio": n_audio}
+        labels = {"all": "All", "video": "Video", "audio": "Audio"}
         for key, btn in self._filter_buttons.items():
             btn.blockSignals(True)
             btn.setText(f"{labels.get(key, key)} ({counts.get(key, 0)})")
@@ -379,7 +377,7 @@ class MediaLibraryWidget(LibraryFiles, LibrarySelect, QWidget):
             if self._paths:
                 self.empty.setText("No matches for this filter")
             else:
-                self.empty.setText("Drop video, audio, or images")
+                self.empty.setText("Drop video or audio")
             self.stack.setCurrentWidget(self.empty_page)
             return
         self.stack.setCurrentWidget(

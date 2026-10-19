@@ -25,7 +25,7 @@ from claynext.constants.theme_constants import COLOR_BORDER, COLOR_PRIMARY, COLO
 from claynext.models.fx import DEFAULT_INTENSITY, EFFECTS, FILTER_LOOKS, apply_fx
 from claynext.models.transitions import DEFAULT_DURATION_MS, DEFAULT_INTENSITY as TR_INTENSITY, TRANSITIONS
 from claynext.gui.components.render.shape import (
-    BLUR_SHAPES, ELEMENTS, SHAPES, element_tile_icon, sample_cinematic_image, shape_size,
+    BLUR_SHAPES, ELEMENTS, FRAME_SHAPES, SHAPES, element_tile_icon, sample_cinematic_image, shape_size,
 )
 from claynext.gui.components.shell.shelf_header import make_shelf_header
 from claynext.gui.components.inspector.styles import TILE, StyleList
@@ -41,6 +41,7 @@ _TEXTS = {
 }
 CATEGORIES_ELEMENTS: list[tuple[str, str]] = [
     ("all", "All"),
+    ("frames", "Frames"),
     ("blur", "Blur & Masks"),
     ("shapes", "Basic"),
     ("arrows", "Arrows"),
@@ -183,6 +184,7 @@ def shelf_items(kind: str) -> list[tuple[str, dict, QIcon, str]]:
             "category": cat,
             "blur_on": is_blur,
             "blur_radius": 24 if is_blur else 20,
+            "frame": key in FRAME_SHAPES,
         }
         out.append((label, style, element_tile_icon(key), hint))
     return out

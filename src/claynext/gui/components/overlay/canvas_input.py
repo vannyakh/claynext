@@ -4,15 +4,62 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
 from PySide6.QtWidgets import QToolTip
 
 from claynext.gui.components.media_preview.const import ZOOM_WHEEL_FACTOR
 from claynext.gui.components.overlay.const import HANDLE_KINDS, MEDIA_KINDS, ROTATE_SNAP, SNAP_PCT
 from claynext.gui.components.overlay.item import OverlayItem
+from claynext.gui.components.inspector.styles import parse_text_style
+from claynext.gui.components.render.shape import FRAME_SHAPES
+from claynext.gui.components.timeline.helpers import has_drop, paths_from_mime
 from claynext.models.canvas import clean_canvas
 from claynext.models.text_style import SCALE_RANGE
 
 class CanvasInput:
+    def _drop_norm(self, pos) -> tuple[float, float]:
+        local = self._to_content(pos)
+        width, height = self._frame_wh()
+        return (
+            max(0.04, min(0.96, local.x() / width)),
+            max(0.04, min(0.96, local.y() / height)),
+        )
+
+    def _drop_target(self, pos: QPoint) -> str:
+        hit = self._item_at(pos)
+        if hit is None:
+            return ""
+        if hit.kind in MEDIA_KINDS or (hit.kind in {"shape", "mask"} and hit.shape in FRAME_SHAPES):
+            return hit.id
+        return ""
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if has_drop(event.mimeData()):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event: QDragMoveEvent):
+        if has_drop(event.mimeData()):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event: QDropEvent):
+        mime = event.mimeData()
+        if not has_drop(mime):
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        x, y = self._drop_norm(event.position())
+        self.external_drop.emit({
+            "style": parse_text_style(mime),
+            "paths": paths_from_mime(mime),
+            "x": x,
+            "y": y,
+            "target_id": self._drop_target(event.position().toPoint()),
+        })
+
     def leaveEvent(self, event):
         if self._tool_hot:
             self._tool_hot = ""
