@@ -127,18 +127,8 @@ class PreviewTools:
         self.btn_player_source = self.player_tabs.button(0)
         self.btn_player_timeline = self.player_tabs.button(1)
         self.player_tabs.changed.connect(self._on_player_mode_clicked)
-        from claynext.gui.components.shell.shelf_header import make_shelf_button
-        self.btn_toggle_zone = make_shelf_button(
-            "Zone", tip="Open the subtitle capture zone in the Inspector", icon_name="aspect", icon_color="#38bdf8",
-        )
-        self.btn_toggle_zone.clicked.connect(self._toggle_preview_capture_zone)
-        lay.addWidget(self.btn_toggle_zone, 0, Qt.AlignmentFlag.AlignVCenter)
-        lay.addSpacing(8)
+        lay.addWidget(self.player_tabs, 0, Qt.AlignmentFlag.AlignVCenter)
         return bar
-
-    def _toggle_preview_capture_zone(self):
-        if hasattr(self, "_open_frame_ocr_scanner"):
-            self._open_frame_ocr_scanner()
 
     def _on_library_deselected(self):
         self._source_preview_path = ""

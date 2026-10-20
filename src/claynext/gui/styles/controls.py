@@ -349,8 +349,10 @@ QHeaderView::section {{
     color: {COLOR_TEXT_MUTED};
     font-size: 11px;
     font-weight: 400;
-    min-width: 22px;
-    padding: 0 2px 0 6px;
+    min-width: 0;
+    max-width: 160px;
+    padding: 0;
+    margin: 0;
     background: transparent;
     border: none;
 }}

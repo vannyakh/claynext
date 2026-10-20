@@ -949,6 +949,35 @@ QToolButton#shelf_header_btn::menu-indicator {{
     height: 0;
 }}
 
+/* Vertical rule between AI tools and import/export */
+#shelf_header_divider {{
+    background-color: #2a3a4f;
+    border: none;
+    margin: 0 2px;
+    min-width: 1px;
+    max-width: 1px;
+}}
+
+/* AI tools — Translate / Frame OCR accent pills */
+QToolButton#shelf_header_btn[role="ai"],
+QPushButton#shelf_header_btn[role="ai"] {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #15261f, stop:1 #101c18);
+    border-color: #1f3d32;
+    color: #d1e7dd;
+}}
+QToolButton#shelf_header_btn[role="ai"]:hover,
+QPushButton#shelf_header_btn[role="ai"]:hover {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1c3429, stop:1 #14241e);
+    border-color: #2f6b55;
+    color: #ffffff;
+}}
+QToolButton#shelf_header_btn[role="ai"]:disabled,
+QPushButton#shelf_header_btn[role="ai"]:disabled {{
+    color: #4b5a6c;
+    background: rgba(14, 20, 29, 0.6);
+    border-color: #1a2533;
+}}
+
 /* Primary action — Export CTA */
 QToolButton#shelf_header_btn[role="primary"],
 QPushButton#shelf_header_btn[role="primary"] {{

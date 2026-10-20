@@ -192,7 +192,6 @@ class StudioView(
             min_width=PANEL_MIN_W, max_width=PANEL_MAX_W,
         )
         self.workspace.split("shelf", "preview", Qt.Orientation.Horizontal)
-        self.workspace.set_header_widget("preview", self.player_header)
         self.workspace.add_panel(
             "props", "Properties", properties_panel, Qt.DockWidgetArea.TopDockWidgetArea,
             min_width=PROPS_MIN_W, max_width=PROPS_MAX_W,

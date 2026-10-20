@@ -6,10 +6,11 @@ import io
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
-    QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QProgressBar, QPushButton,
-    QSlider, QVBoxLayout, QWidget,
+    QComboBox, QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton,
+    QSizePolicy, QVBoxLayout, QWidget,
 )
 
+from claynext.gui.components.controls.scrub_spin import ScrubSpinBox
 from claynext.gui.worker import Worker
 from claynext.models.ocr_service import OCREngine
 
@@ -41,27 +42,17 @@ class FrameOcrPanel(QWidget):
         self.crop_display.setMaximumHeight(84)
         root.addWidget(self.crop_display)
 
-        hint = QLabel("Drag the box on the preview over the captions.")
-        hint.setObjectName("ocr_status")
-        hint.setWordWrap(True)
-        root.addWidget(hint)
+        self.spin_x = self._zone_spin("X ", 0, 90, self._roi["x"])
+        self.spin_y = self._zone_spin("Y ", 0, 95, self._roi["y"])
+        xy = QHBoxLayout()
+        xy.setContentsMargins(0, 3, 0, 3)
+        xy.setSpacing(8)
+        xy.addWidget(self.spin_x, 1)
+        xy.addWidget(self.spin_y, 1)
+        root.addLayout(xy)
 
-        self.btn_toggle_preview = QPushButton("Hide")
-        self.btn_toggle_preview.setCheckable(True)
-        self.btn_toggle_preview.setChecked(True)
-        self.btn_toggle_preview.setObjectName("prop_modify_btn")
-        self.btn_toggle_preview.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_toggle_preview.clicked.connect(self._toggle_overlay_visibility)
-        root.addWidget(self._field_row("Overlay", self.btn_toggle_preview))
-
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(2)
-        self.slider_y, self.lbl_y_val = self._slider_row(grid, 0, "Y", 0, 95, self._roi["y"])
-        self.slider_h, self.lbl_h_val = self._slider_row(grid, 1, "Height", 4, 50, self._roi["h"])
-        self.slider_x, self.lbl_x_val = self._slider_row(grid, 2, "X", 0, 90, self._roi["x"])
-        self.slider_w, self.lbl_w_val = self._slider_row(grid, 3, "Width", 10, 100, self._roi["w"])
-        root.addLayout(grid)
+        self.spin_h = self._spin_row(root, "Height", 4, 50, self._roi["h"])
+        self.spin_w = self._spin_row(root, "Width", 10, 100, self._roi["w"])
 
         presets = QHBoxLayout()
         presets.setSpacing(4)
@@ -105,20 +96,7 @@ class FrameOcrPanel(QWidget):
         ])
         root.addWidget(self._field_row("Language", self.combo_lang))
 
-        self.slider_conf = QSlider(Qt.Orientation.Horizontal)
-        self.slider_conf.setRange(20, 90)
-        self.slider_conf.setValue(50)
-        self.lbl_conf = QLabel("50%")
-        self.lbl_conf.setObjectName("prop_val")
-        self.lbl_conf.setFixedWidth(36)
-        self.slider_conf.valueChanged.connect(lambda v: self.lbl_conf.setText(f"{v}%"))
-        conf = QWidget()
-        conf_lay = QHBoxLayout(conf)
-        conf_lay.setContentsMargins(0, 0, 0, 0)
-        conf_lay.setSpacing(6)
-        conf_lay.addWidget(self.slider_conf, 1)
-        conf_lay.addWidget(self.lbl_conf)
-        root.addWidget(self._field_row("Confidence", conf))
+        self.spin_conf = self._spin_row(root, "Confidence", 20, 90, 0.50, live=False)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setFixedHeight(4)
@@ -148,7 +126,7 @@ class FrameOcrPanel(QWidget):
         root.addLayout(foot)
         root.addStretch(1)
 
-    def _field_row(self, title: str, widget: QWidget) -> QWidget:
+    def _field_row(self, title: str, widget: QWidget, *, stretch: bool = True) -> QWidget:
         row = QWidget()
         row.setObjectName("prop_row")
         lay = QHBoxLayout(row)
@@ -156,24 +134,36 @@ class FrameOcrPanel(QWidget):
         lay.setSpacing(8)
         label = QLabel(title)
         label.setObjectName("prop_key")
-        lay.addWidget(label, 0, Qt.AlignmentFlag.AlignVCenter)
-        lay.addWidget(widget, 1)
+        lay.addWidget(label, 1 if not stretch else 0, Qt.AlignmentFlag.AlignVCenter)
+        lay.addWidget(widget, 1 if stretch else 0, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
         return row
 
-    def _slider_row(self, grid: QGridLayout, row: int, title: str, low: int, high: int, value: float):
-        label = QLabel(title)
-        label.setObjectName("prop_key")
-        slider = QSlider(Qt.Orientation.Horizontal)
-        slider.setRange(low, high)
-        slider.setValue(int(value * 100))
-        slider.valueChanged.connect(self._on_sliders_changed)
-        readout = QLabel(f"{slider.value()}%")
-        readout.setObjectName("prop_val")
-        readout.setFixedWidth(36)
-        grid.addWidget(label, row, 0)
-        grid.addWidget(slider, row, 1)
-        grid.addWidget(readout, row, 2)
-        return slider, readout
+    def _zone_spin(self, prefix: str, low: int, high: int, value: float) -> ScrubSpinBox:
+        spin = ScrubSpinBox()
+        spin.setRange(low, high)
+        spin.setPrefix(prefix)
+        spin.setSuffix("%")
+        spin.setMinimumWidth(88)
+        spin.setMaximumWidth(16777215)
+        spin.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        spin.setValue(int(round(value * 100)))
+        spin.setToolTip("Drag up/down to scrub · click to type · ▲▼ to step")
+        spin.valueChanged.connect(self._on_zone_changed)
+        return spin
+
+    def _spin_row(
+        self, layout: QVBoxLayout, title: str, low: int, high: int, value: float, *, live: bool = True,
+    ) -> ScrubSpinBox:
+        spin = ScrubSpinBox()
+        spin.setRange(low, high)
+        spin.setSuffix("%")
+        spin.setFixedWidth(78)
+        spin.setValue(int(round(value * 100)))
+        spin.setToolTip("Drag up/down to scrub · click to type · ▲▼ to step")
+        if live:
+            spin.valueChanged.connect(self._on_zone_changed)
+        layout.addWidget(self._field_row(title, spin, stretch=False))
+        return spin
 
     def set_active(self, active: bool):
         """Show or hide the capture box when this Inspector page opens or closes."""
@@ -184,10 +174,9 @@ class FrameOcrPanel(QWidget):
                 zone = overlay.get_capture_zone()
                 if isinstance(zone, dict) and zone:
                     self._roi = dict(zone)
-                    self._write_sliders()
+                    self._write_zone()
             self._bind_overlay()
-        show = active and self.btn_toggle_preview.isChecked()
-        self._sync_to_overlay(active=show)
+        self._sync_to_overlay(active=active)
         if active:
             self._schedule_crop()
 
@@ -204,51 +193,41 @@ class FrameOcrPanel(QWidget):
         if overlay and hasattr(overlay, "set_capture_zone"):
             overlay.set_capture_zone(self._roi, active=active)
 
-    def _toggle_overlay_visibility(self):
-        show = self.btn_toggle_preview.isChecked() and self._page_open
-        self.btn_toggle_preview.setText("Hide" if self.btn_toggle_preview.isChecked() else "Show")
-        self._sync_to_overlay(active=show)
-
-    def _write_sliders(self):
+    def _write_zone(self):
         pairs = (
-            (self.slider_x, self.lbl_x_val, "x", 0.05),
-            (self.slider_y, self.lbl_y_val, "y", 0.72),
-            (self.slider_w, self.lbl_w_val, "w", 0.90),
-            (self.slider_h, self.lbl_h_val, "h", 0.20),
+            (self.spin_x, "x", 0.05),
+            (self.spin_y, "y", 0.72),
+            (self.spin_w, "w", 0.90),
+            (self.spin_h, "h", 0.20),
         )
-        for slider, label, key, default in pairs:
-            slider.blockSignals(True)
-            slider.setValue(int(float(self._roi.get(key, default)) * 100))
-            label.setText(f"{slider.value()}%")
-            slider.blockSignals(False)
+        for spin, key, default in pairs:
+            spin.blockSignals(True)
+            spin.setValue(int(round(float(self._roi.get(key, default)) * 100)))
+            spin.blockSignals(False)
 
     def _on_overlay_zone_changed(self, roi: dict):
         if not roi or not self._page_open:
             return
         self._roi = dict(roi)
-        self._write_sliders()
+        self._write_zone()
         self._schedule_crop()
 
-    def _on_sliders_changed(self):
+    def _on_zone_changed(self, _value: int = 0):
         self._roi = {
-            "x": self.slider_x.value() / 100.0,
-            "y": self.slider_y.value() / 100.0,
-            "w": self.slider_w.value() / 100.0,
-            "h": self.slider_h.value() / 100.0,
+            "x": self.spin_x.value() / 100.0,
+            "y": self.spin_y.value() / 100.0,
+            "w": self.spin_w.value() / 100.0,
+            "h": self.spin_h.value() / 100.0,
         }
-        self.lbl_x_val.setText(f"{self.slider_x.value()}%")
-        self.lbl_y_val.setText(f"{self.slider_y.value()}%")
-        self.lbl_w_val.setText(f"{self.slider_w.value()}%")
-        self.lbl_h_val.setText(f"{self.slider_h.value()}%")
         if self._page_open:
-            self._sync_to_overlay(active=self.btn_toggle_preview.isChecked())
+            self._sync_to_overlay(active=True)
             self._schedule_crop()
 
     def _apply_preset(self, x: float, y: float, w: float, h: float):
-        self.slider_x.setValue(int(x * 100))
-        self.slider_y.setValue(int(y * 100))
-        self.slider_w.setValue(int(w * 100))
-        self.slider_h.setValue(int(h * 100))
+        self.spin_x.setValue(int(x * 100))
+        self.spin_y.setValue(int(y * 100))
+        self.spin_w.setValue(int(w * 100))
+        self.spin_h.setValue(int(h * 100))
 
     def _schedule_crop(self):
         self._crop_timer.start(160)
@@ -282,7 +261,7 @@ class FrameOcrPanel(QWidget):
             self.status_lbl.setText("Open a video first.")
             return
         interval = float(self.combo_interval.currentData() or 0.40)
-        min_conf = self.slider_conf.value() / 100.0
+        min_conf = self.spin_conf.value() / 100.0
         lang = self.combo_lang.currentText()
         self.btn_scan.setEnabled(False)
         self.progress_bar.setValue(0)

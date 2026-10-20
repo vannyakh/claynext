@@ -15,7 +15,12 @@ from PySide6.QtWidgets import (
 
 from claynext.gui.icons import icon
 from claynext.gui.components.controls.fields import SearchField, SelectField
-from claynext.gui.components.shell.shelf_header import make_shelf_button, make_shelf_header
+from claynext.gui.components.shell.shelf_header import (
+    make_shelf_button,
+    make_shelf_divider,
+    make_shelf_header,
+    set_shelf_button_density,
+)
 from claynext.gui.components.controls.spinner import Spinner
 from claynext.gui.components.controls.table_fit import fit_or_scroll
 from claynext.models.dubbing_service import timestamp_to_sec
@@ -177,15 +182,39 @@ class ScriptPanelTools:
             return
 
     def _build_script_header(self) -> QWidget:
-        """Shelf title strip: count, import/export, regenerate, more."""
+        """Shelf title strip: count beside title, grouped AI / IO tools, overflow."""
         self.lbl_script_count = QLabel("")
         self.lbl_script_count.setObjectName("transcript_count")
         self.lbl_script_count.setAlignment(
-            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
         )
 
+        self.btn_script_translate = make_shelf_button(
+            "Translate",
+            short="AI",
+            tip="✨ Translate transcript lines with AI (fast, direct, no heavy jobs)",
+            icon_name="globe",
+            icon_color="#10b981",
+        )
+        self.btn_script_translate.setProperty("role", "ai")
+        self.btn_script_translate.setEnabled(False)
+        self.btn_script_translate.clicked.connect(lambda: self._translate_transcript_direct())
+
+        self.btn_frame_capture = make_shelf_button(
+            "Frame OCR",
+            short="OCR",
+            tip="✨ Frame OCR: Auto-detect subtitles from video frames with custom capture zone",
+            icon_name="video",
+            icon_color="#38bdf8",
+        )
+        self.btn_frame_capture.setProperty("role", "ai")
+        self.btn_frame_capture.clicked.connect(self._open_frame_ocr_scanner)
+
         self.btn_script_import = make_shelf_button(
-            "Import", tip="Load script · SRT, VTT, or JSON", icon_name="folder", menu=True,
+            "Import",
+            tip="Load script · SRT, VTT, or JSON",
+            icon_name="folder",
+            menu=True,
         )
         import_menu = QMenu(self.btn_script_import)
         import_menu.setObjectName("media_lib_menu")
@@ -199,7 +228,10 @@ class ScriptPanelTools:
         self.btn_script_import.setMenu(import_menu)
 
         self.btn_script_export = make_shelf_button(
-            "Export", tip="Export script · SRT, VTT, or JSON", icon_name="download", menu=True,
+            "Export",
+            tip="Export script · SRT, VTT, or JSON",
+            icon_name="download",
+            menu=True,
         )
         self.btn_script_export.setEnabled(False)
         export_menu = QMenu(self.btn_script_export)
@@ -246,26 +278,19 @@ class ScriptPanelTools:
         actions_menu.setToolTipsVisible(True)
         self._script_actions_menu = actions_menu
         self.btn_script_actions.setMenu(actions_menu)
-        self.btn_frame_capture = make_shelf_button(
-            "Frame OCR", tip="✨ Frame OCR: Auto-detect subtitles from video frames with custom capture zone", icon_name="video", icon_color="#38bdf8",
-        )
-        self.btn_frame_capture.clicked.connect(self._open_frame_ocr_scanner)
 
-        self.btn_script_translate = make_shelf_button(
-            "Translate", tip="✨ Translate transcript lines with AI (fast, direct, no heavy jobs)", icon_name="globe", icon_color="#10b981",
-        )
-        self.btn_script_translate.setEnabled(False)
-        self.btn_script_translate.clicked.connect(lambda: self._translate_transcript_direct())
+        self._script_tools_divider = make_shelf_divider()
 
         self.script_header = make_shelf_header(
             "Script",
-            self.lbl_script_count,
             self.btn_script_translate,
             self.btn_frame_capture,
+            self._script_tools_divider,
             self.btn_script_import,
             self.btn_script_export,
             self.btn_script_regen,
             self.btn_script_actions,
+            meta=self.lbl_script_count,
         )
         return self.script_header
 
@@ -466,32 +491,50 @@ class ScriptPanelTools:
     def _sync_script_panel_layout(self, width: int):
         """Compact header / filters / columns when the script shelf is narrow."""
         w = max(0, int(width or 0))
-        compact = w < 420
-        tight = w < 340
-        if self._script_compact == (compact, tight, w // 40):
+        # Progressive density: full → short AI labels → icon IO → all icons.
+        if w >= 560:
+            density = "wide"
+        elif w >= 460:
+            density = "cozy"
+        elif w >= 380:
+            density = "compact"
+        else:
+            density = "tight"
+        bucket = (density, w // 48)
+        if self._script_compact == bucket:
             return
-        self._script_compact = (compact, tight, w // 40)
+        self._script_compact = bucket
 
-        for btn, label in (
-            (getattr(self, "btn_script_import", None), "Import"),
-            (getattr(self, "btn_script_export", None), "Export"),
-        ):
-            if isinstance(btn, QToolButton):
-                if compact:
-                    btn.setText("")
-                    btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-                    btn.setProperty("icon_only", "true")
-                    btn.setFixedSize(24, 24)
-                else:
-                    btn.setText(label)
-                    btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-                    btn.setProperty("icon_only", "false")
-                    btn.setFixedHeight(24)
-                    btn.setMinimumWidth(0)
-                    btn.setMaximumWidth(16777215)
-                    btn.setMinimumWidth(max(56, btn.sizeHint().width()))
-                btn.style().unpolish(btn)
-                btn.style().polish(btn)
+        ai_mode = {
+            "wide": "full",
+            "cozy": "short",
+            "compact": "short",
+            "tight": "icon",
+        }[density]
+        io_mode = {
+            "wide": "full",
+            "cozy": "full",
+            "compact": "icon",
+            "tight": "icon",
+        }[density]
+
+        set_shelf_button_density(getattr(self, "btn_script_translate", None), ai_mode)
+        set_shelf_button_density(getattr(self, "btn_frame_capture", None), ai_mode)
+        set_shelf_button_density(getattr(self, "btn_script_import", None), io_mode)
+        set_shelf_button_density(getattr(self, "btn_script_export", None), io_mode)
+
+        divider = getattr(self, "_script_tools_divider", None)
+        if divider is not None:
+            divider.setVisible(density != "tight")
+
+        count = getattr(self, "lbl_script_count", None)
+        if count is not None:
+            # Keep meta readable beside the title; hide only when extremely narrow.
+            count.setVisible(density != "tight" or w >= 300)
+            count.setMaximumWidth(160 if density == "wide" else (110 if density == "cozy" else 72))
+
+        tight = density == "tight"
+        compact = density in ("compact", "tight")
 
         if hasattr(self, "script_search"):
             self.script_search.setMinimumWidth(72 if tight else 96)
