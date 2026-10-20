@@ -14,7 +14,7 @@ pub use decoder::{
 pub use demux::extract_audio_wav;
 pub use demuxer::{extract_stream_copy, StreamSelector};
 pub use encoder::{
-    extract_still_image, is_encoder_available, run_export_job, AudioEncoderConfig, ExportJob,
+    extract_crop_image, extract_still_image, is_encoder_available, run_export_job, AudioEncoderConfig, ExportJob,
     VideoEncoderConfig,
 };
 pub use error::{FfmpegError, Result};

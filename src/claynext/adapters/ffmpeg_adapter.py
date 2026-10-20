@@ -92,6 +92,28 @@ class FFmpegAdapter:
         return probe_duration(file_path)
 
     @staticmethod
+    def extract_crop(
+        file_path: str | Path,
+        output_path: str | Path,
+        *,
+        timestamp_secs: float = 0.0,
+        x: float = 0.0,
+        y: float = 0.72,
+        w: float = 1.0,
+        h: float = 0.2,
+    ) -> bool:
+        """Playhead crop via claynext-ffmpeg."""
+        return RustFfmpegAdapter.extract_crop(
+            file_path,
+            output_path,
+            timestamp_secs=timestamp_secs,
+            x=x,
+            y=y,
+            w=w,
+            h=h,
+        )
+
+    @staticmethod
     def extract_still(
         file_path: str | Path,
         output_path: str | Path,

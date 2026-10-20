@@ -62,6 +62,7 @@ moves to Rust** (`backends/`, `crates/`), invoked through **Adapters**.
 | `parse-expression-tags` | TTS cue parsing |
 | `chunk-subtitles` | Batch packing |
 | `filter-ocr` | Confidence filter |
+| `scan-captions` | Burned-in caption scan: sample the capture zone, read each crop, stitch timed lines |
 | `llm-parse-retry` / `llm-acquire` / `llm-soonest-cooldown` | Key pool |
 
 ### `claynext-ffmpeg` (`backends/ffmpeg`)
@@ -70,6 +71,7 @@ moves to Rust** (`backends/`, `crates/`), invoked through **Adapters**.
 |:---|:---|
 | `probe` | Media metadata |
 | `extract-still` | Thumbnails / posters |
+| `extract-crop` | Accurate playhead crop of a normalized capture zone |
 | `decode-audio` | PCM f32 (+ optional `.f32` out path) |
 | `demux-audio` | Extract PCM WAV (sample rate / channels) |
 | `export` / `mux` | Transcode / mux |
@@ -127,6 +129,8 @@ RustAiAdapter.estimate_speech_quota(...)
 - High-level pipeline orchestration and JobControl  
 
 Move **formulas, filters, packing, timing, probe/decode** to Rust as you touch them.
+
+Frame OCR is the same split: the Inspector page is Python only. Sampling the zone, reading crops, and stitching lines is `claynext-ai scan-captions` through `get_ai_adapter().scan_burned_captions`. The playhead crop is `claynext-ffmpeg extract-crop` through `get_ffmpeg_adapter().extract_crop`. Do not put that loop back in the GUI or in `ocr_service` except as the fallback when the binary is missing.
 
 ---
 

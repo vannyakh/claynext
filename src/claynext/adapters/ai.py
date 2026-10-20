@@ -45,6 +45,30 @@ class AiAdapter:
     ) -> list[dict[str, Any]]:
         return RustAiAdapter.filter_ocr(boxes, min_confidence=min_confidence)
 
+    def scan_burned_captions(
+        self,
+        video_path: str,
+        roi: dict[str, Any],
+        *,
+        sample_interval: float = 0.4,
+        start_sec: float = 0.0,
+        end_sec: float = 0.0,
+        min_confidence: float = 0.5,
+        lang: str = "Auto",
+        progress_callback=None,
+    ) -> list[dict[str, Any]] | None:
+        """Timed burned-in captions. None when the Rust tool cannot run."""
+        return RustAiAdapter.scan_burned_captions(
+            video_path,
+            roi,
+            sample_interval=sample_interval,
+            start_sec=start_sec,
+            end_sec=end_sec,
+            min_confidence=min_confidence,
+            lang=lang,
+            progress_callback=progress_callback,
+        )
+
     def vad_chunk(
         self,
         media_path: str | Path | None = None,

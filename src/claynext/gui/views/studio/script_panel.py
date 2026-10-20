@@ -980,12 +980,6 @@ class ScriptPanelTools:
             self.btn_empty_retry.setVisible(False)
 
     def _open_frame_ocr_scanner(self):
-        from claynext.gui.views.studio.frame_ocr_dialog import FrameOcrDialog
-        dlg = getattr(self, "_frame_ocr_dlg", None)
-        if dlg is None or not dlg.isVisible():
-            dlg = FrameOcrDialog(self, parent=self)
-            self._frame_ocr_dlg = dlg
-        dlg.show()
-        dlg.raise_()
-        dlg.activateWindow()
+        if hasattr(self, "_show_ocr_page"):
+            self._show_ocr_page()
 

@@ -1,5 +1,5 @@
 use claynext_ffmpeg::{
-    decode_audio_pcm_f32, extract_audio_wav, extract_frame_rgba, extract_still_image,
+    decode_audio_pcm_f32, extract_audio_wav, extract_crop_image, extract_frame_rgba, extract_still_image,
     is_encoder_available, mux_video_audio_progress, probe_media_file, run_export_job,
     AudioEncoderConfig, ExportJob, FfmpegProgress, MuxOptions, SeekMode, VideoEncoderConfig,
 };
@@ -98,6 +98,30 @@ fn main() {
             } else {
                 eprintln!(
                     "Usage: claynext-ffmpeg extract-frame <video_file> <timestamp_secs> [width] [height]"
+                );
+                std::process::exit(1);
+            }
+        }
+        "extract-crop" => {
+            // claynext-ffmpeg extract-crop <input> <output> <timestamp> <x> <y> <w> <h>
+            if args.len() >= 9 {
+                let input = Path::new(&args[2]);
+                let output = Path::new(&args[3]);
+                let ts = args.get(4).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+                let x = args.get(5).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
+                let y = args.get(6).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.72);
+                let w = args.get(7).and_then(|s| s.parse::<f64>().ok()).unwrap_or(1.0);
+                let h = args.get(8).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.2);
+                match extract_crop_image(input, output, ts, x, y, w, h) {
+                    Ok(_) => println!("Wrote crop: {}", output.display()),
+                    Err(e) => {
+                        eprintln!("Crop extraction error: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            } else {
+                eprintln!(
+                    "Usage: claynext-ffmpeg extract-crop <input> <output> <timestamp> <x> <y> <w> <h>"
                 );
                 std::process::exit(1);
             }
@@ -318,7 +342,7 @@ fn main() {
         _ => {
             eprintln!("Claynext FFmpeg CLI Tool");
             eprintln!(
-                "Commands: probe, extract-frame, extract-still, decode-audio, demux-audio, \
+                "Commands: probe, extract-frame, extract-crop, extract-still, decode-audio, demux-audio, \
                  export, check-encoder, mux"
             );
             std::process::exit(1);

@@ -75,7 +75,7 @@ Models and GUI **must not** import `rust_bridge` directly. Put new core algorith
 - For Qt playback, use safe AAC-LC / H.264 proxies through media adapters (`ensure_playback_file`, `ensure_proxy_render`).
 
 ### Rule 5: Rust Core Before Python Hot Paths
-- Timing, speech quota, dub/translate prompts, VAD, OCR filter, tempo align, ducking math, media probe/decode belong in **Rust** (`backends/` / `crates/`).
+- Timing, speech quota, dub/translate prompts, VAD, OCR filter, burned-in caption scan (`scan-captions`, `extract-crop`), tempo align, ducking math, media probe/decode belong in **Rust** (`backends/` / `crates/`). The Zone Tracker inspector is GUI only.
 - Wire tools through **domain Adapters** (`get_ai_adapter`, `get_dubbing_adapter`, `get_ffmpeg_adapter`, …).
 - Keep Python fallbacks so Studio runs without built binaries; do not crash the GUI.
 

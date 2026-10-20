@@ -19,6 +19,7 @@ from claynext.gui.dialogs.project_settings_dialog import ProjectInfoPage
 _PROPS_PAGE = 0
 _PROJECT_PAGE = 1
 _CAPTION_PAGE = 2
+_OCR_PAGE = 3
 _PAGE_MIN_W = 240
 
 
@@ -84,6 +85,11 @@ class InspectorTools:
         # Captions Look / Motion / Layout — shown when a Caption track is selected.
         self.prop_stack.addWidget(self._build_caption_body())
 
+        from claynext.gui.views.studio.frame_ocr import FrameOcrPanel
+
+        self.frame_ocr = FrameOcrPanel(self)
+        self.prop_stack.addWidget(self._scroll_page(self.frame_ocr))
+
         self.project_info.show_empty()
         self.prop_stack.setCurrentIndex(_PROJECT_PAGE)
         outer.addWidget(self.prop_stack, 1)
@@ -137,6 +143,10 @@ class InspectorTools:
             title = "Captions"
             if hasattr(self, "_props_tabs_host"):
                 self._props_tabs_host.hide()
+        elif page == _OCR_PAGE:
+            title = "Zone Tracker"
+            if hasattr(self, "_props_tabs_host"):
+                self._props_tabs_host.hide()
         else:
             title = ""
             if hasattr(self, "track_props") and self.track_props.title is not None:
@@ -145,6 +155,8 @@ class InspectorTools:
             if hasattr(self, "track_props") and hasattr(self, "_props_tabs_host"):
                 track = self.track_props.track
                 self._props_tabs_host.setVisible(bool(track and track.kind == "video"))
+        if hasattr(self, "frame_ocr"):
+            self.frame_ocr.set_active(page == _OCR_PAGE)
         if hasattr(self, "workspace"):
             dock = self.workspace.dock("props")
             if dock is not None:
@@ -177,6 +189,14 @@ class InspectorTools:
         if not hasattr(self, "prop_stack"):
             return
         self.prop_stack.setCurrentIndex(_PROJECT_PAGE)
+        self._sync_props_header()
+        self._focus_props_dock()
+
+    def _show_ocr_page(self):
+        """Open the subtitle capture zone in the right Inspector."""
+        if not hasattr(self, "prop_stack"):
+            return
+        self.prop_stack.setCurrentIndex(_OCR_PAGE)
         self._sync_props_header()
         self._focus_props_dock()
 

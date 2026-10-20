@@ -1,9 +1,9 @@
 use claynext_ai_runtime::{
     align_speech_speed_result, build_dubbing_llm_prompt_from_request, build_fit_rewrite_prompt,
     build_llm_translation_prompt, calculate_ducked_background_volume,
-    chunk_subtitles_for_translation, energy_vad_chunking, estimate_speech_quota, filter_ocr_results,
+    chunk_subtitles_for_translation, energy_vad_chunking, estimate_speech_quota,     filter_ocr_results, scan_burned_captions,
     is_rate_limit_status, parse_expression_tags, spoken_units,
-    parse_retry_after, ApiKeyItem, DubPromptRequest, InferenceDeviceConfig, NativeKeyPool, OcrBox,
+    parse_retry_after, ApiKeyItem, CaptionScanRequest, DubPromptRequest, InferenceDeviceConfig, NativeKeyPool, OcrBox,
     RateLimitDecision, VadConfig, WhisperConfig,
 };
 use std::env;
@@ -100,6 +100,39 @@ fn main() {
             let chunks = chunk_subtitles_for_translation(text, max_chars);
             println!("{}", serde_json::to_string(&chunks).unwrap_or_default());
         }
+        "scan-captions" => {
+            let raw = if args.get(2).map(|s| s.as_str()) == Some("-") {
+                let mut buf = String::new();
+                io::stdin().read_to_string(&mut buf).ok();
+                buf
+            } else {
+                args.get(2).cloned().unwrap_or_default()
+            };
+            let req: CaptionScanRequest = match serde_json::from_str(&raw) {
+                Ok(req) => req,
+                Err(e) => {
+                    eprintln!("Invalid caption scan request: {e}");
+                    std::process::exit(2);
+                }
+            };
+            match scan_burned_captions(&req, |pct, msg| {
+                println!(
+                    "{}",
+                    serde_json::json!({"kind": "progress", "pct": pct, "message": msg})
+                );
+            }) {
+                Ok(lines) => {
+                    println!(
+                        "{}",
+                        serde_json::json!({"kind": "result", "segments": lines})
+                    );
+                }
+                Err(e) => {
+                    eprintln!("{e}");
+                    std::process::exit(2);
+                }
+            }
+        }
         "filter-ocr" => {
             let boxes_json = args.get(2).map(|s| s.as_str()).unwrap_or("[]");
             let min_conf: f32 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(0.5);
@@ -185,7 +218,7 @@ fn main() {
             eprintln!(
                 "Usage: claynext-ai [device | whisper-config | vad-sim | energy-vad | \
                  llm-parse-retry | llm-acquire | llm-soonest-cooldown | parse-expression-tags | \
-                 chunk-subtitles | filter-ocr | speech-quota | spoken-units | \
+                 chunk-subtitles | filter-ocr | scan-captions | speech-quota | spoken-units | \
                  build-dub-prompt | build-fit-prompt | build-translate-prompt | \
                  ducked-volume | align-speed]"
             );

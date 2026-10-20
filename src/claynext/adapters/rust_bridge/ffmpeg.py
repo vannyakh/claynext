@@ -129,6 +129,44 @@ class RustFfmpegAdapter:
             return None
 
     @classmethod
+    def extract_crop(
+        cls,
+        file_path: str | Path,
+        output_path: str | Path,
+        *,
+        timestamp_secs: float = 0.0,
+        x: float = 0.0,
+        y: float = 0.72,
+        w: float = 1.0,
+        h: float = 0.2,
+    ) -> bool:
+        """Accurate capture-zone still via claynext-ffmpeg."""
+        binary = _find_binary("claynext-ffmpeg")
+        if not binary:
+            return False
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            res = _run_rust(
+                binary,
+                [
+                    "extract-crop",
+                    str(file_path),
+                    str(out),
+                    f"{float(timestamp_secs):.3f}",
+                    f"{float(x):.4f}",
+                    f"{float(y):.4f}",
+                    f"{float(w):.4f}",
+                    f"{float(h):.4f}",
+                ],
+                timeout=40,
+            )
+            return res.returncode == 0 and out.is_file() and out.stat().st_size > 0
+        except Exception as exc:
+            logger.warning("Rust crop extraction failed: %s", exc)
+            return False
+
+    @classmethod
     def extract_still(
         cls,
         file_path: str | Path,

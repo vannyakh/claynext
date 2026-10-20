@@ -10,8 +10,8 @@ alwaysApply: false
 
 | Package | Binary | Purpose |
 |:---|:---|:---|
-| `backends/ai-runtime` | `claynext-ai` | Speech quota, dub/translate prompts, VAD, OCR filter, LLM key pool, expression tags, align-speed, ducked-volume |
-| `backends/ffmpeg` | `claynext-ffmpeg` | Probe, stills, decode-audio → `.f32`, demux-audio WAV, export/transcode, mux |
+| `backends/ai-runtime` | `claynext-ai` | Speech quota, dub/translate prompts, VAD, OCR filter, `scan-captions` (burned-in zone sample + stitch), LLM key pool, expression tags, align-speed, ducked-volume |
+| `backends/ffmpeg` | `claynext-ffmpeg` | Probe, stills, `extract-crop` (accurate capture-zone still), decode-audio → `.f32`, demux-audio WAV, export/transcode, mux |
 | `backends/cpu` | `claynext-cpu` | Waveform downsample, SIMD audio stats, benchmark |
 | `backends/hardware-codecs` | `claynext-codecs` | GPU detect, optimal ffmpeg encoder args |
 | `backends/wgpu` | `claynext-wgpu` | GPU/WGPU device info |

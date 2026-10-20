@@ -17,7 +17,7 @@ Claynext is mid-migration from an all-Python stack to a **hybrid** design:
 
 ## Hard rules for agents
 
-1. **Do not put new core logic in Python** when it belongs in Rust (timing, speech quota, prompts, VAD, OCR filter, PCM decode, tempo align, ducking math, probe/export).
+1. **Do not put new core logic in Python** when it belongs in Rust (timing, speech quota, prompts, VAD, OCR filter, burned-in caption scan, PCM decode, tempo align, ducking math, probe/export). The Zone Tracker page is GUI only; `scan-captions` and `extract-crop` live in the Rust binaries.
 2. **Models and GUI must not import `rust_bridge` directly.** Use domain adapters:
    - `get_ai_adapter()` — LLM pool, OCR filter, expression tags, VAD
    - `get_dubbing_adapter()` — speech quota, dub prompt, align speed, duck volume

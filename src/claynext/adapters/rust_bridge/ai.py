@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from claynext.adapters.rust_bridge.process import _find_binary, _run_rust
+from claynext.adapters.rust_bridge.process import _find_binary, _run_rust, _run_rust_stream
 
 logger = logging.getLogger("claynext.adapters.rust")
 
@@ -170,6 +170,70 @@ class RustAiAdapter:
         except Exception as e:
             logger.debug(f"Rust chunk-subtitles failed: {e}")
         return []
+
+    @classmethod
+    def scan_burned_captions(
+        cls,
+        video_path: str,
+        roi: dict[str, Any],
+        *,
+        sample_interval: float = 0.4,
+        start_sec: float = 0.0,
+        end_sec: float = 0.0,
+        min_confidence: float = 0.5,
+        lang: str = "Auto",
+        progress_callback=None,
+    ) -> list[dict[str, Any]] | None:
+        """Burned-in caption lines via ``claynext-ai scan-captions``. None if Rust cannot run."""
+        binary = _find_binary("claynext-ai")
+        if not binary:
+            return None
+        from claynext.adapters.vision_reader import ensure_reader
+
+        reader = ensure_reader()
+        if not reader:
+            return None
+        request = {
+            "video": str(video_path),
+            "roi": {
+                "x": float(roi.get("x", 0.0)),
+                "y": float(roi.get("y", 0.72)),
+                "w": float(roi.get("w", 0.9)),
+                "h": float(roi.get("h", 0.2)),
+            },
+            "sample_interval": float(sample_interval),
+            "start_sec": float(start_sec),
+            "end_sec": float(end_sec),
+            "lang": lang or "Auto",
+            "min_confidence": float(min_confidence),
+            "reader": reader,
+        }
+        found: list[dict[str, Any]] | None = None
+
+        def _on_line(line: str) -> None:
+            nonlocal found
+            raw = (line or "").strip()
+            if not raw.startswith("{"):
+                return
+            try:
+                payload = json.loads(raw)
+            except Exception:
+                return
+            kind = payload.get("kind")
+            if kind == "progress" and progress_callback:
+                progress_callback(int(payload.get("pct") or 0), str(payload.get("message") or ""))
+            elif kind == "result":
+                found = list(payload.get("segments") or [])
+
+        try:
+            res = _run_rust_stream(binary, ["scan-captions", json.dumps(request)], _on_line)
+        except Exception as exc:
+            logger.warning("Rust scan-captions failed: %s", exc)
+            return None
+        if res.returncode != 0:
+            logger.warning("Rust scan-captions: %s", (res.stderr or "").strip())
+            return None
+        return found if found is not None else []
 
     @classmethod
     def filter_ocr(cls, boxes: list[dict[str, Any]], min_confidence: float = 0.5) -> list[dict[str, Any]]:

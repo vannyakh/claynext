@@ -10,6 +10,7 @@ import io
 import json
 import logging
 import os
+import subprocess
 import time
 import urllib.parse
 import urllib.request
@@ -103,25 +104,98 @@ class OCREngine:
             pass
         return None
 
+    @staticmethod
+    def _vision_languages(lang: str) -> list[str]:
+        key = (lang or "Auto").strip().lower()
+        if key in {"zh", "zh-cn", "zh-hans", "chinese"} or "chinese" in key:
+            return ["zh-Hans", "zh-Hant"]
+        if key in {"en", "english"} or "english" in key:
+            return ["en-US"]
+        return ["zh-Hans", "zh-Hant", "en-US"]
+
+    @classmethod
+    def _vision_binary(cls) -> str | None:
+        from claynext.adapters.vision_reader import ensure_reader
+        return ensure_reader()
+
+    @classmethod
+    def _vision_ocr(cls, img: Image.Image, lang: str, min_conf: float) -> str:
+        binary = cls._vision_binary()
+        if not binary:
+            return ""
+        from claynext.utils.paths import CACHE_DIR
+
+        path = CACHE_DIR / f"ocr-frame-{os.getpid()}.png"
+        try:
+            img.save(path, format="PNG")
+            # Outlined captions score lower than printed text; don't require 50%.
+            floor = min(0.35, max(0.15, float(min_conf)))
+            proc = subprocess.run(
+                [binary, str(path), f"{floor:.2f}", *cls._vision_languages(lang)],
+                capture_output=True,
+                timeout=20,
+                check=False,
+            )
+        except Exception as exc:
+            logger.debug("Vision OCR failed: %s", exc)
+            return ""
+        finally:
+            try:
+                path.unlink(missing_ok=True)
+            except Exception:
+                pass
+        lines = [ln.strip() for ln in proc.stdout.decode("utf-8", "replace").splitlines() if ln.strip()]
+        if not lines:
+            return ""
+        if all(" " not in ln for ln in lines):
+            return "".join(lines)
+        return " ".join(lines)
+
+    @classmethod
+    def _prepare_crop(cls, img: Image.Image) -> Image.Image:
+        """Scale a short subtitle band so the glyphs are large enough to read."""
+        img = img.convert("RGB")
+        width, height = img.size
+        if height <= 0 or width <= 0:
+            return img
+        if height < 96:
+            scale = 96 / height
+            img = img.resize((max(1, int(width * scale)), 96), Image.Resampling.LANCZOS)
+        return img
+
+    @classmethod
+    def reader_available(cls) -> bool:
+        if cls._get_local_reader() is not None or cls._vision_binary():
+            return True
+        try:
+            from claynext.models.llm_keys import get_key_pool
+            return bool(get_key_pool().secrets("gemini"))
+        except Exception:
+            return False
+
     @classmethod
     def ocr_image(cls, img: Image.Image, lang: str = "Auto", min_conf: float = 0.5) -> str:
-        """Run OCR on a PIL Image (cropped frame) using local OCR or Gemini Flash vision."""
-        # 1. Try local OCR if available
+        """Read burned-in caption text from a cropped frame."""
+        img = cls._prepare_crop(img)
         reader = cls._get_local_reader()
         if reader is not None:
             try:
                 import numpy as np
-                arr = np.array(img.convert("RGB"))
-                # RapidOCR returns: results, elapse
+                arr = np.array(img)
                 if hasattr(reader, "__call__"):
                     res, _ = reader(arr)
                     if res:
                         texts = [item[1] for item in res if item[2] >= min_conf]
-                        return " ".join(texts).strip()
+                        joined = " ".join(texts).strip()
+                        if joined:
+                            return joined
             except Exception as exc:
                 logger.debug(f"Local OCR failed: {exc}")
 
-        # 2. Try Gemini Flash Vision if API key is in pool
+        text = cls._vision_ocr(img, lang, min_conf)
+        if text:
+            return text
+
         try:
             from claynext.models.llm_keys import get_key_pool
             secrets = get_key_pool().secrets("gemini")
@@ -171,6 +245,68 @@ class OCREngine:
         return ""
 
     @classmethod
+    def _rust_crop(cls, video_path: str, sec: float, roi: dict | None) -> Image.Image | None:
+        """Playhead crop via claynext-ffmpeg. None when the Rust tool is missing."""
+        box = roi or {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0}
+        try:
+            from claynext.adapters.ffmpeg_adapter import get_ffmpeg_adapter
+            from claynext.utils.paths import CACHE_DIR
+
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            out = CACHE_DIR / f"ocr-preview-{os.getpid()}.png"
+            ok = get_ffmpeg_adapter().extract_crop(
+                video_path,
+                out,
+                timestamp_secs=sec,
+                x=float(box.get("x", 0.0)),
+                y=float(box.get("y", 0.0)),
+                w=float(box.get("w", 1.0)),
+                h=float(box.get("h", 1.0)),
+            )
+            if ok and out.is_file():
+                return Image.open(out).convert("RGB")
+        except Exception as exc:
+            logger.debug("Rust crop preview failed: %s", exc)
+        return None
+
+    @staticmethod
+    def _frame_time(frame: Any, stream: Any) -> float:
+        stamp = getattr(frame, "time", None)
+        if stamp is not None:
+            return float(stamp)
+        if frame.pts is not None and stream.time_base:
+            return float(frame.pts * stream.time_base)
+        return 0.0
+
+    @classmethod
+    def _image_at(cls, container: Any, stream: Any, sec: float) -> Image.Image | None:
+        """First decoded picture at or just after `sec`, not the previous keyframe."""
+        tb = stream.time_base
+        target = max(0.0, float(sec))
+        offset = int(target / float(tb)) if tb else int(target * 1000)
+        container.seek(offset, stream=stream, backward=True, any_frame=False)
+        best = None
+        for packet in container.demux(stream):
+            for frame in packet.decode():
+                stamp = cls._frame_time(frame, stream)
+                best = frame.to_image()
+                if stamp + 0.02 >= target:
+                    return best
+                if stamp > target + 2.0:
+                    return best
+        return best
+
+    @staticmethod
+    def _crop_box(img: Image.Image, roi: dict) -> Image.Image:
+        vw, vh = img.size
+        rx = max(0.0, min(1.0, float(roi.get("x", 0.0))))
+        ry = max(0.0, min(1.0, float(roi.get("y", 0.0))))
+        rw = max(0.02, min(1.0 - rx, float(roi.get("w", 1.0))))
+        rh = max(0.02, min(1.0 - ry, float(roi.get("h", 1.0))))
+        box = (int(rx * vw), int(ry * vh), int((rx + rw) * vw), int((ry + rh) * vh))
+        return img.crop(box)
+
+    @classmethod
     def extract_frame_image(
         cls, video_path: str, sec: float = 0.0, roi: dict | None = None
     ) -> Image.Image | None:
@@ -180,44 +316,39 @@ class OCREngine:
         """
         if not video_path or not os.path.isfile(video_path):
             return None
+        img = cls._rust_crop(video_path, sec, roi)
+        if img is not None:
+            return img
         img = None
 
-        # Method 1: Try PyAV
+        # Method 1: PyAV, decoding forward to the requested time.
+        # The first picture after a keyframe seek is often a different shot.
         try:
             import av
             container = av.open(video_path)
             stream = container.streams.video[0]
-            tb = stream.time_base
-            target_pts = int(sec / tb) if tb else int(sec * 1000)
-            container.seek(target_pts, stream=stream, any_frame=False)
-            for packet in container.demux(stream):
-                for frame in packet.decode():
-                    img = frame.to_image()
-                    break
-                if img is not None:
-                    break
+            img = cls._image_at(container, stream, sec)
             container.close()
         except Exception:
             pass
 
-        # Method 2: Fallback via FFmpeg command
+        # Method 2: accurate ffmpeg seek (input, then -ss) so the still matches the playhead.
         if img is None:
             try:
                 from claynext.adapters.ffmpeg_service import ffmpeg_exe
-                import subprocess
                 cmd = [
                     ffmpeg_exe(),
                     "-hide_banner",
                     "-loglevel", "error",
                     "-nostdin",
-                    "-ss", str(max(0.0, sec)),
                     "-i", video_path,
+                    "-ss", str(max(0.0, sec)),
                     "-vframes", "1",
                     "-f", "image2pipe",
                     "-vcodec", "png",
                     "-",
                 ]
-                proc = subprocess.run(cmd, capture_output=True, timeout=8)
+                proc = subprocess.run(cmd, capture_output=True, timeout=20)
                 if proc.stdout and len(proc.stdout) > 500:
                     img = Image.open(io.BytesIO(proc.stdout)).convert("RGB")
             except Exception:
@@ -226,16 +357,8 @@ class OCREngine:
         if img is None:
             return None
 
-        # Crop to ROI if specified
         if roi:
-            vw, vh = img.size
-            rx = max(0.0, min(1.0, float(roi.get("x", 0.0))))
-            ry = max(0.0, min(1.0, float(roi.get("y", 0.0))))
-            rw = max(0.02, min(1.0 - rx, float(roi.get("w", 1.0))))
-            rh = max(0.02, min(1.0 - ry, float(roi.get("h", 1.0))))
-            box = (int(rx * vw), int(ry * vh), int((rx + rw) * vw), int((ry + rh) * vh))
-            img = img.crop(box)
-
+            img = cls._crop_box(img, roi)
         return img
 
     @classmethod
@@ -259,6 +382,23 @@ class OCREngine:
         """
         if not video_path or not os.path.isfile(video_path):
             raise FileNotFoundError(f"Video file not found: {video_path}")
+
+        try:
+            from claynext.adapters.ai import get_ai_adapter
+            rust_lines = get_ai_adapter().scan_burned_captions(
+                video_path,
+                roi,
+                sample_interval=sample_interval,
+                start_sec=start_sec,
+                end_sec=end_sec,
+                min_confidence=min_confidence,
+                lang=lang,
+                progress_callback=progress_callback,
+            )
+            if rust_lines is not None:
+                return rust_lines
+        except Exception as exc:
+            logger.debug("Rust caption scan unavailable: %s", exc)
 
         # Probe duration
         from claynext.adapters.media import get_media_adapter
@@ -290,64 +430,66 @@ class OCREngine:
                 except Exception:
                     pass
 
+        _ping(4, "Preparing the subtitle reader…")
+        if not cls.reader_available():
+            raise RuntimeError(
+                "No subtitle reader is available. On this Mac the on-device reader "
+                "needs the Swift compiler, or add a Gemini key."
+            )
+
         _ping(5, f"Starting frame OCR subtitle extraction ({total_frames} frames to scan)…")
 
-        # Open video stream via PyAV if available
-        import av
+        frame_results: list[tuple[float, str]] = []
         container = None
-        stream = None
         try:
+            import av
             container = av.open(video_path)
             stream = container.streams.video[0]
+            tb = stream.time_base
+            offset = int(max(0.0, start_sec) / float(tb)) if tb else int(start_sec * 1000)
+            container.seek(offset, stream=stream, backward=True, any_frame=False)
+            sample_i = 0
+            for packet in container.demux(stream):
+                if sample_i >= total_frames:
+                    break
+                for frame in packet.decode():
+                    if sample_i >= total_frames:
+                        break
+                    if control and hasattr(control, "checkpoint"):
+                        control.checkpoint()
+                    stamp = cls._frame_time(frame, stream)
+                    if stamp + 0.02 < timestamps[sample_i]:
+                        continue
+                    picture = frame.to_image()
+                    while sample_i < total_frames and stamp + 0.02 >= timestamps[sample_i]:
+                        t = timestamps[sample_i]
+                        pct = int(5 + (sample_i / total_frames) * 85)
+                        if sample_i % 5 == 0 or sample_i == total_frames - 1:
+                            _ping(pct, f"Scanning frame at {sec_to_timestamp(t)} ({sample_i + 1}/{total_frames})…")
+                        text = ""
+                        if stamp - t <= sample_interval + 0.08:
+                            text = cls.ocr_image(cls._crop_box(picture, roi), lang=lang, min_conf=min_confidence)
+                        frame_results.append((t, " ".join(text.split()).strip()))
+                        sample_i += 1
+        except RuntimeError:
+            raise
         except Exception:
-            container = None
-
-        frame_results: list[tuple[float, str]] = []
-
-        for idx, t in enumerate(timestamps):
-            if control and hasattr(control, "checkpoint"):
-                control.checkpoint()
-
-            pct = int(5 + (idx / total_frames) * 85)
-            if idx % 5 == 0 or idx == total_frames - 1:
-                _ping(pct, f"Scanning frame at {sec_to_timestamp(t)} ({idx + 1}/{total_frames})…")
-
-            # Extract cropped frame
-            cropped_img = None
-            if container is not None and stream is not None:
+            logger.debug("Sequential frame scan failed", exc_info=True)
+            frame_results = []
+        finally:
+            if container is not None:
                 try:
-                    tb = stream.time_base
-                    pts = int(t / tb) if tb else int(t * 1000)
-                    container.seek(pts, stream=stream, any_frame=False)
-                    for packet in container.demux(stream):
-                        for f in packet.decode():
-                            full_img = f.to_image()
-                            vw, vh = full_img.size
-                            rx, ry = float(roi.get("x", 0.05)), float(roi.get("y", 0.72))
-                            rw, rh = float(roi.get("w", 0.90)), float(roi.get("h", 0.20))
-                            box = (int(rx * vw), int(ry * vh), int((rx + rw) * vw), int((ry + rh) * vh))
-                            cropped_img = full_img.crop(box)
-                            break
-                        if cropped_img is not None:
-                            break
+                    container.close()
                 except Exception:
-                    cropped_img = None
+                    pass
 
-            if cropped_img is None:
-                cropped_img = cls.extract_frame_image(video_path, t, roi=roi)
-
-            text = ""
-            if cropped_img is not None:
-                text = cls.ocr_image(cropped_img, lang=lang, min_conf=min_confidence)
-
-            clean_text = " ".join(text.split()).strip()
-            frame_results.append((t, clean_text))
-
-        if container is not None:
-            try:
-                container.close()
-            except Exception:
-                pass
+        if len(frame_results) < total_frames:
+            for t in timestamps[len(frame_results):]:
+                if control and hasattr(control, "checkpoint"):
+                    control.checkpoint()
+                cropped = cls.extract_frame_image(video_path, t, roi=roi)
+                text = cls.ocr_image(cropped, lang=lang, min_conf=min_confidence) if cropped is not None else ""
+                frame_results.append((t, " ".join(text.split()).strip()))
 
         _ping(92, "Deduplicating and timing extracted subtitle segments…")
 

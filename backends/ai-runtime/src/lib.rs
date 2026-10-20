@@ -17,7 +17,10 @@ pub use llm_pool::{
     RateLimitDecision,
 };
 pub use model_cache::{is_model_cached, resolve_model_path};
-pub use ocr::{filter_ocr_results, OcrBox};
+pub use ocr::{
+    filter_ocr_results, scan_burned_captions, stitch_caption_samples, BurnedCaption, CaptionSample,
+    CaptionScanRequest, OcrBox,
+};
 pub use stems::{calculate_ducked_background_volume, DemucsStemConfig};
 pub use timing::{align_speech_speed, align_speech_speed_result, AlignSpeedResult};
 pub use translation::{

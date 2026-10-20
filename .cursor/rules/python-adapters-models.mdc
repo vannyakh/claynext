@@ -19,7 +19,7 @@ adapters/rust_bridge/ → binary IPC only (adapters may import; models/gui must 
 
 | Adapter | Import | Owns |
 |:---|:---|:---|
-| AI | `from claynext.adapters.ai import get_ai_adapter` | LLM retry/keys, OCR filter, expression tags, VAD, subtitle chunk |
+| AI | `from claynext.adapters.ai import get_ai_adapter` | LLM retry/keys, OCR filter, `scan_burned_captions`, expression tags, VAD, subtitle chunk |
 | Dubbing | `from claynext.adapters.dubbing import get_dubbing_adapter` | Speech quota, dub prompt, align speed, duck volume |
 | FFmpeg | `from claynext.adapters.ffmpeg_adapter import get_ffmpeg_adapter` | Probe, duration, stills, PCM decode |
 | Media / Codecs / Engine | `get_media_adapter`, `get_hardware_codecs`, `get_rust_engine` | Proxy, waveforms, GPU encode, timeline engine |

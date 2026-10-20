@@ -212,6 +212,50 @@ where
     Ok(())
 }
 
+/// Accurate still of a normalized capture zone (0–1), for the subtitle tracker preview.
+pub fn extract_crop_image(
+    input: &std::path::Path,
+    output: &std::path::Path,
+    timestamp_secs: f64,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+) -> Result<()> {
+    if !input.exists() {
+        return Err(FfmpegError::InvalidInput(format!(
+            "Input file not found: {}",
+            input.display()
+        )));
+    }
+    if let Some(parent) = output.parent() {
+        std::fs::create_dir_all(parent).map_err(FfmpegError::Io)?;
+    }
+    let ffmpeg_exe = find_executable("ffmpeg").ok_or(FfmpegError::FfmpegNotFound)?;
+    let ts = format!("{:.3}", timestamp_secs.max(0.0));
+    let x = x.clamp(0.0, 0.98);
+    let y = y.clamp(0.0, 0.98);
+    let w = w.clamp(0.02, 1.0 - x);
+    let h = h.clamp(0.02, 1.0 - y);
+    let filter = format!(
+        "crop=trunc(iw*{w:.4}/2)*2:trunc(ih*{h:.4}/2)*2:trunc(iw*{x:.4}/2)*2:trunc(ih*{y:.4}/2)*2"
+    );
+    let mut cmd = Command::new(&ffmpeg_exe);
+    cmd.args(["-y", "-hide_banner", "-loglevel", "error"]);
+    // -ss after -i so the still is the playhead frame, not the previous keyframe.
+    cmd.args(["-i", input.to_str().unwrap_or_default()]);
+    cmd.args(["-ss", &ts, "-frames:v", "1", "-vf", &filter]);
+    cmd.arg(output.to_str().unwrap_or_default());
+    let status = cmd.status().map_err(FfmpegError::ProcessSpawn)?;
+    if !status.success() || !output.is_file() {
+        return Err(FfmpegError::OutputValidation(format!(
+            "Crop extraction failed for {}",
+            output.display()
+        )));
+    }
+    Ok(())
+}
+
 /// Extract a single JPEG/PNG still for library thumbnails and timeline posters.
 pub fn extract_still_image(
     input: &std::path::Path,

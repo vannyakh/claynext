@@ -9,7 +9,7 @@ from claynext.constants.theme_constants import (
     COLOR_BG_STATUSBAR,
     COLOR_BORDER, COLOR_BORDER_FOCUS, COLOR_PRIMARY, COLOR_PRIMARY_HOVER,
     COLOR_TEXT_MAIN, COLOR_TEXT_MUTED, COLOR_TEXT_SUB,
-    COLOR_ACCENT_EMERALD, COLOR_ACCENT_PURPLE, COLOR_ACCENT_ROSE,
+    COLOR_ACCENT_CYAN, COLOR_ACCENT_EMERALD, COLOR_ACCENT_PURPLE, COLOR_ACCENT_ROSE,
 )
 from claynext.gui.icons import ICONS_DIR
 
@@ -1360,6 +1360,35 @@ QPushButton#dub_props_ghost_btn:pressed {{
 #character_meta {{
     color: {COLOR_TEXT_MUTED};
     font-size: 10px;
+    background: transparent;
+}}
+#ocr_crop {{
+    background-color: {COLOR_BG_DARK};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 6px;
+    color: {COLOR_TEXT_MUTED};
+    font-size: 11px;
+}}
+QComboBox#prop_combo {{
+    background-color: transparent;
+    color: {COLOR_TEXT_MAIN};
+    border: none;
+    font-size: 12px;
+    min-height: 22px;
+    padding: 0 2px;
+}}
+QComboBox#prop_combo::drop-down {{
+    border: none;
+    width: 14px;
+}}
+QComboBox#prop_combo QAbstractItemView {{
+    background-color: {COLOR_BG_CARD};
+    color: {COLOR_TEXT_MAIN};
+    selection-background-color: {COLOR_BG_CARD_HOVER};
+}}
+#ocr_status {{
+    color: {COLOR_TEXT_MUTED};
+    font-size: 11px;
     background: transparent;
 }}
 
