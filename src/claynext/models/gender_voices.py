@@ -671,6 +671,12 @@ def assign_gender_and_voices(
             seg["gender"] = g
         voice = char_voice.get(old) or primary_voice
         seg["speaker"] = name
+        # Keep a movie clone already built for this line — character detection owns TTS.
+        existing = str(seg.get("voice_id") or seg.get("tts_voice_hint") or "")
+        if existing.startswith("clone:") and (seg.get("reference_wav") or seg.get("clone_voice")):
+            seg["tts_voice_hint"] = existing
+            seg["voice_id"] = existing
+            continue
         seg["tts_voice_hint"] = voice
         seg["voice_id"] = voice
 

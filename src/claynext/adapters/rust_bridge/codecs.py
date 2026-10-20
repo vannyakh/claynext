@@ -43,6 +43,7 @@ class RustHardwareCodecsAdapter:
                         supports_qsv=bool(item.get("supports_qsv")),
                         supports_amf=bool(item.get("supports_amf")),
                         supports_d3d11va=bool(item.get("supports_d3d11va")),
+                        supports_videotoolbox=bool(item.get("supports_videotoolbox")),
                     )
                 )
             return gpus

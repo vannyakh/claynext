@@ -186,11 +186,21 @@
       "ollama": "qwen2.5:3b"
     },
     {
+      "id": "qwen3:8b",
+      "name": "Qwen 3 8B",
+      "category": "llm",
+      "size_label": "~5.2 GB",
+      "description": "Best general local rewrite model on Apple Silicon (16 GB+).",
+      "backend": "ollama",
+      "install": "ollama",
+      "ollama": "qwen3:8b"
+    },
+    {
       "id": "qwen2.5:7b",
       "name": "Qwen 2.5 7B",
       "category": "llm",
       "size_label": "~4.7 GB",
-      "description": "Default local model for dub rewrites.",
+      "description": "Solid default local model for dub rewrites.",
       "backend": "ollama",
       "install": "ollama",
       "ollama": "qwen2.5:7b"
@@ -210,7 +220,7 @@
       "name": "Aya Expanse 8B",
       "category": "llm",
       "size_label": "~5 GB",
-      "description": "Multilingual local model, useful for Khmer and mixed dialogue.",
+      "description": "Best multilingual local model for Khmer and mixed dialogue.",
       "backend": "ollama",
       "install": "ollama",
       "ollama": "aya-expanse:8b"

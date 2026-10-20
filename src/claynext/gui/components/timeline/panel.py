@@ -1860,6 +1860,45 @@ class TimelinePanel(QWidget):
             return
         self.set_duration_ms(duration_ms)
 
+    def lay_sync_stems(self, stems: list[dict]) -> None:
+        """Mute the picture track and lay cleaned / isolated audio in sync with the film."""
+        canvas = self.canvas
+        video = next((t for t in canvas.tracks if t.kind == "video"), None)
+        if video is not None:
+            video.muted = True
+        canvas.clips = [
+            clip for clip in canvas.clips
+            if not (clip.kind == "audio" and clip.extra.get("stem"))
+        ]
+        dur = max(1000, int(canvas.duration_ms or 0))
+        for item in stems or []:
+            path = str(item.get("path") or "")
+            if not path or not os.path.isfile(path):
+                continue
+            label = str(item.get("label") or "Audio")
+            track = canvas.free_track("audio", 0, dur)
+            track.name = label
+            track.muted = bool(item.get("mute"))
+            canvas.add_clip(
+                "audio",
+                label,
+                duration_ms=dur,
+                start_ms=0,
+                track_id=track.id,
+                extra={
+                    "path": path,
+                    "stem": True,
+                    "auto": True,
+                    "file_ms": dur,
+                },
+            )
+            self._load_wave(path)
+        if int(getattr(self, "_sequence_load", 0)):
+            return
+        self._rebuild_rail()
+        self.canvas.update()
+        self._emit_mix()
+
     def set_voice_audio(self, path: str):
         self.canvas.voice_path = path if path and os.path.isfile(path) else ""
         if self.canvas.voice_path:

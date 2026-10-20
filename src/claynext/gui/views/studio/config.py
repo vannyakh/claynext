@@ -102,14 +102,15 @@ class ConfigTools:
             self.combo_translator.setCurrentIndex(idx_tr)
         self.combo_translator.currentIndexChanged.connect(self._on_translator_changed)
 
+        _ollama_default = self.store.get_setting("dub", "ollama_model", "qwen3:8b") or "qwen3:8b"
         self.edit_ollama = OllamaModelSelector(
             host,
-            default_model=self.store.get_setting("dub", "ollama_model", "qwen2.5:7b") or "qwen2.5:7b",
+            default_model=_ollama_default,
         )
-        self.edit_ollama.setText(self.store.get_setting("dub", "ollama_model", "qwen2.5:7b") or "qwen2.5:7b")
+        self.edit_ollama.setText(_ollama_default)
         self.edit_ollama.modelChanged.connect(
             lambda model: self.store.set_setting(
-                "dub", "ollama_model", model or "qwen2.5:7b"
+                "dub", "ollama_model", model or "qwen3:8b"
             )
         )
         self._sync_translator_fields()
@@ -227,7 +228,7 @@ class ConfigTools:
 
     def _sync_translator_fields(self):
         eid = self.combo_translator.currentData() or "auto"
-        is_ollama = eid in {"auto", "ollama"}
+        is_ollama = eid in {"auto", "movie", "ollama"}
         self.edit_ollama.setEnabled(is_ollama)
         if is_ollama and hasattr(self.edit_ollama, "check_and_refresh"):
             self.edit_ollama.check_and_refresh()

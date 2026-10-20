@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+
+#[cfg(target_os = "windows")]
 use std::process::Command;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -22,16 +24,47 @@ pub struct GpuDevice {
     pub supports_qsv: bool,
     pub supports_amf: bool,
     pub supports_d3d11va: bool,
+    /// Apple VideoToolbox encode/decode (macOS).
+    #[serde(default)]
+    pub supports_videotoolbox: bool,
 }
 
 pub fn detect_system_gpus() -> Vec<GpuDevice> {
     let mut gpus = Vec::new();
 
+    #[cfg(target_os = "macos")]
+    {
+        let chip = std::process::Command::new("sysctl")
+            .args(["-n", "machdep.cpu.brand_string"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "Apple GPU".to_string());
+
+        gpus.push(GpuDevice {
+            name: chip,
+            vendor: GpuVendor::Apple,
+            driver_version: None,
+            supports_nvenc: false,
+            supports_nvdec: false,
+            supports_qsv: false,
+            supports_amf: false,
+            supports_d3d11va: false,
+            supports_videotoolbox: true,
+        });
+    }
+
     #[cfg(target_os = "windows")]
     {
-        // Query WMIC / PowerShell for video controllers on Windows
+        // Query PowerShell for video controllers on Windows
         if let Ok(output) = Command::new("powershell")
-            .args(["-NoProfile", "-Command", "Get-CimInstance Win32_VideoController | Select-Object -Property Name, DriverVersion | ConvertTo-Json"])
+            .args([
+                "-NoProfile",
+                "-Command",
+                "Get-CimInstance Win32_VideoController | Select-Object -Property Name, DriverVersion | ConvertTo-Json",
+            ])
             .output()
         {
             if let Ok(json_str) = String::from_utf8(output.stdout) {
@@ -49,11 +82,19 @@ pub fn detect_system_gpus() -> Vec<GpuDevice> {
                         let driver = item["DriverVersion"].as_str().map(|s| s.to_string());
                         let name_lower = name.to_lowercase();
 
-                        let vendor = if name_lower.contains("nvidia") || name_lower.contains("geforce") || name_lower.contains("rtx") || name_lower.contains("quadro") {
+                        let vendor = if name_lower.contains("nvidia")
+                            || name_lower.contains("geforce")
+                            || name_lower.contains("rtx")
+                            || name_lower.contains("quadro")
+                        {
                             GpuVendor::Nvidia
                         } else if name_lower.contains("amd") || name_lower.contains("radeon") {
                             GpuVendor::Amd
-                        } else if name_lower.contains("intel") || name_lower.contains("arc") || name_lower.contains("uhd") || name_lower.contains("iris") {
+                        } else if name_lower.contains("intel")
+                            || name_lower.contains("arc")
+                            || name_lower.contains("uhd")
+                            || name_lower.contains("iris")
+                        {
                             GpuVendor::Intel
                         } else {
                             GpuVendor::Unknown
@@ -68,6 +109,7 @@ pub fn detect_system_gpus() -> Vec<GpuDevice> {
                             supports_qsv: vendor == GpuVendor::Intel,
                             supports_amf: vendor == GpuVendor::Amd,
                             supports_d3d11va: true,
+                            supports_videotoolbox: false,
                         });
                     }
                 }
@@ -76,7 +118,6 @@ pub fn detect_system_gpus() -> Vec<GpuDevice> {
     }
 
     if gpus.is_empty() {
-        // Fallback generic probe
         gpus.push(GpuDevice {
             name: "Software / CPU Fallback".to_string(),
             vendor: GpuVendor::Unknown,
@@ -86,6 +127,7 @@ pub fn detect_system_gpus() -> Vec<GpuDevice> {
             supports_qsv: false,
             supports_amf: false,
             supports_d3d11va: false,
+            supports_videotoolbox: false,
         });
     }
 

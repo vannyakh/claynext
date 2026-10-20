@@ -23,6 +23,7 @@ class GpuCapability:
     supports_qsv: bool = False
     supports_amf: bool = False
     supports_d3d11va: bool = False
+    supports_videotoolbox: bool = False
 
 
 @dataclass

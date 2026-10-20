@@ -485,6 +485,47 @@ def dynamic_duck_audio(
     return dst_wav
 
 
+def clean_source_audio(src_wav: str, dst_wav: str) -> str:
+    """Extracted movie audio: cut rumble, tame noise, even the level."""
+    if not src_wav or not os.path.isfile(src_wav):
+        return src_wav
+    filters = (
+        "highpass=f=70,lowpass=f=14000,afftdn=nr=10:nf=-28,loudnorm=I=-16:TP=-1.5:LRA=11",
+        "highpass=f=70,lowpass=f=14000,loudnorm=I=-16:TP=-1.5:LRA=11",
+    )
+    for filt in filters:
+        proc = run_ffmpeg([
+            "-y", "-i", src_wav, "-af", filt,
+            "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", dst_wav,
+        ])
+        if proc.returncode == 0 and os.path.isfile(dst_wav) and os.path.getsize(dst_wav) > 1000:
+            return dst_wav
+    return src_wav
+
+
+def apply_speech_eq(src_audio: str, dst_wav: str) -> str:
+    """Presence EQ for a spoken TTS clip so dialogue cuts through the bed."""
+    if not src_audio or not os.path.isfile(src_audio):
+        return src_audio
+    filt = (
+        "highpass=f=90,"
+        "equalizer=f=220:t=q:w=1.1:g=-2.0,"
+        "equalizer=f=2800:t=q:w=1.3:g=3.2,"
+        "equalizer=f=6200:t=q:w=1.2:g=-2.2,"
+        "acompressor=threshold=-16dB:ratio=2.4:attack=8:release=90:makeup=1.6dB,"
+        "alimiter=limit=0.95"
+    )
+    proc = run_ffmpeg([
+        "-y", "-i", src_audio,
+        "-af", filt,
+        "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le",
+        dst_wav,
+    ])
+    if proc.returncode != 0 or not os.path.isfile(dst_wav) or os.path.getsize(dst_wav) < 100:
+        return src_audio
+    return dst_wav
+
+
 def master_voiceover_track(
     dialogue_wav: str,
     dst_wav: str,
@@ -980,7 +1021,7 @@ def ensure_speech_bed(media_path: str, progress_callback=None, *, use_demucs: bo
             pass
 
     stat = os.stat(media_path)
-    key = hashlib.sha1(f"{os.path.abspath(media_path)}|{stat.st_size}|{int(stat.st_mtime)}|ffmpeg-v1".encode()).hexdigest()[:16]
+    key = hashlib.sha1(f"{os.path.abspath(media_path)}|{stat.st_size}|{int(stat.st_mtime)}|ffmpeg-v2".encode()).hexdigest()[:16]
     out_dir = Path(CACHE_DIR) / "speech_bed"
     out_dir.mkdir(parents=True, exist_ok=True)
     dst = out_dir / f"{key}.wav"
@@ -989,14 +1030,17 @@ def ensure_speech_bed(media_path: str, progress_callback=None, *, use_demucs: bo
             progress_callback(100, "Loaded cached BGM bed")
         return str(dst)
     if progress_callback:
-        progress_callback(25, "Building FFmpeg mid-side music bed…")
-    # Mid-side + low/air residual: approximate speech removal without Demucs.
+        progress_callback(25, "Isolating effects and music · pulling speech out of the center…")
+    # Keep side-channel effects, lows, and air. Duck only the center speech band
+    # so hits, ambience, and music stay in the bed.
     graph = (
-        "[0:a]aformat=sample_rates=48000:channel_layouts=stereo,asplit=3[a][b][c];"
-        "[a]pan=stereo|c0=0.5*c0-0.5*c1|c1=0.5*c1-0.5*c0[side];"
-        "[b]pan=mono|c0=0.5*c0+0.5*c1,lowpass=f=170,pan=stereo|c0=c0|c1=c0[low];"
-        "[c]pan=mono|c0=0.5*c0+0.5*c1,highpass=f=7500,volume=0.55,pan=stereo|c0=c0|c1=c0[air];"
-        "[side][low][air]amix=inputs=3:normalize=0,volume=1.35[bed]"
+        "[0:a]aformat=sample_rates=48000:channel_layouts=stereo,asplit=4[a][b][c][d];"
+        "[a]pan=stereo|c0=0.5*c0-0.5*c1|c1=0.5*c1-0.5*c0,volume=1.15[side];"
+        "[b]pan=mono|c0=0.5*c0+0.5*c1,lowpass=f=180,pan=stereo|c0=c0|c1=c0,volume=0.85[low];"
+        "[c]pan=mono|c0=0.5*c0+0.5*c1,highpass=f=6500,pan=stereo|c0=c0|c1=c0,volume=0.7[air];"
+        "[d]pan=mono|c0=0.5*c0+0.5*c1,highpass=f=220,lowpass=f=3400,volume=0.12,"
+        "pan=stereo|c0=c0|c1=c0[speech];"
+        "[side][low][air][speech]amix=inputs=4:normalize=0,volume=1.2[bed]"
     )
     tmp = dst.with_suffix(".part.wav")
     proc = run_ffmpeg([

@@ -33,12 +33,12 @@ from claynext.models.translate_service import TranslateEngine
 
 
 RECOMMENDED_MODELS = [
-    ("qwen2.5:7b", "qwen2.5:7b · Recommended for translation"),
-    ("qwen2.5:14b", "qwen2.5:14b · High quality multilingual"),
+    ("qwen3:8b", "qwen3:8b · Best local rewrite (Apple Silicon)"),
+    ("aya-expanse:8b", "aya-expanse:8b · Best multilingual / Khmer"),
+    ("qwen2.5:7b", "qwen2.5:7b · Solid default dub rewrite"),
+    ("qwen2.5:14b", "qwen2.5:14b · Higher quality (needs ≥24 GB RAM)"),
     ("llama3.2:3b", "llama3.2:3b · Fast & lightweight"),
     ("mistral:7b", "mistral:7b · Balanced multilingual"),
-    ("gemma2:9b", "gemma2:9b · Google Gemma 2"),
-    ("deepseek-r1:7b", "deepseek-r1:7b · Reasoning & translation"),
 ]
 
 
@@ -52,9 +52,9 @@ class OllamaModelSelector(QWidget):
     modelChanged = Signal(str)
     editingFinished = Signal()
 
-    def __init__(self, parent: QWidget | None = None, default_model: str = "qwen2.5:7b"):
+    def __init__(self, parent: QWidget | None = None, default_model: str = "qwen3:8b"):
         super().__init__(parent)
-        self._current_model = default_model or "qwen2.5:7b"
+        self._current_model = default_model or "qwen3:8b"
         self._is_checking = False
         self._available = False
         self._installed_models: list[str] = []
@@ -74,7 +74,7 @@ class OllamaModelSelector(QWidget):
         self.combo.setFixedHeight(28)
         self.combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         if self.combo.lineEdit():
-            self.combo.lineEdit().setPlaceholderText("qwen2.5:7b")
+            self.combo.lineEdit().setPlaceholderText("qwen3:8b")
             self.combo.lineEdit().editingFinished.connect(self._on_text_edited)
         self.combo.currentIndexChanged.connect(self._on_combo_index_changed)
 
@@ -144,7 +144,7 @@ class OllamaModelSelector(QWidget):
 
     def setText(self, model: str) -> None:
         """Sets the active model tag (compatible with QLineEdit.setText())."""
-        clean = self._clean_model_tag(str(model or "")).strip() or "qwen2.5:7b"
+        clean = self._clean_model_tag(str(model or "")).strip() or "qwen3:8b"
         self._current_model = clean
 
         # Look for matching item by data or text

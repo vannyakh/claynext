@@ -430,7 +430,7 @@ class ScriptJobTools:
         target_lang = self.combo_lang.currentText()
         source_lang = self.combo_source_lang.currentText()
         translator = self.combo_translator.currentData() or "auto"
-        ollama_model = self.edit_ollama.text().strip() or "qwen2.5:7b"
+        ollama_model = self.edit_ollama.text().strip() or "qwen3:8b"
         self.table_spinner.start()
 
         def _job(progress_callback=None):
@@ -546,7 +546,7 @@ class ScriptJobTools:
         target_lang = self.combo_lang.currentText() if hasattr(self, "combo_lang") else "Khmer"
         source_lang = self.combo_source_lang.currentText() if hasattr(self, "combo_source_lang") else "auto"
         translator = (self.combo_translator.currentData() or "auto") if hasattr(self, "combo_translator") else "auto"
-        ollama_model = (self.edit_ollama.text().strip() or "qwen2.5:7b") if hasattr(self, "edit_ollama") else "qwen2.5:7b"
+        ollama_model = (self.edit_ollama.text().strip() or "qwen3:8b") if hasattr(self, "edit_ollama") else "qwen3:8b"
 
         if hasattr(self, "table_spinner"):
             self.table_spinner.start()

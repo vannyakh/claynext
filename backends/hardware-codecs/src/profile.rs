@@ -3,6 +3,7 @@ use crate::detect::{detect_system_gpus, GpuVendor};
 use crate::media_foundation::MediaFoundationProfile;
 use crate::nvenc::NvencProfile;
 use crate::qsv::QsvProfile;
+use crate::videotoolbox::VideoToolboxProfile;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -11,6 +12,7 @@ pub enum SelectedCodec {
     Qsv(QsvProfile),
     Amf(AmfProfile),
     MediaFoundation(MediaFoundationProfile),
+    VideoToolbox(VideoToolboxProfile),
     CpuSoftware {
         codec: String,
         crf: u32,
@@ -25,6 +27,7 @@ impl SelectedCodec {
             SelectedCodec::Qsv(p) => p.to_ffmpeg_args(),
             SelectedCodec::Amf(p) => p.to_ffmpeg_args(),
             SelectedCodec::MediaFoundation(p) => p.to_ffmpeg_args(),
+            SelectedCodec::VideoToolbox(p) => p.to_ffmpeg_args(),
             SelectedCodec::CpuSoftware { codec, crf, preset } => vec![
                 "-c:v".to_string(),
                 codec.clone(),
@@ -42,6 +45,7 @@ impl SelectedCodec {
             SelectedCodec::Qsv(p) => &p.codec,
             SelectedCodec::Amf(p) => &p.codec,
             SelectedCodec::MediaFoundation(p) => &p.codec,
+            SelectedCodec::VideoToolbox(p) => &p.codec,
             SelectedCodec::CpuSoftware { codec, .. } => codec,
         }
     }
@@ -51,6 +55,13 @@ pub fn select_optimal_video_encoder(prefer_hevc: bool) -> SelectedCodec {
     let gpus = detect_system_gpus();
     for gpu in gpus {
         match gpu.vendor {
+            GpuVendor::Apple if gpu.supports_videotoolbox => {
+                let mut profile = VideoToolboxProfile::default();
+                if !prefer_hevc {
+                    profile.codec = "h264_videotoolbox".to_string();
+                }
+                return SelectedCodec::VideoToolbox(profile);
+            }
             GpuVendor::Nvidia if gpu.supports_nvenc => {
                 let mut profile = NvencProfile::default();
                 if !prefer_hevc {

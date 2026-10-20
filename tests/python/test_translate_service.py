@@ -8,16 +8,23 @@ from claynext.models.translate_service import TranslateEngine, BATCH_SIZE, GEMIN
 
 
 def test_translate_constants_and_models():
-    """Verify latency optimizations: batch size 45, interval reduced, and valid models."""
+    """Verify API batch packing + per-key pacing constants, and valid models."""
     assert BATCH_SIZE >= 40
-    assert GEMINI_MIN_INTERVAL <= 3.0
+    assert 2.0 <= GEMINI_MIN_INTERVAL <= 6.0
 
     # Ensure gemini-2.5-flash is NOT used since it generates 404 on Google AI Studio
-    # Inspect _gemini_batch default models list
     import inspect
     lines = inspect.getsource(TranslateEngine._gemini_batch)
     assert "gemini-2.5-flash" not in lines
     assert "gemini-2.0-flash" in lines
+
+
+def test_pack_batches_respects_char_budget():
+    # ~500 chars/line × 30 lines exceeds BATCH_MAX_CHARS
+    segs = [{"id": i, "text": ("hello word " * 45)} for i in range(30)]
+    batches = TranslateEngine._pack_batches(segs)
+    assert len(batches) >= 2
+    assert sum(len(b) for b in batches) == 30
 
 
 def test_spoken_units_fast():

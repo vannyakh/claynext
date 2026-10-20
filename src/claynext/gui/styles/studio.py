@@ -1627,6 +1627,24 @@ QComboBox#prop_combo QAbstractItemView {{
     color: {COLOR_TEXT_MUTED};
     border: 1px solid {COLOR_BORDER}66;
 }}
+#startLocalizeDialog QPushButton#start_localize_preset {{
+    background-color: {COLOR_BG_INPUT};
+    color: {COLOR_TEXT_SUB};
+    border: 1px solid {COLOR_BORDER}88;
+    border-radius: 8px;
+    padding: 0 10px;
+    font-size: 12px;
+    font-weight: 600;
+}}
+#startLocalizeDialog QPushButton#start_localize_preset:hover {{
+    border-color: {COLOR_PRIMARY}99;
+    color: {COLOR_TEXT_MAIN};
+}}
+#startLocalizeDialog QPushButton#start_localize_preset:checked {{
+    background-color: {COLOR_PRIMARY}33;
+    border-color: {COLOR_PRIMARY};
+    color: #ffffff;
+}}
 #start_dub_batch {{
     background-color: {COLOR_BG_DARK};
     border: 1px solid {COLOR_BORDER}66;

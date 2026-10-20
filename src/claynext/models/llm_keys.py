@@ -7,7 +7,6 @@ next enabled key is used. If every key is cooling, wait for the soonest one.
 from __future__ import annotations
 
 import os
-import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -74,6 +73,42 @@ def is_rate_limit(status: int, body: str = "") -> bool:
     return limited
 
 
+def keys_for_rust(rows: list[dict[str, Any]], *, provider: str = "") -> list[dict[str, Any]]:
+    """Normalize store rows for claynext-ai (bool enabled, epoch cooldowns)."""
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        secret = str(row.get("secret") or "").strip()
+        if not secret:
+            continue
+        cooldown = _parse_iso(row.get("cooldown_until") if isinstance(row.get("cooldown_until"), str) else None)
+        last_used = _parse_iso(row.get("last_used_at") if isinstance(row.get("last_used_at"), str) else None)
+        # Already-normalized epoch floats pass through.
+        raw_cd = row.get("cooldown_until")
+        raw_lu = row.get("last_used_at")
+        if isinstance(raw_cd, (int, float)):
+            cd_epoch = float(raw_cd)
+        else:
+            cd_epoch = cooldown.timestamp() if cooldown else None
+        if isinstance(raw_lu, (int, float)):
+            lu_epoch = float(raw_lu)
+        else:
+            lu_epoch = last_used.timestamp() if last_used else None
+        enabled = row.get("enabled", 1)
+        out.append(
+            {
+                "id": int(row["id"]),
+                "provider": str(row.get("provider") or provider or ""),
+                "secret": secret,
+                "label": str(row.get("label") or ""),
+                "enabled": bool(int(enabled)) if not isinstance(enabled, bool) else enabled,
+                "cooldown_until": cd_epoch,
+                "fail_count": int(row.get("fail_count") or 0),
+                "last_used_at": lu_epoch,
+            }
+        )
+    return out
+
+
 class ApiKeyPool:
     def __init__(self):
         self._lock = threading.Lock()
@@ -112,6 +147,11 @@ class ApiKeyPool:
                 return [val]
         return []
 
+    def ready_count(self, provider: str) -> int:
+        return len(self._ready_rows(provider)) or len(
+            [e for env in _ENV_KEYS.get(provider, ()) if (e := os.environ.get(env, "").strip())]
+        )
+
     def _ready_rows(self, provider: str) -> list[dict[str, Any]]:
         rows = []
         now = _now()
@@ -132,9 +172,12 @@ class ApiKeyPool:
                 return None
             from claynext.adapters.ai import get_ai_adapter
 
-            rust_chosen = get_ai_adapter().acquire_llm_key(rows, provider)
-            if rust_chosen:
-                chosen = rust_chosen
+            prepared = keys_for_rust(rows, provider=provider)
+            rust_chosen = get_ai_adapter().acquire_llm_key(prepared, provider)
+            if rust_chosen and rust_chosen.get("id") is not None:
+                # Map back to store row (keep original secret/metadata).
+                chosen_id = int(rust_chosen["id"])
+                chosen = next((r for r in rows if int(r["id"]) == chosen_id), rows[0])
             else:
                 start = self._cursor.get(provider, 0) % len(rows)
                 ordered = rows[start:] + rows[:start]
@@ -148,32 +191,25 @@ class ApiKeyPool:
         get_store().update_api_key_state(key_id, fail_count=0, clear_cooldown=True)
 
     def mark_rate_limited(self, key_id: int, retry_after: float | None = None):
-        wait = max(8.0, min(120.0, float(retry_after or 25.0)))
-        until = (_now() + timedelta(seconds=wait)).isoformat()
         row = next((r for r in self.list_keys() if int(r["id"]) == key_id), None)
         fails = int(row["fail_count"]) + 1 if row else 1
+        # Exponential backoff grows with repeated hits on the same key.
+        base = float(retry_after or 20.0)
+        wait = max(6.0, min(180.0, base * (1.35 ** max(0, fails - 1))))
+        until = (_now() + timedelta(seconds=wait)).isoformat()
         get_store().update_api_key_state(key_id, cooldown_until=until, fail_count=fails)
 
     def soonest_cooldown(self, provider: str) -> float:
         from claynext.adapters.ai import get_ai_adapter
 
-        all_keys = self.list_keys(provider)
-        # Convert cooldown_until to epoch seconds if present
-        prepared = []
-        for k in all_keys:
-            d = dict(k)
-            iso = d.get("cooldown_until")
-            dt = _parse_iso(iso)
-            d["cooldown_until"] = dt.timestamp() if dt else None
-            prepared.append(d)
-
+        prepared = keys_for_rust(self.list_keys(provider), provider=provider)
         rust_wait = get_ai_adapter().soonest_cooldown(prepared, provider)
         if rust_wait > 0:
             return rust_wait
 
         now = _now()
         waits = []
-        for row in all_keys:
+        for row in self.list_keys(provider):
             if int(row.get("enabled") or 0) != 1:
                 continue
             until = _parse_iso(row.get("cooldown_until"))
@@ -187,23 +223,30 @@ class ApiKeyPool:
         fn: Callable[[str], Any],
         *,
         progress: Callable | None = None,
-        max_wait: float = 40.0,
+        max_wait: float = 45.0,
+        max_cooldown_waits: int = 3,
     ) -> Any:
         """
-        Call fn(secret). On RateLimitError rotate keys. Wait once if all cooling.
+        Call fn(secret). On RateLimitError rotate keys. Wait for cooldown a few
+        times if the whole pool is cooling — keeps long translate jobs moving.
         """
         tried: set[int] = set()
-        waited = False
+        waits_used = 0
         while True:
             row = self.acquire(provider)
             if row is None:
                 wait = self.soonest_cooldown(provider)
-                if wait > 0 and not waited:
-                    pause = min(max_wait, wait + 0.4)
+                if wait > 0 and waits_used < max_cooldown_waits:
+                    pause = min(max_wait, wait + 0.35)
                     if progress:
-                        progress(0, f"Rate limited — waiting {pause:.0f}s then rotating keys…")
+                        progress(
+                            0,
+                            f"Rate limited — waiting {pause:.0f}s then rotating keys "
+                            f"({waits_used + 1}/{max_cooldown_waits})…",
+                        )
                     time.sleep(pause)
-                    waited = True
+                    waits_used += 1
+                    tried.clear()
                     continue
                 env_keys = []
                 for env in _ENV_KEYS.get(provider, ()):
@@ -225,8 +268,21 @@ class ApiKeyPool:
                 )
 
             key_id = int(row["id"])
-            if key_id in tried and waited:
+            if key_id in tried and waits_used >= max_cooldown_waits:
                 raise RuntimeError(f"All {provider} keys are rate-limited right now.")
+            if key_id in tried:
+                # Already tried this key in this wave — wait for a cooler key.
+                wait = self.soonest_cooldown(provider)
+                if wait > 0 and waits_used < max_cooldown_waits:
+                    pause = min(max_wait, wait + 0.35)
+                    if progress:
+                        progress(0, f"Rotating keys — brief pause {pause:.0f}s…")
+                    time.sleep(pause)
+                    waits_used += 1
+                    tried.clear()
+                    continue
+                raise RuntimeError(f"All {provider} keys are rate-limited right now.")
+
             tried.add(key_id)
             try:
                 result = fn(str(row["secret"]))
@@ -254,4 +310,3 @@ def get_key_pool() -> ApiKeyPool:
         if _pool is None:
             _pool = ApiKeyPool()
         return _pool
-

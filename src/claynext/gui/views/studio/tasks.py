@@ -39,7 +39,7 @@ _STATUS_COLORS = {
 STAGES = (
     ("AUD", "Audio · Demux and separate the movie audio", 0, 16),
     ("ASR", "ASR · Transcribe the dialogue", 16, 38),
-    ("TR", "Translation · Translate the script", 38, 58),
+    ("TR", "Movie translate · Cinematic rewrite + slot fit", 38, 58),
     ("TTS", "TTS · Synthesize and fit the voice lines", 58, 82),
     ("MIX", "Mix · Voice track, music bed and mastering", 82, 100),
 )

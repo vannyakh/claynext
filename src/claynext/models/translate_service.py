@@ -26,12 +26,14 @@ from claynext.models.llm_keys import (
     parse_retry_after,
 )
 
-# Gemini Flash free tier: 15 RPM / 1,500 RPD. 45 lines/call ≈ 1–2 calls per episode.
-BATCH_SIZE = 45
-GEMINI_MIN_INTERVAL = 2.0
+# Gemini Flash free tier: ~15 RPM / key. Pack by lines + chars; roll keys for speed.
+BATCH_SIZE = 48
+BATCH_MAX_CHARS = 9000
+GEMINI_MIN_INTERVAL = 4.2  # per-key floor (~14 RPM); more keys → more parallel throughput
+GOOGLE_MAX_WORKERS = 6
 
 _gemini_lock = threading.Lock()
-_last_gemini_call = 0.0
+_last_gemini_call_by_key: dict[str, float] = {}
 _nllb_lock = threading.Lock()
 _nllb_tok = None
 _nllb_model = None
@@ -85,11 +87,12 @@ class TranslateEngine:
     }
 
     ENGINES = [
-        ("auto", "Auto · $0 (Gemini → Ollama → Google)"),
+        ("auto", "Auto · Best movie (Gemini → Ollama → NLLB → Google)"),
+        ("movie", "Movie dub · cinematic rewrite"),
         ("gemini", "Gemini Flash · free AI Studio"),
-        ("google", "Google Translate · no key"),
-        ("ollama", "Ollama · local / offline"),
-        ("nllb", "NLLB-200 · Hugging Face (Offline NMT)"),
+        ("ollama", "Ollama · local cinematic"),
+        ("nllb", "NLLB-200 · offline NMT"),
+        ("google", "Google Translate · literal"),
     ]
 
     # Approximate speaking units / second for TTS duration budgeting in LLM prompts.
@@ -292,70 +295,21 @@ class TranslateEngine:
         use_slang: bool = True,
         use_expression: bool = True,
     ) -> List[Dict[str, Any]]:
-        if not segments:
-            raise RuntimeError("No lines to translate.")
-        pool = get_key_pool()
-        if gemini_key.strip():
-            try:
-                pool.add_key("gemini", gemini_key.strip(), "Session")
-            except Exception:
-                pass
+        """Public entry — delegates to the cinematic movie-translate flow."""
+        from claynext.models.movie_translate import translate_movie_dialogue
 
-        # Fill timing / syllable budgets so LLM can fit TTS slot length
-        TranslateEngine._ensure_timing(segments, target_lang)
-
-        engine = (translator or "auto").strip().lower()
-        native = "Khmer (ភាសាខ្មែរ)" if target_lang == "Khmer" else target_lang
-        model = (ollama_model or os.environ.get("OLLAMA_MODEL") or "qwen2.5:7b").strip()
-        style = {
-            "fit_duration": bool(fit_duration),
-            "use_slang": bool(use_slang),
-            "use_expression": bool(use_expression),
-        }
-
-        def ping(pct: int, msg: str):
-            if progress_callback:
-                progress_callback(pct, msg)
-
-        def _llm(backend: str, ollama: str = ""):
-            return TranslateEngine._translate_llm(
-                segments,
-                target_lang,
-                backend,
-                ollama,
-                ping,
-                source_lang=source_lang,
-                style=style,
-            )
-
-        chain: list[tuple[str, Callable]] = []
-        if engine == "gemini":
-            chain = [("Gemini Flash (free tier)", lambda: _llm("gemini"))]
-        elif engine == "ollama":
-            chain = [(f"Ollama {model}", lambda: _llm("ollama", model))]
-        elif engine == "nllb":
-            chain = [("NLLB-200 Hugging Face", lambda: TranslateEngine._translate_nllb(segments, target_lang, ping, source_lang=source_lang))]
-        elif engine == "google":
-            chain = [("Google Translate", lambda: TranslateEngine._translate_google_batched(segments, target_lang, ping, source_lang=source_lang))]
-        else:
-            if pool.secrets("gemini"):
-                chain.append(("Gemini Flash (free tier)", lambda: _llm("gemini")))
-            if TranslateEngine.ollama_available():
-                chain.append((f"Ollama {model}", lambda: _llm("ollama", model)))
-            chain.append(("Google Translate", lambda: TranslateEngine._translate_google_batched(segments, target_lang, ping, source_lang=source_lang)))
-
-        last_err = "Translation failed"
-        for i, (label, fn) in enumerate(chain):
-            ping(4, f"Translating {len(segments)} line(s) → {native} ({label})…")
-            try:
-                return fn()
-            except Exception as exc:
-                last_err = str(exc)
-                if i + 1 < len(chain):
-                    ping(6, f"{label} unavailable ({exc}); trying next $0 engine…")
-                    continue
-                raise RuntimeError(last_err) from exc
-        raise RuntimeError(last_err)
+        return translate_movie_dialogue(
+            segments,
+            target_lang=target_lang,
+            source_lang=source_lang,
+            translator=translator,
+            ollama_model=ollama_model,
+            gemini_key=gemini_key,
+            fit_duration=fit_duration,
+            use_slang=use_slang,
+            use_expression=use_expression,
+            progress_callback=progress_callback,
+        )
 
     @staticmethod
     def translate_text(text: str, target_lang: str, source_lang: str = "auto") -> str:
@@ -784,8 +738,8 @@ class TranslateEngine:
                 return idx, ""
             return idx, TranslateEngine.translate_text(text, target_lang, source_lang=source_lang)
 
-        # Concurrently fetch translations with up to 8 workers for low latency
-        workers = min(8, max(2, total))
+        # Concurrent Google calls — capped to reduce free-endpoint 429s
+        workers = min(GOOGLE_MAX_WORKERS, max(2, total))
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             futures = [
                 executor.submit(_fetch, idx, str(seg.get("text") or seg.get("original_text") or ""))
@@ -815,6 +769,25 @@ class TranslateEngine:
         return translated
 
     @staticmethod
+    def _pack_batches(segments: List[Dict[str, Any]]) -> list[list[dict]]:
+        """Pack lines into API batches by count + char budget (fewer wasted RPM)."""
+        batches: list[list[dict]] = []
+        cur: list[dict] = []
+        chars = 0
+        for seg in segments:
+            text = str(seg.get("text") or seg.get("original_text") or "")
+            cost = max(24, len(text) + 48)
+            if cur and (len(cur) >= BATCH_SIZE or chars + cost > BATCH_MAX_CHARS):
+                batches.append(cur)
+                cur = []
+                chars = 0
+            cur.append(seg)
+            chars += cost
+        if cur:
+            batches.append(cur)
+        return batches
+
+    @staticmethod
     def _translate_llm(
         segments: List[Dict[str, Any]],
         target_lang: str,
@@ -825,8 +798,10 @@ class TranslateEngine:
         style: dict | None = None,
     ) -> List[Dict[str, Any]]:
         by_id: dict[Any, dict] = {}
-        batches = [segments[i:i + BATCH_SIZE] for i in range(0, len(segments), BATCH_SIZE)]
-        for b, batch in enumerate(batches):
+        batches = TranslateEngine._pack_batches(segments)
+        style = style or {}
+
+        def _run_one(batch: list[dict]) -> dict[Any, dict]:
             payload = TranslateEngine._payload_for(batch, target_lang=target_lang)
             prompt = TranslateEngine._dub_prompt(
                 payload, target_lang, source_lang=source_lang, style=style,
@@ -835,20 +810,55 @@ class TranslateEngine:
                 mapped = TranslateEngine._ollama_generate(prompt, ollama_model)
             else:
                 mapped = TranslateEngine._gemini_batch(prompt, progress_callback)
-            rows = TranslateEngine._map_batch(
-                batch, mapped, target_lang, fallback_google=backend == "gemini", source_lang=source_lang
+            return TranslateEngine._map_batch(
+                batch,
+                mapped,
+                target_lang,
+                fallback_google=backend == "gemini",
+                source_lang=source_lang,
             )
-            # Only run tighten rewrite pass if explicitly requested to force fit, avoiding redundant latency
-            if (style or {}).get("force_fit", False):
-                TranslateEngine._tighten_to_slot(
-                    rows, target_lang, backend, ollama_model, progress_callback,
-                )
-            by_id.update(rows)
+
+        # Gemini: run concurrent batches when multiple keys are ready (rolling RPM).
+        parallel = 1
+        if backend == "gemini":
+            parallel = max(1, min(4, get_key_pool().ready_count("gemini"), len(batches)))
+
+        if parallel <= 1 or len(batches) <= 1:
+            for b, batch in enumerate(batches):
+                by_id.update(_run_one(batch))
+                if progress_callback:
+                    pct = 10 + int(((b + 1) / max(1, len(batches))) * 80)
+                    label = "Ollama" if backend == "ollama" else "Gemini Flash"
+                    progress_callback(
+                        pct, f"{label} batch {b + 1}/{len(batches)} ({len(batch)} lines)"
+                    )
+        else:
+            import concurrent.futures
+
+            done = 0
+            with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as pool:
+                futs = {pool.submit(_run_one, batch): i for i, batch in enumerate(batches)}
+                for fut in concurrent.futures.as_completed(futs):
+                    by_id.update(fut.result())
+                    done += 1
+                    if progress_callback:
+                        pct = 10 + int((done / len(batches)) * 80)
+                        progress_callback(
+                            pct,
+                            f"Gemini Flash parallel {done}/{len(batches)} "
+                            f"· {parallel} key lane(s)",
+                        )
+
+        rows_map = by_id
+        # One tighten pass for overflow when duration-fit is on (saves mid-batch RPM).
+        if style.get("force_fit") or style.get("fit_duration", True):
             if progress_callback:
-                pct = 10 + int(((b + 1) / len(batches)) * 85)
-                label = "Ollama" if backend == "ollama" else "Gemini Flash"
-                progress_callback(pct, f"{label} batch {b + 1}/{len(batches)} ({len(batch)} lines)")
-        rows = [by_id[s.get("id")] for s in segments if s.get("id") in by_id]
+                progress_callback(92, "Fitting long lines into speech slots…")
+            TranslateEngine._tighten_to_slot(
+                rows_map, target_lang, backend, ollama_model, progress_callback,
+            )
+
+        rows = [rows_map[s.get("id")] for s in segments if s.get("id") in rows_map]
         if not rows:
             raise RuntimeError("Translator returned no lines.")
         if progress_callback:
@@ -856,32 +866,38 @@ class TranslateEngine:
         return rows
 
     @staticmethod
-    def _pace_gemini():
-        global _last_gemini_call
-        n_keys = max(1, len(get_key_pool().secrets("gemini")))
-        interval = max(0.5, GEMINI_MIN_INTERVAL / n_keys)
+    def _pace_gemini(api_key: str = ""):
+        """Per-key pacing so rolling keys each keep their own RPM budget."""
+        key = (api_key or "_default")[-24:]
+        interval = max(0.8, GEMINI_MIN_INTERVAL)
         with _gemini_lock:
-            wait = interval - (time.monotonic() - _last_gemini_call)
+            last = _last_gemini_call_by_key.get(key, 0.0)
+            wait = interval - (time.monotonic() - last)
             if wait > 0:
                 time.sleep(wait)
-            _last_gemini_call = time.monotonic()
+            _last_gemini_call_by_key[key] = time.monotonic()
 
     @staticmethod
     def _gemini_batch(prompt: str, progress_callback: Callable = None) -> list[dict]:
-        models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+        # Prefer Flash 2.0; only drop to 1.5 after the whole key pool fails that model.
+        models = ["gemini-2.0-flash", "gemini-1.5-flash"]
         last_err = "Gemini request failed"
         for model in models:
             try:
-                TranslateEngine._pace_gemini()
                 return TranslateEngine._gemini_generate(model, prompt, progress_callback)
+            except RateLimitError as exc:
+                last_err = str(exc)
+                continue
             except Exception as exc:
                 last_err = str(exc)
+                # Invalid / 404 model → try next; other errors still try next model once.
                 continue
         raise RuntimeError(last_err)
 
     @staticmethod
     def _gemini_generate(model: str, prompt: str, progress_callback: Callable = None) -> list[dict]:
         def _do(api_key: str) -> list[dict]:
+            TranslateEngine._pace_gemini(api_key)
             url = (
                 f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
                 f"?key={urllib.parse.quote(api_key)}"
@@ -904,7 +920,9 @@ class TranslateEngine:
                 if exc.code in (401, 403):
                     raise InvalidKeyError(f"{model}: {exc.code}") from exc
                 if is_rate_limit(exc.code, detail):
-                    raise RateLimitError(f"{model}: rate limited", parse_retry_after(exc.headers, detail)) from exc
+                    raise RateLimitError(
+                        f"{model}: rate limited", parse_retry_after(exc.headers, detail)
+                    ) from exc
                 raise RuntimeError(f"{model}: {exc.code} {detail[:400]}") from exc
             text = (
                 raw.get("candidates", [{}])[0]
@@ -914,7 +932,9 @@ class TranslateEngine:
             )
             return TranslateEngine._parse_lines(json.loads(text))
 
-        return get_key_pool().call_with_rotation("gemini", _do, progress=progress_callback)
+        return get_key_pool().call_with_rotation(
+            "gemini", _do, progress=progress_callback, max_cooldown_waits=3
+        )
 
     @staticmethod
     def _ollama_generate(prompt: str, model: str) -> list[dict]:

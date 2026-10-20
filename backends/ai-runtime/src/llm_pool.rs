@@ -106,23 +106,44 @@ impl NativeKeyPool {
             .collect()
     }
 
+    /// Pick the next ready key. Prefers least-recently-used + lowest fail_count so
+    /// rolling works across fresh CLI processes (cursor alone resets every spawn).
     pub fn acquire_key<'a>(
         &self,
         keys: &'a [ApiKeyItem],
         provider: &str,
     ) -> Option<&'a ApiKeyItem> {
         let now = now_epoch();
-        let ready = self.filter_ready_keys(keys, provider, now);
+        let mut ready = self.filter_ready_keys(keys, provider, now);
         if ready.is_empty() {
             return None;
         }
 
+        ready.sort_by(|a, b| {
+            a.fail_count
+                .cmp(&b.fail_count)
+                .then_with(|| {
+                    let au = a.last_used_at.unwrap_or(0.0);
+                    let bu = b.last_used_at.unwrap_or(0.0);
+                    au.partial_cmp(&bu).unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .then_with(|| a.id.cmp(&b.id))
+        });
+
+        // Cursor breaks ties when last_used_at is equal (first use of several keys).
         let mut lock = self.cursor.lock().unwrap();
         let current_idx = *lock.get(provider).unwrap_or(&0);
         let selected_idx = current_idx % ready.len();
         lock.insert(provider.to_string(), (selected_idx + 1) % ready.len());
 
-        Some(ready[selected_idx])
+        // When keys have distinct last_used_at, always take the LRU (index 0 after sort).
+        let distinct_lru = ready.len() > 1
+            && ready[0].last_used_at.unwrap_or(0.0) < ready[1].last_used_at.unwrap_or(0.0);
+        if distinct_lru {
+            Some(ready[0])
+        } else {
+            Some(ready[selected_idx])
+        }
     }
 
     pub fn soonest_cooldown(&self, keys: &[ApiKeyItem], provider: &str) -> f64 {
@@ -202,5 +223,34 @@ mod tests {
         assert_eq!(second.id, 2);
         let third = pool.acquire_key(&keys, "gemini").unwrap();
         assert_eq!(third.id, 1);
+    }
+
+    #[test]
+    fn test_key_pool_prefers_lru() {
+        let pool = NativeKeyPool::new();
+        let keys = vec![
+            ApiKeyItem {
+                id: 1,
+                provider: "gemini".to_string(),
+                secret: "AIza1".to_string(),
+                label: "Key 1".to_string(),
+                enabled: true,
+                cooldown_until: None,
+                fail_count: 0,
+                last_used_at: Some(100.0),
+            },
+            ApiKeyItem {
+                id: 2,
+                provider: "gemini".to_string(),
+                secret: "AIza2".to_string(),
+                label: "Key 2".to_string(),
+                enabled: true,
+                cooldown_until: None,
+                fail_count: 0,
+                last_used_at: Some(50.0),
+            },
+        ];
+        let chosen = pool.acquire_key(&keys, "gemini").unwrap();
+        assert_eq!(chosen.id, 2);
     }
 }

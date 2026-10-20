@@ -18,6 +18,7 @@ from typing import Any, Callable, Dict
 
 from claynext.models.asr_service import ASREngine, merge_dialogue_segments
 from claynext.adapters.ffmpeg_service import (
+    clean_source_audio,
     demux_wav,
     dynamic_duck_audio,
     ensure_speech_bed,
@@ -192,13 +193,18 @@ def analyze_movie_characters(
             progress_callback=progress_callback,
         )
 
-    if progress_callback:
-        progress_callback(37, "AI naming characters & voice profiling…")
-    try:
-        from claynext.models.gender_voices import llm_analyze_cast_and_gender
-        llm_analyze_cast_and_gender(segments, progress_callback=progress_callback)
-    except Exception:
-        pass
+    # Fast path: skip LLM cast naming when gender assist is off.
+    if gender_on:
+        if progress_callback:
+            progress_callback(37, "AI naming characters & voice profiling…")
+        try:
+            from claynext.models.gender_voices import llm_analyze_cast_and_gender
+
+            llm_analyze_cast_and_gender(segments, progress_callback=progress_callback)
+        except Exception:
+            pass
+    elif progress_callback:
+        progress_callback(37, "Fast cast · lead & co-star only…")
     apply_character_cast(segments)
 
     return assign_gender_and_voices(
@@ -333,20 +339,42 @@ def _speak_lines(
                 pitch_val = float(item["clone_voice"].get("pitch_offset_hz") or 0.0)
 
         if clean_text:
-            for attempt in range(2):
+            fallback_voice = voice_id if voice_id and not str(voice_id).startswith("clone:") else ""
+            if not fallback_voice:
+                gender = str(item.get("gender") or "").lower()
+                fallback_voice = (
+                    "km-KH-SreymomNeural" if gender.startswith("f") else "km-KH-PisethNeural"
+                )
+            attempts = [(voice, ref_wav, pitch_val), (fallback_voice, "", 0.0)]
+            for attempt, (try_voice, try_ref, try_pitch) in enumerate(attempts):
                 if control is not None:
                     control.checkpoint()
+                if not try_voice:
+                    continue
                 try:
-                    TTSEngine.synthesize(clean_text, voice, raw_mp3, pitch=pitch_val, reference_wav=ref_wav)
+                    TTSEngine.synthesize(
+                        clean_text, try_voice, raw_mp3,
+                        pitch=try_pitch, reference_wav=try_ref,
+                    )
                     spoken = os.path.isfile(raw_mp3) and os.path.getsize(raw_mp3) > 100
                     if spoken:
+                        voice = try_voice
                         break
                 except Exception:
                     if attempt == 0:
                         import time
-                        time.sleep(0.25)
+                        time.sleep(0.2)
 
         if spoken:
+            try:
+                from claynext.adapters.ffmpeg_service import apply_speech_eq
+
+                eq_wav = str(job / f"seg_{idx + 1:04d}_eq.wav")
+                eq_path = apply_speech_eq(raw_mp3, eq_wav)
+                if eq_path and os.path.isfile(eq_path):
+                    raw_mp3 = eq_path
+            except Exception:
+                pass
             if sync_mode == "natural":
                 min_t, max_t = 0.95, 1.60
             elif sync_mode == "subtle":
@@ -457,19 +485,35 @@ class DubbingEngine:
         ping(2, "Extracting audio from the source track…")
         full_wav = str(job / "source_48k.wav")
         demux_wav(video_path, full_wav, rate=48000, channels=2)
+        ping(4, "Cleaning source audio…")
+        clean_wav = str(job / "source_clean.wav")
+        clean_audio = clean_source_audio(full_wav, clean_wav)
         ping(7, "Probing media duration…")
         duration = probe_duration(video_path) or probe_duration(full_wav)
         if duration <= 0:
             raise RuntimeError("Could not read media duration.")
 
-        ping(9, "Separating music / vocals (when available)…")
-        bgm_separated, vocals_path = _try_demucs(
-            full_wav,
-            job,
-            lambda p, m: ping(9 + int(max(0, min(100, int(p))) * 0.06), m),
-        )
-        asr_source = vocals_path or full_wav
-        ping(15, "Vocal stem ready…" if vocals_path else "Using full mix for ASR…")
+        # Fast path: skip Demucs when Auto-mix / isolate bed is off (big latency win).
+        want_stems = True
+        try:
+            from claynext.controllers.store import get_store
+
+            want_stems = get_store().get_setting("dub", "auto_mix", "1") == "1"
+        except Exception:
+            want_stems = True
+        bgm_separated, vocals_path = None, None
+        if want_stems:
+            ping(9, "Separating music / vocals (when available)…")
+            bgm_separated, vocals_path = _try_demucs(
+                full_wav,
+                job,
+                lambda p, m: ping(9 + int(max(0, min(100, int(p))) * 0.06), m),
+            )
+            ping(15, "Vocal stem ready…" if vocals_path else "Using full mix for ASR…")
+        else:
+            ping(9, "Fast path · skipping stem separation…")
+            ping(15, "Using full mix for ASR…")
+        asr_source = vocals_path or clean_audio or full_wav
 
         # Step 1: Speech Recognition
         token = resolve_hf_token(hf_token)
@@ -524,17 +568,26 @@ class DubbingEngine:
             cast = ", ".join(names[:4])
             if cast:
                 ping(41, f"Cast · {cast}")
-            ping(42, f"Translating {len(segments)} line(s) with cast, gender, and expression…")
-            translated = TranslateEngine.translate_subtitles(
+            ping(42, f"Movie translate · {len(segments)} line(s) · cast / gender / expression…")
+            from claynext.models.movie_translate import (
+                MovieTranslateOptions,
+                pick_ollama_model,
+                translate_movie_dialogue,
+            )
+
+            ollama_pick = pick_ollama_model(ollama_model, target_lang=target_lang)
+            translated = translate_movie_dialogue(
                 segments,
                 target_lang=target_lang,
                 source_lang=source_lang,
-                gemini_key=gemini_key,
-                translator=translator,
-                ollama_model=ollama_model,
-                fit_duration=translate_fit_duration,
-                use_slang=translate_slang,
-                use_expression=translate_expression,
+                options=MovieTranslateOptions(
+                    translator=translator or "auto",
+                    ollama_model=ollama_pick,
+                    gemini_key=gemini_key,
+                    fit_duration=translate_fit_duration,
+                    use_slang=translate_slang,
+                    use_expression=translate_expression,
+                ),
                 progress_callback=lambda p, m: ping(42 + int(p * 0.14), m),
             )
             from claynext.models.gender_voices import assign_gender_and_voices
@@ -549,11 +602,26 @@ class DubbingEngine:
                 force_redetect=False,
             )
             ping(57, f"Cast ready · {len(translated)} line(s)")
-            if voice_id.startswith("clone:") or (secondary_voice_id and secondary_voice_id.startswith("clone:")):
+            # Character detection auto-builds a clone voice per speaker and TTS uses it.
+            clone_on = True
+            try:
+                from claynext.controllers.store import get_store
+
+                clone_on = get_store().get_setting("dub", "clone_voices", "1") == "1"
+            except Exception:
+                clone_on = True
+            if clone_on:
                 try:
                     from claynext.models.voice_clone import clone_character_voices_from_movie
-                    ping(57, "🎭 Extracting actor voice samples & tone profiles from movie…")
-                    clone_character_voices_from_movie(asr_source or video_path, translated)
+
+                    ping(57, "Cloning character voices from the movie for TTS…")
+                    profiles = clone_character_voices_from_movie(
+                        asr_source or video_path,
+                        translated,
+                        progress_callback=lambda _p, m: ping(57, m),
+                    )
+                    n_clone = sum(1 for p in profiles.values() if p.get("reference_wav"))
+                    ping(57, f"Clone voices ready · {n_clone or len(profiles)} character(s)")
                 except Exception:
                     pass
         else:
@@ -604,6 +672,8 @@ class DubbingEngine:
                 "segments": translated,
                 "duration_sec": duration,
                 "bed_path": bed or "",
+                "clean_audio": clean_audio if os.path.isfile(clean_audio) else "",
+                "vocals_path": vocals_path if vocals_path and os.path.isfile(vocals_path) else "",
             }
 
         # Step 5: Fast Timeline Composition & Broadcast Voiceover Mastering
@@ -696,5 +766,7 @@ class DubbingEngine:
             "duration_sec": duration,
             "bed_path": bgm_bed if os.path.isfile(bgm_bed) else "",
             "dialogue_path": dialogue if os.path.isfile(dialogue) else "",
+            "clean_audio": clean_audio if os.path.isfile(clean_audio) else "",
+            "vocals_path": vocals_path if vocals_path and os.path.isfile(vocals_path) else "",
         }
 

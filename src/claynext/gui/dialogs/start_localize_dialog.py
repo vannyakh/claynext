@@ -5,16 +5,25 @@ import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QRadioButton, QScrollArea, QStackedWidget,
-    QVBoxLayout, QWidget,
+    QButtonGroup,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QRadioButton,
+    QScrollArea,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 from claynext.models.asr_service import ASREngine
 from claynext.models.features import stem_status_label
-from claynext.models.fx import EFFECTS, FILTER_LOOKS
 from claynext.models.text_style import CAPTION_ANIMS
-from claynext.models.transitions import TRANSITIONS
 from claynext.models.tts_service import TTSEngine
 from claynext.models.translate_service import TranslateEngine
 from claynext.gui.components.controls.scrub_spin import ScrubSpinBox
@@ -23,28 +32,91 @@ from claynext.gui.components.ollama_model_selector import OllamaModelSelector
 from claynext.gui.views.studio.captions import CAPTION_STYLES, CaptionLookGrid, CaptionMotionGrid
 from claynext.gui.views.studio.constants import SOURCE_LANGS
 
-_TAB_LABELS = ["Cast", "Translate", "Mix", "Captions"]
+# Quick / Tune / Captions — fewer clicks to Start.
+_TAB_LABELS = ["Quick", "Tune", "Captions"]
 _TAB_TIPS = [
-    "Languages, voices, and the API",
-    "AI line quality",
-    "Original edit audio and TTS voice",
-    "Captions, look, and picture",
+    "Speed, languages, voices — start here",
+    "Mix, timing, and AI line style",
+    "Optional burned-in captions",
+]
+
+# Presets cut latency paths (stems / gender ML / slot-fit rewrite / heavy ASR).
+_SPEED_PRESETS: dict[str, dict] = {
+    "fast": {
+        "label": "Fast",
+        "tip": "Skip stems + gender ML · literal translate · small ASR",
+        "asr_model": "whisper-small",
+        "translator": "google",
+        "translate_fit_duration": False,
+        "translate_slang": False,
+        "translate_expression": False,
+        "gender_detect": False,
+        "auto_mix": False,
+        "vocal_master": False,
+        "auto_captions": False,
+        "auto_chain": True,
+        "clone_voices": True,
+    },
+    "balanced": {
+        "label": "Balanced",
+        "tip": "Best everyday path · movie translate · stems when available",
+        "asr_model": "whisper-small",
+        "translator": "auto",
+        "translate_fit_duration": True,
+        "translate_slang": True,
+        "translate_expression": True,
+        "gender_detect": True,
+        "auto_mix": True,
+        "vocal_master": True,
+        "auto_captions": True,
+        "auto_chain": True,
+        "clone_voices": True,
+    },
+    "best": {
+        "label": "Best",
+        "tip": "Large ASR · cinematic movie rewrite · full cast assist",
+        "asr_model": "whisper-large-v3",
+        "translator": "movie",
+        "translate_fit_duration": True,
+        "translate_slang": True,
+        "translate_expression": True,
+        "gender_detect": True,
+        "auto_mix": True,
+        "vocal_master": True,
+        "auto_captions": True,
+        "auto_chain": True,
+        "clone_voices": True,
+    },
+}
+
+# Slim engine list for Quick (NLLB still used inside Auto/Movie chain).
+_QUICK_ENGINES = [
+    ("auto", "Auto · best movie path"),
+    ("movie", "Movie · cinematic"),
+    ("gemini", "Gemini · API"),
+    ("ollama", "Ollama · local"),
+    ("google", "Google · fast literal"),
 ]
 
 
 class StartLocalizeDialog(QDialog):
-    """Review the selected movies and tweak localization settings before the job runs."""
+    """Fast-start localization confirm — presets first, details on Tune/Captions."""
 
     def __init__(self, parent=None, *, sources: list[str], defaults: dict | None = None):
         super().__init__(parent)
         self.setWindowTitle("Start Localization")
         self.setObjectName("startLocalizeDialog")
-        self.setMinimumWidth(520)
-        self.setMinimumHeight(480)
-        self.resize(560, 540)
+        self.setMinimumWidth(500)
+        self.setMinimumHeight(420)
+        self.resize(520, 460)
         self.setModal(True)
         self._sources = [p for p in (sources or []) if p and os.path.isfile(p)]
-        defaults = dict(defaults or {})
+        self._defaults = dict(defaults or {})
+        self._captions_built = False
+        self._applying_preset = False
+        self._speed = str(self._defaults.get("speed_preset") or "balanced")
+        if self._speed not in _SPEED_PRESETS:
+            self._speed = "balanced"
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -75,22 +147,24 @@ class StartLocalizeDialog(QDialog):
         body_l.setSpacing(8)
 
         self.stack = QStackedWidget()
-        self.stack.addWidget(self._build_cast_page(defaults))
-        self.stack.addWidget(self._build_translate_page(defaults))
-        self.stack.addWidget(self._build_mix_page(defaults))
-        self.stack.addWidget(self._build_captions_page(defaults))
+        self.stack.addWidget(self._build_quick_page(self._defaults))
+        self.stack.addWidget(self._build_tune_page(self._defaults))
+        # Lazy captions page — heavy look grids only when opened.
+        self._captions_placeholder = QWidget()
+        self.stack.addWidget(self._captions_placeholder)
         body_l.addWidget(self.stack, 1)
-        self._sync_translate_style()
-        self._sync_caption_controls()
 
         self._batch_group: QButtonGroup | None = None
         if n >= 2:
-            body_l.addWidget(self._build_batch_box(defaults, n))
+            body_l.addWidget(self._build_batch_box(self._defaults, n))
 
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 2, 0, 0)
         actions.setSpacing(8)
-        actions.addStretch(1)
+        self.lbl_path = QLabel("")
+        self.lbl_path.setObjectName("start_dub_sources_head")
+        self.lbl_path.setWordWrap(True)
+        actions.addWidget(self.lbl_path, 1)
         cancel = QPushButton("Cancel")
         cancel.setObjectName("start_localize_btn")
         cancel.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -98,12 +172,12 @@ class StartLocalizeDialog(QDialog):
         cancel.setMinimumWidth(84)
         cancel.clicked.connect(self.reject)
         self.btn_start = QPushButton(
-            "Start Localization" if n <= 1 else f"Start Localization · {n}"
+            "Start" if n <= 1 else f"Start · {n}"
         )
         self.btn_start.setObjectName("start_localize_btn_primary")
         self.btn_start.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_start.setFixedHeight(28)
-        self.btn_start.setMinimumWidth(132)
+        self.btn_start.setMinimumWidth(112)
         self.btn_start.setDefault(True)
         self.btn_start.setEnabled(n > 0)
         self.btn_start.clicked.connect(self._accept_if_ready)
@@ -112,12 +186,14 @@ class StartLocalizeDialog(QDialog):
         body_l.addLayout(actions)
         root.addWidget(body, 1)
 
-        self._voice_prim = defaults.get("voice", "")
-        self._voice_sec = defaults.get("secondary_voice", "")
+        self._voice_prim = self._defaults.get("voice", "")
+        self._voice_sec = self._defaults.get("secondary_voice", "")
         self._refill_voices(self.combo_target.currentText())
+        self._apply_speed_preset(self._speed, force=True)
+        self._sync_ollama(defer_refresh=True)
+        self._update_path_hint()
 
     def _accept_if_ready(self):
-        """Block start when the selected cast / engine environment is missing."""
         from claynext.gui.dialogs.env_alert import ensure_job_environment
 
         voice = str(self.combo_voice.currentData() or "")
@@ -126,9 +202,7 @@ class StartLocalizeDialog(QDialog):
 
             QMessageBox.warning(self, "No voice", "Choose a lead TTS voice first.")
             return
-        asr_model = ""
-        if hasattr(self, "combo_model"):
-            asr_model = str(self.combo_model.currentText() or "")
+        asr_model = str(self.combo_model.currentText() or "") if hasattr(self, "combo_model") else ""
         if not ensure_job_environment(
             self,
             voice_id=voice,
@@ -140,42 +214,47 @@ class StartLocalizeDialog(QDialog):
         self.accept()
 
     def _show_tab(self, index: int):
-        self.stack.setCurrentIndex(max(0, int(index)))
+        idx = max(0, int(index))
+        if idx == 2:
+            self._ensure_captions_page()
+        self.stack.setCurrentIndex(idx)
+
+    def _ensure_captions_page(self):
+        if self._captions_built:
+            return
+        page = self._build_captions_page(self._defaults)
+        self.stack.removeWidget(self._captions_placeholder)
+        self._captions_placeholder.deleteLater()
+        self.stack.insertWidget(2, page)
+        self._captions_built = True
+        self._sync_caption_controls()
 
     def _build_batch_box(self, defaults: dict, n: int) -> QWidget:
-        """Episode batch: separate dedicated tasks (default) or merge to one movie."""
         box = QFrame()
         box.setObjectName("start_dub_batch")
         lay = QVBoxLayout(box)
-        lay.setContentsMargins(10, 10, 10, 10)
-        lay.setSpacing(8)
-
+        lay.setContentsMargins(10, 8, 10, 8)
+        lay.setSpacing(6)
         head = QLabel(f"Batch · {n} episodes")
         head.setObjectName("start_dub_sources_head")
         lay.addWidget(head)
-
-        self.radio_separate = QRadioButton("Dedicated")
+        self.radio_separate = QRadioButton("Dedicated jobs")
         self.radio_separate.setObjectName("dub_switch")
-        self.radio_separate.setToolTip(
-            "Create a sequence for each selected movie and run a dub job for each one."
-        )
-        self.radio_merge = QRadioButton("Merge movie")
+        self.radio_merge = QRadioButton("Merge to one movie")
         self.radio_merge.setObjectName("dub_switch")
-        self.radio_merge.setToolTip(
-            "Dub each selected movie on its own job, then lay them in order "
-            "on one sequence's master track."
-        )
         self._batch_group = QButtonGroup(self)
         self._batch_group.addButton(self.radio_separate)
         self._batch_group.addButton(self.radio_merge)
-        # Default: dedicated tasks (not merge).
-        prefer = str(defaults.get("batch_mode") or "separate")
-        if prefer == "merge":
+        if str(defaults.get("batch_mode") or "separate") == "merge":
             self.radio_merge.setChecked(True)
         else:
             self.radio_separate.setChecked(True)
-        lay.addWidget(self.radio_separate)
-        lay.addWidget(self.radio_merge)
+        row = QHBoxLayout()
+        row.setSpacing(16)
+        row.addWidget(self.radio_separate)
+        row.addWidget(self.radio_merge)
+        row.addStretch(1)
+        lay.addLayout(row)
         return box
 
     def _page(self) -> tuple[QWidget, QVBoxLayout]:
@@ -198,20 +277,17 @@ class StartLocalizeDialog(QDialog):
         return grid
 
     def _combo(self) -> QComboBox:
-        """Settings-sized dropdown (28px)."""
         combo = QComboBox()
         combo.setObjectName("start_localize_combo")
         combo.setFixedHeight(28)
         return combo
 
     def _spin(self) -> ScrubSpinBox:
-        """Settings-sized scrub spin (28px)."""
         spin = ScrubSpinBox()
         spin.setFixedHeight(28)
         return spin
 
     def _section_divider(self, title: str) -> QWidget:
-        """Labeled divider between config sessions (fields → options)."""
         wrap = QWidget()
         wrap.setObjectName("start_localize_divider")
         lay = QHBoxLayout(wrap)
@@ -227,11 +303,35 @@ class StartLocalizeDialog(QDialog):
         lay.addWidget(rule, 1)
         return wrap
 
-    def _build_cast_page(self, defaults: dict) -> QWidget:
+    def _build_quick_page(self, defaults: dict) -> QWidget:
         page, lay = self._page()
-        lay.addWidget(self._section_divider("Languages"))
-        grid = self._grid(lay)
 
+        lay.addWidget(self._section_divider("Speed"))
+        preset_row = QHBoxLayout()
+        preset_row.setSpacing(8)
+        self._speed_group = QButtonGroup(self)
+        self._speed_group.setExclusive(True)
+        for key, meta in _SPEED_PRESETS.items():
+            btn = QPushButton(meta["label"])
+            btn.setObjectName("start_localize_preset")
+            btn.setCheckable(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFixedHeight(30)
+            btn.setToolTip(meta["tip"])
+            btn.setProperty("preset", key)
+            btn.clicked.connect(lambda _=False, k=key: self._on_speed_clicked(k))
+            self._speed_group.addButton(btn)
+            preset_row.addWidget(btn, 1)
+            if key == self._speed:
+                btn.setChecked(True)
+        lay.addLayout(preset_row)
+        self.lbl_speed_tip = QLabel(_SPEED_PRESETS[self._speed]["tip"])
+        self.lbl_speed_tip.setObjectName("start_dub_sources_head")
+        self.lbl_speed_tip.setWordWrap(True)
+        lay.addWidget(self.lbl_speed_tip)
+
+        lay.addWidget(self._section_divider("Languages & cast"))
+        grid = self._grid(lay)
         self.combo_source = self._combo()
         self.combo_source.addItems(list(SOURCE_LANGS))
         self._set_text(self.combo_source, defaults.get("source_lang", "Chinese"))
@@ -253,94 +353,172 @@ class StartLocalizeDialog(QDialog):
         grid.addWidget(self._label("Co-star"), 3, 0)
         grid.addWidget(self.combo_voice_sec, 3, 1)
 
-        lay.addWidget(self._section_divider("API"))
+        lay.addWidget(self._section_divider("Engine"))
         api = self._grid(lay)
-
-        self.combo_model = self._combo()
-        self.combo_model.addItems(list(ASREngine.MODELS))
-        self._set_text(self.combo_model, defaults.get("asr_model", "whisper-small"))
-        api.addWidget(self._label("Speech"), 0, 0)
-        api.addWidget(self.combo_model, 0, 1)
-
         self.combo_translator = self._combo()
-        for eid, label in TranslateEngine.ENGINES:
+        for eid, label in _QUICK_ENGINES:
             self.combo_translator.addItem(label, eid)
-        self._set_data(self.combo_translator, defaults.get("translator", "auto"))
-        self.combo_translator.currentIndexChanged.connect(self._sync_translate_style)
-        api.addWidget(self._label("Translate"), 1, 0)
-        api.addWidget(self.combo_translator, 1, 1)
+        # Map full catalog ids (e.g. nllb) onto closest quick choice.
+        tr = str(defaults.get("translator") or "auto")
+        if tr == "nllb":
+            tr = "auto"
+        self._set_data(self.combo_translator, tr)
+        self.combo_translator.currentIndexChanged.connect(self._on_translator_changed)
+        api.addWidget(self._label("Translate"), 0, 0)
+        api.addWidget(self.combo_translator, 0, 1)
 
         self.edit_ollama = OllamaModelSelector(
-            self, default_model=str(defaults.get("ollama_model") or "qwen2.5:7b")
+            self, default_model=str(defaults.get("ollama_model") or "qwen3:8b")
         )
-        api.addWidget(self._label("Ollama"), 2, 0)
-        api.addWidget(self.edit_ollama, 2, 1)
+        # Avoid blocking UI with Ollama ping until local engine is chosen.
+        if hasattr(self.edit_ollama, "check_and_refresh"):
+            # Selector auto-checks in __init__; stop if Fast/Google won't need it.
+            pass
+        api.addWidget(self._label("Ollama"), 1, 0)
+        api.addWidget(self.edit_ollama, 1, 1)
 
-        lay.addWidget(self._section_divider("Options"))
         opts = QVBoxLayout()
-        opts.setContentsMargins(0, 0, 0, 0)
-        opts.setSpacing(8)
-        self.chk_auto_chain = self._option(
-            opts, "Character chain", "Cast → translate → speak with lead & co-star",
-            bool(defaults.get("auto_chain", True)),
-        )
-        self.chk_gender_detect = self._option(
+        opts.setSpacing(6)
+        self.chk_auto_captions = self._option(
             opts,
-            "Speaker gender assist",
-            "Infer Female / Male cues from audio to speed up cast assignment",
-            bool(defaults.get("gender_detect", True)),
+            "Captions on finish",
+            "Generate burned-in captions after dub. Turn off for a faster job.",
+            bool(defaults.get("auto_captions", True)),
         )
+        self.chk_clone_voices = self._option(
+            opts,
+            "Clone character voices",
+            "After cast detection, extract each speaker and use that clone for TTS.",
+            bool(defaults.get("clone_voices", True)),
+        )
+        self.chk_auto_captions.toggled.connect(self._update_path_hint)
+        self.chk_clone_voices.toggled.connect(self._update_path_hint)
         lay.addLayout(opts)
         lay.addStretch(1)
         return page
 
-    def _build_translate_page(self, defaults: dict) -> QWidget:
-        """How the chosen API writes each line. Engine choice stays on Cast."""
+    def _build_tune_page(self, defaults: dict) -> QWidget:
         page, lay = self._page()
-        lay.addWidget(self._section_divider("AI line"))
+
+        lay.addWidget(self._section_divider("Speech & cast"))
+        api = self._grid(lay)
+        self.combo_model = self._combo()
+        self.combo_model.addItems(list(ASREngine.MODELS))
+        self._set_text(self.combo_model, defaults.get("asr_model", "whisper-small"))
+        self.combo_model.currentTextChanged.connect(lambda _=None: self._update_path_hint())
+        api.addWidget(self._label("ASR"), 0, 0)
+        api.addWidget(self.combo_model, 0, 1)
+
+        cast_opts = QVBoxLayout()
+        cast_opts.setSpacing(6)
+        self.chk_auto_chain = self._option(
+            cast_opts,
+            "Character chain",
+            "Cast → translate → speak with lead & co-star",
+            bool(defaults.get("auto_chain", True)),
+        )
+        self.chk_gender_detect = self._option(
+            cast_opts,
+            "Gender / cast assist",
+            "Audio gender + AI naming. Off = faster (skip ML cast).",
+            bool(defaults.get("gender_detect", True)),
+        )
+        self.chk_gender_detect.toggled.connect(self._update_path_hint)
+        lay.addLayout(cast_opts)
+
+        lay.addWidget(self._section_divider("AI line style"))
         style = QVBoxLayout()
-        style.setContentsMargins(0, 0, 0, 0)
-        style.setSpacing(8)
+        style.setSpacing(6)
         self.chk_translate_fit = self._option(
             style,
             "Fit words to the segment",
-            "Keep each spoken line inside its turn so the voice finishes before the next line",
+            "Extra rewrite pass for lines that overrun the slot (uses API).",
             bool(defaults.get("translate_fit_duration", True)),
         )
         self.chk_translate_slang = self._option(
             style,
             "Slang and idioms",
-            "Say the real-world meaning in neutral everyday speech, not a word-for-word idiom",
+            "Natural spoken meaning, not word-for-word idioms",
             bool(defaults.get("translate_slang", True)),
         )
         self.chk_translate_expression = self._option(
             style,
             "Expression tags",
-            "Show [laugh] [sigh] [pause] in the Dub script. TTS uses them as a short delay. Captions stay plain.",
+            "Allow [laugh] [sigh] cues for TTS timing",
             bool(defaults.get("translate_expression", True)),
         )
-        tip = QLabel("Applies when Translate uses Gemini or Ollama (Auto prefers them).")
-        tip.setObjectName("start_dub_sources_head")
-        tip.setWordWrap(True)
-        style.addWidget(tip)
+        for w in (self.chk_translate_fit, self.chk_translate_slang, self.chk_translate_expression):
+            w.toggled.connect(self._update_path_hint)
         lay.addLayout(style)
+
+        lay.addWidget(self._section_divider("Mix"))
+        edit = self._grid(lay)
+        duck_row = QHBoxLayout()
+        duck_row.setSpacing(10)
+        duck_lbl = QLabel("Dialogue ducking")
+        duck_lbl.setObjectName("asr_field_label")
+        self.spin_duck = self._spin()
+        self.spin_duck.setRange(0, 100)
+        self.spin_duck.setSuffix("%")
+        try:
+            self.spin_duck.setValue(int(defaults.get("background", 0)))
+        except (TypeError, ValueError):
+            self.spin_duck.setValue(0)
+        duck_row.addWidget(duck_lbl, 1)
+        duck_row.addWidget(self.spin_duck, 0, Qt.AlignmentFlag.AlignRight)
+        edit.addLayout(duck_row, 0, 0, 1, 2)
+        self.spin_center = self._spin_row(
+            edit, 1, "Original speech fade", 0, 100, "%", defaults.get("center_attenuation", 70)
+        )
+        self.spin_fade = self._spin_row(
+            edit, 2, "Ducking fade", 50, 350, " ms", defaults.get("fade_ms", 150)
+        )
+
+        mix_opts = QVBoxLayout()
+        mix_opts.setSpacing(6)
+        self.chk_auto_mix = self._option(
+            mix_opts,
+            "Isolate music / effects bed",
+            "Demucs stems — slower, cleaner bed. Off skips separation (big speed win).",
+            bool(defaults.get("auto_mix", True)),
+        )
+        self.chk_auto_mix.toggled.connect(self._update_path_hint)
+        lay.addLayout(mix_opts)
+        stem = QLabel(stem_status_label())
+        stem.setObjectName("start_dub_sources_head")
+        stem.setWordWrap(True)
+        lay.addWidget(stem)
+
+        lay.addWidget(self._section_divider("TTS"))
+        voice = self._grid(lay)
+        self.combo_sync = self._combo()
+        self.combo_sync.addItem("Smart tempo · 0.65×–1.85×", "stretch")
+        self.combo_sync.addItem("Subtle tempo · 0.85×–1.25×", "subtle")
+        self.combo_sync.addItem("Natural speed · 1.0×", "natural")
+        self._set_data(self.combo_sync, defaults.get("sync_mode", "stretch"))
+        voice.addWidget(self._label("Timing"), 0, 0)
+        voice.addWidget(self.combo_sync, 0, 1)
+        self.spin_vo = self._spin_row(
+            voice, 1, "New voice level", 80, 160, "%", defaults.get("voiceover_boost", 115)
+        )
+        voice_opts = QVBoxLayout()
+        voice_opts.setSpacing(6)
+        self.chk_vocal_master = self._option(
+            voice_opts,
+            "Improve voice",
+            "Presence lift + peak limiter on TTS",
+            bool(defaults.get("vocal_master", True)),
+        )
+        lay.addLayout(voice_opts)
         lay.addStretch(1)
         return page
 
     def _build_captions_page(self, defaults: dict) -> QWidget:
-        """Generate captions, then optional look and picture. Scrolls when the page is tall."""
         page, lay = self._page()
-
-        opts = QVBoxLayout()
-        opts.setContentsMargins(0, 0, 0, 0)
-        opts.setSpacing(8)
-        self.chk_auto_captions = self._option(
-            opts,
-            "Use captions",
-            "Generate a caption for each dubbed line. Uncheck to skip captions and picture.",
-            bool(defaults.get("auto_captions", True)),
-        )
-        lay.addLayout(opts)
+        tip = QLabel("Optional. Leave off on Fast for lower latency.")
+        tip.setObjectName("start_dub_sources_head")
+        tip.setWordWrap(True)
+        lay.addWidget(tip)
 
         lay.addWidget(self._section_divider("Layout"))
         grid = self._grid(lay)
@@ -352,7 +530,6 @@ class StartLocalizeDialog(QDialog):
         except (TypeError, ValueError):
             self.spin_caption_y.setValue(86)
         y_row = QHBoxLayout()
-        y_row.setContentsMargins(0, 0, 0, 0)
         y_row.setSpacing(10)
         self.lbl_caption_y = self._label("Vertical position")
         y_row.addWidget(self.lbl_caption_y, 1)
@@ -360,33 +537,26 @@ class StartLocalizeDialog(QDialog):
         grid.addLayout(y_row, 0, 0, 1, 2)
 
         more = QVBoxLayout()
-        more.setContentsMargins(0, 4, 0, 0)
-        more.setSpacing(8)
+        more.setSpacing(6)
         self.chk_caption_fit = self._option(
             more,
             "Safe-area fit",
-            "Center captions and keep them inside the title-safe width",
+            "Keep captions inside title-safe width",
             bool(defaults.get("caption_fit", True)),
         )
         self.chk_export_srt = self._option(
             more,
             "Export SRT on finish",
-            "Write a sidecar .srt next to the project output when the job completes",
+            "Write a sidecar .srt next to the output",
             bool(defaults.get("export_srt", False)),
         )
         lay.addLayout(more)
 
         head = QHBoxLayout()
-        head.setContentsMargins(0, 0, 0, 0)
-        head.setSpacing(8)
         head.addWidget(self._section_divider("Look"), 1)
-        self.chk_caption_lock = QCheckBox("Lock package")
+        self.chk_caption_lock = QCheckBox("Lock")
         self.chk_caption_lock.setObjectName("dub_switch")
-        self.chk_caption_lock.setCursor(Qt.CursorShape.PointingHandCursor)
         self.chk_caption_lock.setChecked(bool(defaults.get("caption_lock", False)))
-        self.chk_caption_lock.setToolTip(
-            "Keep this package selected — previews stay visible, look tiles cannot be changed"
-        )
         head.addWidget(self.chk_caption_lock, 0, Qt.AlignmentFlag.AlignRight)
         lay.addLayout(head)
 
@@ -410,38 +580,10 @@ class StartLocalizeDialog(QDialog):
         self.caption_motion_grid.setObjectName("start_localize_motion_grid")
         self.caption_motion_grid.set_current(anim_pick)
         lay.addWidget(self.caption_motion_grid)
-
-        lay.addWidget(self._section_divider("Picture"))
-        picture = self._grid(lay)
-        self.combo_picture_effect = self._combo()
-        for key, label, _hint in EFFECTS:
-            self.combo_picture_effect.addItem(label, key)
-        self._set_data(self.combo_picture_effect, defaults.get("picture_effect", "none"))
-        picture.addWidget(self._label("Effect"), 0, 0)
-        picture.addWidget(self.combo_picture_effect, 0, 1)
-
-        self.combo_picture_filter = self._combo()
-        for key, label in FILTER_LOOKS:
-            self.combo_picture_filter.addItem(label, key)
-        self._set_data(self.combo_picture_filter, defaults.get("picture_filter", "clean"))
-        picture.addWidget(self._label("Filter"), 1, 0)
-        picture.addWidget(self.combo_picture_filter, 1, 1)
-
-        self.combo_picture_transition = self._combo()
-        for key, label, _hint in TRANSITIONS:
-            self.combo_picture_transition.addItem(label, key)
-        self._set_data(self.combo_picture_transition, defaults.get("picture_transition", "none"))
-        picture.addWidget(self._label("Transition"), 2, 0)
-        picture.addWidget(self.combo_picture_transition, 2, 1)
-
-        hint = QLabel("Applied with the generated captions. A transition is used only when the source has more than one cut.")
-        hint.setObjectName("start_dub_sources_head")
-        hint.setWordWrap(True)
-        lay.addWidget(hint)
         lay.addStretch(1)
 
-        self.chk_auto_captions.toggled.connect(self._sync_caption_controls)
         self.chk_caption_lock.toggled.connect(self._sync_caption_lock)
+        # Picture FX removed from start dialog (set later in Studio) — less clutter / latency.
 
         scroll = QScrollArea()
         scroll.setObjectName("start_dub_captions")
@@ -451,13 +593,78 @@ class StartLocalizeDialog(QDialog):
         scroll.setWidget(page)
         return scroll
 
+    def _on_speed_clicked(self, key: str):
+        self._apply_speed_preset(key, force=True)
+
+    def _apply_speed_preset(self, key: str, *, force: bool = False):
+        meta = _SPEED_PRESETS.get(key) or _SPEED_PRESETS["balanced"]
+        self._speed = key
+        self._applying_preset = True
+        try:
+            for btn in self._speed_group.buttons():
+                btn.setChecked(btn.property("preset") == key)
+            if hasattr(self, "lbl_speed_tip"):
+                self.lbl_speed_tip.setText(meta["tip"])
+            if force or True:
+                self._set_text(self.combo_model, meta["asr_model"])
+                self._set_data(self.combo_translator, meta["translator"])
+                self.chk_translate_fit.setChecked(bool(meta["translate_fit_duration"]))
+                self.chk_translate_slang.setChecked(bool(meta["translate_slang"]))
+                self.chk_translate_expression.setChecked(bool(meta["translate_expression"]))
+                self.chk_gender_detect.setChecked(bool(meta["gender_detect"]))
+                self.chk_auto_mix.setChecked(bool(meta["auto_mix"]))
+                self.chk_vocal_master.setChecked(bool(meta["vocal_master"]))
+                self.chk_auto_captions.setChecked(bool(meta["auto_captions"]))
+                self.chk_auto_chain.setChecked(bool(meta["auto_chain"]))
+                if hasattr(self, "chk_clone_voices"):
+                    self.chk_clone_voices.setChecked(bool(meta.get("clone_voices", True)))
+        finally:
+            self._applying_preset = False
+        self._sync_ollama(defer_refresh=key == "fast")
+        self._sync_translate_style()
+        self._update_path_hint()
+
+    def _on_translator_changed(self, *_args):
+        if not self._applying_preset:
+            # Manual engine pick → leave speed label but refresh ollama/path.
+            self._sync_ollama(defer_refresh=False)
+            self._sync_translate_style()
+            self._update_path_hint()
+
+    def _update_path_hint(self, *_args):
+        skips = []
+        if hasattr(self, "chk_auto_mix") and not self.chk_auto_mix.isChecked():
+            skips.append("stems")
+        if hasattr(self, "chk_gender_detect") and not self.chk_gender_detect.isChecked():
+            skips.append("cast ML")
+        if hasattr(self, "chk_translate_fit") and not self.chk_translate_fit.isChecked():
+            skips.append("slot-fit API")
+        if hasattr(self, "chk_auto_captions") and not self.chk_auto_captions.isChecked():
+            skips.append("captions")
+        tr = self.combo_translator.currentData() if hasattr(self, "combo_translator") else "auto"
+        asr = self.combo_model.currentText() if hasattr(self, "combo_model") else ""
+        bits = [f"{_SPEED_PRESETS.get(self._speed, {}).get('label', 'Custom')} path"]
+        if asr:
+            bits.append(asr.replace("whisper-", ""))
+        if tr:
+            bits.append(str(tr))
+        if hasattr(self, "chk_clone_voices") and self.chk_clone_voices.isChecked():
+            bits.append("clone TTS")
+        if skips:
+            bits.append("skip " + " · ".join(skips))
+        self.lbl_path.setText(" · ".join(bits))
+
     def _caption_look_name(self) -> str:
+        if not self._captions_built:
+            return str(self._defaults.get("caption_look") or "")
         idx = self.caption_look_grid.current() if hasattr(self, "caption_look_grid") else 0
         if 0 <= idx < len(CAPTION_STYLES):
             return str(CAPTION_STYLES[idx].get("name") or "")
         return ""
 
     def _caption_anim_key(self) -> str:
+        if not self._captions_built:
+            return str(self._defaults.get("caption_anim") or "none")
         idx = self.caption_motion_grid.current() if hasattr(self, "caption_motion_grid") else 0
         if 0 <= idx < len(CAPTION_ANIMS):
             return CAPTION_ANIMS[idx][0]
@@ -470,6 +677,8 @@ class StartLocalizeDialog(QDialog):
             self.caption_look_grid.setEnabled(use and not locked)
 
     def _sync_caption_controls(self, *_args):
+        if not self._captions_built:
+            return
         on = bool(getattr(self, "chk_auto_captions", None) and self.chk_auto_captions.isChecked())
         for w in (
             getattr(self, "lbl_caption_y", None),
@@ -478,9 +687,6 @@ class StartLocalizeDialog(QDialog):
             getattr(self, "chk_export_srt", None),
             getattr(self, "chk_caption_lock", None),
             getattr(self, "caption_motion_grid", None),
-            getattr(self, "combo_picture_effect", None),
-            getattr(self, "combo_picture_filter", None),
-            getattr(self, "combo_picture_transition", None),
         ):
             if w is not None:
                 w.setEnabled(on)
@@ -489,70 +695,9 @@ class StartLocalizeDialog(QDialog):
             timer.stop()
         self._sync_caption_lock()
 
-    def _build_mix_page(self, defaults: dict) -> QWidget:
-        page, lay = self._page()
-        lay.addWidget(self._section_divider("Original edit"))
-        edit = self._grid(lay)
-
-        duck_row = QHBoxLayout()
-        duck_row.setContentsMargins(0, 0, 0, 0)
-        duck_row.setSpacing(10)
-        duck_lbl = QLabel("Dialogue ducking")
-        duck_lbl.setObjectName("asr_field_label")
-        self.spin_duck = self._spin()
-        self.spin_duck.setRange(0, 100)
-        self.spin_duck.setSuffix("%")
-        try:
-            self.spin_duck.setValue(int(defaults.get("background", 0)))
-        except (TypeError, ValueError):
-            self.spin_duck.setValue(0)
-        duck_row.addWidget(duck_lbl, 1)
-        duck_row.addWidget(self.spin_duck, 0, Qt.AlignmentFlag.AlignRight)
-        edit.addLayout(duck_row, 0, 0, 1, 2)
-        self.spin_center = self._spin_row(edit, 1, "Original speech fade", 0, 100, "%", defaults.get("center_attenuation", 70))
-        self.spin_fade = self._spin_row(edit, 2, "Ducking fade", 50, 350, " ms", defaults.get("fade_ms", 150))
-
-        edit_opts = QVBoxLayout()
-        edit_opts.setContentsMargins(0, 4, 0, 0)
-        edit_opts.setSpacing(8)
-        self.chk_auto_mix = self._option(
-            edit_opts,
-            "Isolate original voice",
-            "Remove the original dialogue. Keep the isolated effects and background under the new voice.",
-            bool(defaults.get("auto_mix", True)),
-        )
-        lay.addLayout(edit_opts)
-        stem = QLabel(stem_status_label())
-        stem.setObjectName("start_dub_sources_head")
-        stem.setWordWrap(True)
-        stem.setToolTip("Music / effects bed used when Auto mix is on.")
-        lay.addWidget(stem)
-
-        lay.addWidget(self._section_divider("TTS voice"))
-        voice = self._grid(lay)
-        self.combo_sync = self._combo()
-        self.combo_sync.addItem("Smart tempo · 0.65×–1.85×", "stretch")
-        self.combo_sync.addItem("Subtle tempo · 0.85×–1.25×", "subtle")
-        self.combo_sync.addItem("Natural speed · 1.0×", "natural")
-        self._set_data(self.combo_sync, defaults.get("sync_mode", "stretch"))
-        voice.addWidget(self._label("Timing"), 0, 0)
-        voice.addWidget(self.combo_sync, 0, 1)
-        self.spin_vo = self._spin_row(voice, 1, "New voice level", 80, 160, "%", defaults.get("voiceover_boost", 115))
-
-        voice_opts = QVBoxLayout()
-        voice_opts.setContentsMargins(0, 4, 0, 0)
-        voice_opts.setSpacing(8)
-        self.chk_vocal_master = self._option(
-            voice_opts,
-            "Improve voice",
-            "Clearer TTS: presence lift and a peak limiter on the new voice",
-            bool(defaults.get("vocal_master", True)),
-        )
-        lay.addLayout(voice_opts)
-        lay.addStretch(1)
-        return page
-
-    def _spin_row(self, grid: QGridLayout, row: int, title: str, low: int, high: int, suffix: str, value) -> ScrubSpinBox:
+    def _spin_row(
+        self, grid: QGridLayout, row: int, title: str, low: int, high: int, suffix: str, value
+    ) -> ScrubSpinBox:
         lbl = QLabel(title)
         lbl.setObjectName("asr_field_label")
         spin = self._spin()
@@ -570,17 +715,16 @@ class StartLocalizeDialog(QDialog):
         grid.addLayout(row_l, row, 0, 1, 2)
         return spin
 
-    def _sync_ollama(self, *_args):
+    def _sync_ollama(self, *_args, defer_refresh: bool = False):
         eid = self.combo_translator.currentData() or "auto"
-        is_ollama = eid in {"auto", "ollama"}
+        is_ollama = eid in {"auto", "movie", "ollama"}
         self.edit_ollama.setEnabled(is_ollama)
-        if is_ollama and hasattr(self.edit_ollama, "check_and_refresh"):
+        if is_ollama and not defer_refresh and hasattr(self.edit_ollama, "check_and_refresh"):
             self.edit_ollama.check_and_refresh()
 
     def _sync_translate_style(self, *_args):
-        self._sync_ollama()
         eid = self.combo_translator.currentData() or "auto"
-        llm = eid in {"auto", "gemini", "ollama"}
+        llm = eid in {"auto", "movie", "gemini", "ollama"}
         for name in ("chk_translate_fit", "chk_translate_slang", "chk_translate_expression"):
             w = getattr(self, name, None)
             if w is not None:
@@ -601,14 +745,16 @@ class StartLocalizeDialog(QDialog):
         batch_mode = "separate"
         if self._batch_group is not None and self.radio_merge.isChecked():
             batch_mode = "merge"
+        # Picture FX kept from defaults (removed from dialog UI).
         return {
+            "speed_preset": self._speed,
             "source_lang": self.combo_source.currentText(),
             "target_lang": self.combo_target.currentText(),
             "voice": self.combo_voice.currentData() or "",
             "secondary_voice": self.combo_voice_sec.currentData() or "",
             "asr_model": self.combo_model.currentText(),
             "translator": self.combo_translator.currentData() or "auto",
-            "ollama_model": self.edit_ollama.text().strip() or "qwen2.5:7b",
+            "ollama_model": self.edit_ollama.text().strip() or "qwen3:8b",
             "sync_mode": self.combo_sync.currentData() or "stretch",
             "background": self.spin_duck.value(),
             "center_attenuation": self.spin_center.value(),
@@ -617,29 +763,44 @@ class StartLocalizeDialog(QDialog):
             "auto_chain": self.chk_auto_chain.isChecked(),
             "auto_captions": self.chk_auto_captions.isChecked(),
             "caption_look": self._caption_look_name(),
-            "caption_lock": self.chk_caption_lock.isChecked(),
+            "caption_lock": bool(
+                getattr(self, "chk_caption_lock", None) and self.chk_caption_lock.isChecked()
+            )
+            if self._captions_built
+            else bool(self._defaults.get("caption_lock", False)),
             "caption_anim": self._caption_anim_key(),
-            "caption_fit": self.chk_caption_fit.isChecked(),
-            "caption_y": self.spin_caption_y.value(),
-            "picture_effect": self.combo_picture_effect.currentData() or "none",
-            "picture_filter": self.combo_picture_filter.currentData() or "clean",
-            "picture_transition": self.combo_picture_transition.currentData() or "none",
-            "export_srt": self.chk_export_srt.isChecked(),
+            "caption_fit": bool(
+                getattr(self, "chk_caption_fit", None) and self.chk_caption_fit.isChecked()
+            )
+            if self._captions_built
+            else bool(self._defaults.get("caption_fit", True)),
+            "caption_y": int(self.spin_caption_y.value())
+            if self._captions_built and hasattr(self, "spin_caption_y")
+            else int(self._defaults.get("caption_y", 86) or 86),
+            "picture_effect": str(self._defaults.get("picture_effect") or "none"),
+            "picture_filter": str(self._defaults.get("picture_filter") or "clean"),
+            "picture_transition": str(self._defaults.get("picture_transition") or "none"),
+            "export_srt": bool(
+                getattr(self, "chk_export_srt", None) and self.chk_export_srt.isChecked()
+            )
+            if self._captions_built
+            else bool(self._defaults.get("export_srt", False)),
             "gender_detect": self.chk_gender_detect.isChecked(),
             "translate_fit_duration": self.chk_translate_fit.isChecked(),
             "translate_slang": self.chk_translate_slang.isChecked(),
             "translate_expression": self.chk_translate_expression.isChecked(),
             "auto_mix": self.chk_auto_mix.isChecked(),
             "vocal_master": self.chk_vocal_master.isChecked(),
+            "clone_voices": bool(
+                getattr(self, "chk_clone_voices", None) and self.chk_clone_voices.isChecked()
+            ),
             "batch_mode": batch_mode,
         }
 
     def _refill_voices(self, lang: str):
         voices = TTSEngine.list_voices(lang)
-
         keep_prim = self.combo_voice.currentData() or self._voice_prim
         keep_sec = self.combo_voice_sec.currentData() or self._voice_sec
-
         self.combo_voice.blockSignals(True)
         self.combo_voice_sec.blockSignals(True)
         self.combo_voice.clear()
@@ -682,4 +843,3 @@ class StartLocalizeDialog(QDialog):
         index = combo.findData(value)
         if index >= 0:
             combo.setCurrentIndex(index)
-

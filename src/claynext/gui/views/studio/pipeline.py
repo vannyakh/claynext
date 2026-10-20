@@ -118,7 +118,7 @@ class PipelineTools:
             "secondary_voice": self.combo_voice_sec.currentData() or "",
             "asr_model": self.combo_model.currentText(),
             "translator": self.combo_translator.currentData() or "auto",
-            "ollama_model": self.edit_ollama.text().strip() if hasattr(self, "edit_ollama") else "qwen2.5:7b",
+            "ollama_model": self.edit_ollama.text().strip() if hasattr(self, "edit_ollama") else "qwen3:8b",
             "sync_mode": self.combo_sync_mode.currentData() or "stretch",
             "background": self.slider_duck.value(),
             "center_attenuation": self.slider_center_att.value(),
@@ -143,6 +143,8 @@ class PipelineTools:
             "vocal_master": bool(getattr(self, "chk_vocal_master", None) and self.chk_vocal_master.isChecked()),
             # Default: dedicated tasks — merge is opt-in for episode → one movie.
             "batch_mode": self.store.get_setting("dub", "batch_mode", "separate") or "separate",
+            "speed_preset": self.store.get_setting("dub", "speed_preset", "balanced") or "balanced",
+            "clone_voices": self.store.get_setting("dub", "clone_voices", "1") == "1",
         }
 
     def _apply_start_dub_options(self, opts: dict):
@@ -178,7 +180,7 @@ class PipelineTools:
             self.store.set_setting("dub", "translator", translator)
 
         if hasattr(self, "edit_ollama"):
-            ollama = str(opts.get("ollama_model") or "qwen2.5:7b").strip() or "qwen2.5:7b"
+            ollama = str(opts.get("ollama_model") or "qwen3:8b").strip() or "qwen3:8b"
             self.edit_ollama.setText(ollama)
             self.store.set_setting("dub", "ollama_model", ollama)
 
@@ -204,12 +206,16 @@ class PipelineTools:
             spin.setValue(int(opts[key]))
             self.store.set_setting("dub", key, str(int(opts[key])))
 
+        if opts.get("speed_preset"):
+            self.store.set_setting("dub", "speed_preset", str(opts.get("speed_preset")))
         self._apply_start_check(getattr(self, "chk_auto_chain", None), opts.get("auto_chain"), "auto_chain")
         self._apply_start_check(getattr(self, "chk_auto_captions", None), opts.get("auto_captions"), "auto_captions")
         self._apply_start_check(getattr(self, "chk_auto_mix", None), opts.get("auto_mix"), "auto_mix")
         self._apply_start_check(getattr(self, "chk_vocal_master", None), opts.get("vocal_master"), "vocal_master")
         self._apply_start_check(None, opts.get("export_srt"), "export_srt")
         self._apply_start_check(None, opts.get("gender_detect"), "gender_detect")
+        if "clone_voices" in opts:
+            self.store.set_setting("dub", "clone_voices", "1" if opts.get("clone_voices") else "0")
         self._apply_start_check(
             getattr(self, "chk_translate_fit", None),
             opts.get("translate_fit_duration"),
@@ -653,7 +659,7 @@ class PipelineTools:
         model = self.combo_model.currentText()
         bg = self.slider_duck.value() / 100.0
         translator = self.combo_translator.currentData() or "auto"
-        ollama_model = self.edit_ollama.text().strip() or "qwen2.5:7b"
+        ollama_model = self.edit_ollama.text().strip() or "qwen3:8b"
         self.store.set_setting("dub", "translator", translator)
         self.store.set_setting("dub", "ollama_model", ollama_model)
         self.log.info(f"Starting dub · {source_lang} → {lang} · {voice_id} & {sec_voice_id} · {model} · {translator}")
@@ -766,6 +772,8 @@ class PipelineTools:
                 self.combo_voice.currentText(),
                 bed=str(res.get("bed_path") or ""),
                 dialogue=str(res.get("dialogue_path") or ""),
+                clean_audio=str(res.get("clean_audio") or ""),
+                vocals=str(res.get("vocals_path") or ""),
                 duck=True,
                 apply=False,
                 stash=False,
@@ -784,6 +792,8 @@ class PipelineTools:
                 self.combo_voice.currentText(),
                 bed=str(res.get("bed_path") or ""),
                 dialogue=str(res.get("dialogue_path") or ""),
+                clean_audio=str(res.get("clean_audio") or ""),
+                vocals=str(res.get("vocals_path") or ""),
                 duck=True,
                 apply=apply_now,
             )
@@ -1136,7 +1146,8 @@ class PipelineTools:
 
     def _remember_composition(
         self, output: str, segments: list, source: str, language: str, voice: str,
-        bed: str = "", dialogue: str = "",         duck: bool = False, footage: list | None = None,
+        bed: str = "", dialogue: str = "", duck: bool = False, footage: list | None = None,
+        clean_audio: str = "", vocals: str = "",
         apply: bool = True,
         stash: bool = True,
         select: bool = True,
@@ -1155,6 +1166,8 @@ class PipelineTools:
             "voice": voice,
             "bed": bed,
             "dialogue": dialogue,
+            "clean_audio": clean_audio,
+            "vocals": vocals,
             "duck": duck,
             "footage": list(footage or []),
         })
@@ -1295,6 +1308,27 @@ class PipelineTools:
         if hasattr(self, "open_export_dialog"):
             self.open_export_dialog("movie")
 
+    def _lay_source_stems(self, comp: dict) -> None:
+        """Picture stays silent. Cleaned source and isolated beds sit on their own tracks."""
+        if not hasattr(self.timeline, "lay_sync_stems"):
+            return
+        bed = str(comp.get("bed") or "")
+        clean = str(comp.get("clean_audio") or "")
+        vocals = str(comp.get("vocals") or "")
+        stems: list[dict] = []
+        if bed and os.path.isfile(bed):
+            stems.append({"label": "Effects", "path": bed, "mute": False})
+        if vocals and os.path.isfile(vocals):
+            stems.append({"label": "Vocals", "path": vocals, "mute": True})
+        if clean and os.path.isfile(clean):
+            stems.append({
+                "label": "Source audio",
+                "path": clean,
+                "mute": bool(bed and os.path.isfile(bed)),
+            })
+        if stems:
+            self.timeline.lay_sync_stems(stems)
+
     def _stash_composition(self):
         index = getattr(self, "_composition_index", -1)
         if 0 <= index < len(self._compositions):
@@ -1338,6 +1372,7 @@ class PipelineTools:
         bed = str(comp.get("bed") or "")
         has_bed = bool(bed and os.path.isfile(bed))
         self.timeline.set_speech_bed(bed if has_bed else "")
+        self._lay_source_stems(comp)
         clean_source = str(comp.get("source") or "") if not comp.get("output") else ""
         self.timeline.speech_source = clean_source if clean_source and os.path.isfile(clean_source) else ""
         self.timeline.set_voice_audio(str(comp.get("dialogue") or ""))
@@ -1538,7 +1573,7 @@ class PipelineTools:
         if hasattr(self, "edit_ollama") and hasattr(self, "combo_translator"):
             self.edit_ollama.setEnabled(
                 not busy
-                and (self.combo_translator.currentData() or "auto") in {"auto", "ollama"}
+                and (self.combo_translator.currentData() or "auto") in {"auto", "movie", "ollama"}
             )
         if not busy:
             self._update_script_meta()

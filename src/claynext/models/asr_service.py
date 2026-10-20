@@ -61,6 +61,39 @@ def is_placeholder_transcript(segments: list | None) -> bool:
     return any(snip in blob for snip in PLACEHOLDER_SNIPPETS)
 
 
+_HALLUCINATION_RE = re.compile(
+    r"(thank(?:s| you) for watching|please subscribe|subtitles by|amara\.org|"
+    r"字幕由|请不吝|谢谢观看|感谢观看|订阅|点赞|转发)",
+    re.IGNORECASE,
+)
+
+
+def transcript_keep(
+    text: str,
+    *,
+    avg_logprob: float = 0.0,
+    no_speech_prob: float = 0.0,
+) -> bool:
+    """Drop low-confidence and hallucination lines. Keep real dialogue."""
+    if not is_meaningful_speech(text):
+        return False
+    if _HALLUCINATION_RE.search(text or ""):
+        return False
+    if no_speech_prob >= 0.72:
+        return False
+    if avg_logprob <= -1.45:
+        return False
+    if avg_logprob <= -1.15 and no_speech_prob >= 0.40:
+        return False
+    return True
+
+
+def transcript_confidence(avg_logprob: float, no_speech_prob: float) -> float:
+    lp = max(0.0, min(1.0, (float(avg_logprob) + 1.4) / 1.4))
+    speech = 1.0 - max(0.0, min(1.0, float(no_speech_prob)))
+    return round(0.65 * lp + 0.35 * speech, 3)
+
+
 def is_meaningful_speech(text: str) -> bool:
     """Return True if text contains actual dialogue words, not just punctuation, artifacts or ellipses."""
     if not text:
@@ -412,11 +445,13 @@ class ASREngine:
                 "beam_size": max(1, min(10, int(beam_size))),
                 "word_timestamps": bool(word_timestamps),
             }
+            # Cover the whole movie, then drop low-confidence junk below.
+            transcribe_kwargs["condition_on_previous_text"] = False
             if vad_filter:
                 transcribe_kwargs["vad_parameters"] = dict(
-                    min_silence_duration_ms=450,
-                    speech_pad_ms=250,
-                    threshold=0.45,
+                    min_silence_duration_ms=280,
+                    speech_pad_ms=300,
+                    threshold=0.32,
                 )
             if initial_prompt and initial_prompt.strip():
                 transcribe_kwargs["initial_prompt"] = initial_prompt.strip()
@@ -433,12 +468,17 @@ class ASREngine:
                 text = (seg.text or "").strip()
                 if not text:
                     continue
+                avg_lp = float(getattr(seg, "avg_logprob", 0.0) or 0.0)
+                no_speech = float(getattr(seg, "no_speech_prob", 0.0) or 0.0)
+                if not transcript_keep(text, avg_logprob=avg_lp, no_speech_prob=no_speech):
+                    continue
                 row_item: Dict[str, Any] = {
                     "id": i,
                     "start": _fmt_ts(seg.start or 0),
                     "end": _fmt_ts(seg.end or 0),
                     "speaker": "",
                     "text": text,
+                    "confidence": transcript_confidence(avg_lp, no_speech),
                 }
                 if word_timestamps and hasattr(seg, "words") and seg.words:
                     row_item["words"] = [
