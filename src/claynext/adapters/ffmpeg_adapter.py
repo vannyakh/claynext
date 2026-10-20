@@ -51,20 +51,33 @@ def probe_duration(file_path: str | Path) -> float:
     return meta.duration if meta else 0.0
 
 
-def run_ffmpeg(args: list[str]) -> bool:
-    """Convenience bool wrapper over ffmpeg_service.run_ffmpeg (bundled binary)."""
+class FFmpegResult(subprocess.CompletedProcess):
+    """
+    CompletedProcess subclass that evaluates to True when returncode == 0,
+    supporting both boolean checks (`if ok:`) and subprocess attributes (`proc.returncode`).
+    """
+
+    def __bool__(self) -> bool:
+        return self.returncode == 0
+
+
+def run_ffmpeg(args: list[str], timeout: int = 600, **kwargs: Any) -> FFmpegResult:
+    """
+    Convenience wrapper over ffmpeg_service.run_ffmpeg (bundled binary).
+    Accepts timeout and extra keyword arguments, returning an FFmpegResult that acts as
+    both a boolean and a CompletedProcess.
+    """
     try:
         from claynext.adapters.ffmpeg_service import run_ffmpeg as _run
 
-        # Ensure -y is present for overwrite-friendly model callers.
         argv = list(args)
         if "-y" not in argv:
             argv = ["-y", *argv]
-        res = _run(argv)
-        return res.returncode == 0
+        res = _run(argv, timeout=timeout, **kwargs)
+        return FFmpegResult(res.args, res.returncode, res.stdout, res.stderr)
     except Exception as e:
         logger.warning(f"run_ffmpeg error: {e}")
-        return False
+        return FFmpegResult(args, 1, b"", str(e).encode())
 
 
 class FFmpegAdapter:

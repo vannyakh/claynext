@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import subprocess
 import tempfile
 import urllib.error
@@ -58,6 +59,77 @@ def is_placeholder_transcript(segments: list | None) -> bool:
         return False
     blob = " ".join(str(seg.get("text") or "") for seg in segments)
     return any(snip in blob for snip in PLACEHOLDER_SNIPPETS)
+
+
+def is_meaningful_speech(text: str) -> bool:
+    """Return True if text contains actual dialogue words, not just punctuation, artifacts or ellipses."""
+    if not text:
+        return False
+    # Strip whitespace, standard punctuation, and Chinese punctuation
+    cleaned = re.sub(
+        r"[\s\.\,\!\?\:\;\。\，\！\？\：\；\…\—\-\~\"\'\(\)\[\]\{\}\<\>\/\\\|`*_+=#@$^&]+",
+        "",
+        str(text),
+    )
+    # Strip common Whisper hallucinations during music/ambient noise (口, ♪, etc.)
+    cleaned = re.sub(r"[口♪♫\u266a\u266b]+", "", cleaned)
+    return len(cleaned.strip()) > 0
+
+
+def merge_dialogue_segments(
+    segments: list[dict[str, Any]],
+    max_gap_sec: float = 0.50,
+    max_duration_sec: float = 8.0,
+) -> list[dict[str, Any]]:
+    """
+    Clean up hallucinated ellipses/artifacts and merge adjacent sub-second speech
+    fragments from the same dialogue turn so movie dialogue reads continuously.
+    """
+    valid = [seg for seg in segments if is_meaningful_speech(str(seg.get("text") or ""))]
+    if not valid:
+        return segments
+
+    def _sec(ts_str: str) -> float:
+        try:
+            parts = str(ts_str).replace(",", ".").split(":")
+            if len(parts) == 3:
+                return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+            return 0.0
+        except Exception:
+            return 0.0
+
+    merged: list[dict[str, Any]] = []
+    for seg in valid:
+        if not merged:
+            merged.append(dict(seg))
+            continue
+
+        prev = merged[-1]
+        prev_end = _sec(prev.get("end", "00:00:00,000"))
+        cur_start = _sec(seg.get("start", "00:00:00,000"))
+        cur_end = _sec(seg.get("end", "00:00:00,000"))
+        first_start = _sec(prev.get("start", "00:00:00,000"))
+
+        gap = max(0.0, cur_start - prev_end)
+        total_dur = max(0.0, cur_end - first_start)
+
+        same_speaker = not prev.get("speaker") or not seg.get("speaker") or prev.get("speaker") == seg.get("speaker")
+
+        if gap <= max_gap_sec and total_dur <= max_duration_sec and same_speaker:
+            p_text = str(prev.get("text", "")).strip()
+            c_text = str(seg.get("text", "")).strip()
+            has_cjk = any("\u4e00" <= char <= "\u9fff" for char in p_text + c_text)
+            sep = "" if has_cjk else " "
+            prev["text"] = f"{p_text}{sep}{c_text}"
+            prev["end"] = seg["end"]
+            if "words" in prev and "words" in seg:
+                prev["words"].extend(seg.get("words", []))
+        else:
+            merged.append(dict(seg))
+
+    for i, item in enumerate(merged, start=1):
+        item["id"] = i
+    return merged
 
 
 def _ffmpeg() -> str:
@@ -253,7 +325,7 @@ def _transcribe_gemini(
 
         if not rows:
             raise RuntimeError("Gemini detected no dialogue lines.")
-        return rows
+        return merge_dialogue_segments(rows)
 
 
 class ASREngine:
@@ -340,6 +412,12 @@ class ASREngine:
                 "beam_size": max(1, min(10, int(beam_size))),
                 "word_timestamps": bool(word_timestamps),
             }
+            if vad_filter:
+                transcribe_kwargs["vad_parameters"] = dict(
+                    min_silence_duration_ms=450,
+                    speech_pad_ms=250,
+                    threshold=0.45,
+                )
             if initial_prompt and initial_prompt.strip():
                 transcribe_kwargs["initial_prompt"] = initial_prompt.strip()
             if clip_timestamps and len(clip_timestamps) >= 2:
@@ -375,6 +453,8 @@ class ASREngine:
             raise RuntimeError("No speech found in this media.")
         if is_placeholder_transcript(rows):
             raise RuntimeError("Refusing to use placeholder captions.")
+
+        rows = merge_dialogue_segments(rows)
 
         if progress_callback:
             detected = getattr(info, "language", None)

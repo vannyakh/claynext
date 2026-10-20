@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable, Dict
 
-from claynext.models.asr_service import ASREngine
+from claynext.models.asr_service import ASREngine, merge_dialogue_segments
 from claynext.adapters.ffmpeg_service import (
     demux_wav,
     dynamic_duck_audio,
@@ -193,7 +193,12 @@ def analyze_movie_characters(
         )
 
     if progress_callback:
-        progress_callback(37, "Naming characters and reading expression…")
+        progress_callback(37, "AI naming characters & voice profiling…")
+    try:
+        from claynext.models.gender_voices import llm_analyze_cast_and_gender
+        llm_analyze_cast_and_gender(segments, progress_callback=progress_callback)
+    except Exception:
+        pass
     apply_character_cast(segments)
 
     return assign_gender_and_voices(
@@ -320,12 +325,19 @@ def _speak_lines(
 
         spoken = False
         clean_text = text_to_speak.strip()
+        ref_wav = str(item.get("reference_wav") or "")
+        pitch_val = float(item.get("pitch_offset") or 0.0)
+        if not ref_wav and item.get("clone_voice"):
+            ref_wav = str(item["clone_voice"].get("reference_wav") or "")
+            if not pitch_val:
+                pitch_val = float(item["clone_voice"].get("pitch_offset_hz") or 0.0)
+
         if clean_text:
             for attempt in range(2):
                 if control is not None:
                     control.checkpoint()
                 try:
-                    TTSEngine.synthesize(clean_text, voice, raw_mp3)
+                    TTSEngine.synthesize(clean_text, voice, raw_mp3, pitch=pitch_val, reference_wav=ref_wav)
                     spoken = os.path.isfile(raw_mp3) and os.path.getsize(raw_mp3) > 100
                     if spoken:
                         break
@@ -336,13 +348,13 @@ def _speak_lines(
 
         if spoken:
             if sync_mode == "natural":
-                min_t, max_t = 1.0, 1.0
+                min_t, max_t = 0.95, 1.60
             elif sync_mode == "subtle":
-                min_t, max_t = 0.85, 1.25
+                min_t, max_t = 0.85, 2.00
             else:
-                min_t, max_t = 0.65, 1.85
+                min_t, max_t = 0.65, 2.80
             try:
-                fit_duration(raw_mp3, fitted, slot, min_tempo=min_t, max_tempo=max_t, pad_or_trim=True)
+                fit_duration(raw_mp3, fitted, slot, min_tempo=min_t, max_tempo=max_t, pad_or_trim=False, never_trim=True)
             except Exception:
                 make_silence(fitted, slot)
         else:
@@ -358,8 +370,9 @@ def _speak_lines(
         item["audio_path"] = fitted
         item["start_ms"] = int(start * 1000)
         item["voice_id"] = voice
-        item["duration"] = f"{slot:.1f}s"
-        item["duration_sec"] = round(slot, 2)
+        actual_slot = probe_duration(fitted) if os.path.isfile(fitted) else slot
+        item["duration"] = f"{actual_slot:.1f}s"
+        item["duration_sec"] = round(actual_slot, 2)
         with lock:
             placed.append((fitted, int(start * 1000)))
         share("clip", {"index": idx, "segment": dict(item)})
@@ -491,6 +504,7 @@ class DubbingEngine:
                 clip_timestamps=clips,
                 progress_callback=lambda p, m: ping(16 + int(p * 0.22), m),
             )
+            segments = merge_dialogue_segments(segments)
 
         if auto_chain:
             ping(38, "Reading gender, expression, and character names…")
@@ -535,6 +549,13 @@ class DubbingEngine:
                 force_redetect=False,
             )
             ping(57, f"Cast ready · {len(translated)} line(s)")
+            if voice_id.startswith("clone:") or (secondary_voice_id and secondary_voice_id.startswith("clone:")):
+                try:
+                    from claynext.models.voice_clone import clone_character_voices_from_movie
+                    ping(57, "🎭 Extracting actor voice samples & tone profiles from movie…")
+                    clone_character_voices_from_movie(asr_source or video_path, translated)
+                except Exception:
+                    pass
         else:
             ping(38, "Speaking the original lines with the lead voice…")
             for i, seg in enumerate(segments):
@@ -617,11 +638,16 @@ class DubbingEngine:
                         continue
                     st = float(item.get("start_sec") or timestamp_to_sec(item.get("start", "")))
                     en = float(item.get("end_sec") or timestamp_to_sec(item.get("end", "")))
+                    dur = float(item.get("duration_sec") or 0.0)
+                    if dur > 0:
+                        en = max(en, st + dur)
                     if en > st:
                         dialogue_intervals.append((st, en))
 
                 bgm_bed = str(job / "bgm_dynamic_ducked.wav")
-                duck_target = max(0.05, min(0.50, float(background_vol)))
+                duck_target = max(0.0, min(0.50, float(background_vol)))
+                if duck_target <= 0.05:
+                    duck_target = 0.0
                 clamped_fade_ms = max(50, min(500, int(fade_ms)))
                 fade_sec = clamped_fade_ms / 1000.0
                 dynamic_duck_audio(
@@ -632,7 +658,7 @@ class DubbingEngine:
                     fade_in_sec=fade_sec,
                     fade_out_sec=fade_sec,
                     fade_ms=clamped_fade_ms,
-                    center_attenuation=max(0.0, min(1.0, float(center_attenuation))),
+                    center_attenuation=1.0 if duck_target == 0.0 else max(0.0, min(1.0, float(center_attenuation))),
                 )
                 ping(91, "Dynamic duck bed ready…")
 

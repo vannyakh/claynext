@@ -285,40 +285,119 @@ class StudioView(
             self.log.info(message)
 
     def _on_translate_subtitles(self):
-        if not self._segments:
-            QMessageBox.information(self, "Translate", "No subtitles found. Please add or import subtitles first.")
+        if hasattr(self, "_translate_transcript_direct"):
+            self._translate_transcript_direct()
             return
-        self._status(f"Translating {len(self._segments)} lines...")
-        try:
-            from claynext.models.translate_service import TranslateEngine
-            engine = TranslateEngine()
-            for seg in self._segments:
-                text = seg.get("original_text") or seg.get("text") or ""
-                if text:
-                    seg["translated_text"] = engine.translate(text, target_lang="km")
-            self._fill_table(self._segments)
-            self._status("Translation complete.")
-        except Exception as e:
-            self._status(f"Translation error: {e}")
+        if not self._segments:
+            if hasattr(self, "log"):
+                self.log.warn("Translate · no subtitles found")
+            return
+        if hasattr(self, "_regenerate_rows"):
+            self._regenerate_rows(list(range(len(self._segments))))
 
     def _on_generate_all_audio(self):
         if not self._segments:
-            QMessageBox.information(self, "Generate Audio", "No subtitles found. Please add or import subtitles first.")
+            if hasattr(self, "log"):
+                self.log.warn("Generate audio · no subtitles found")
             return
-        self._status(f"Generating neural speech for {len(self._segments)} lines...")
-        for seg in self._segments:
-            seg["audio_status"] = "Done"
-        self._fill_table(self._segments)
-        self._status("All dialogue audio generated and synchronized.")
+        if hasattr(self, "_resynthesize_rows"):
+            self._resynthesize_rows(list(range(len(self._segments))))
 
     def _on_scan_characters(self):
-        if hasattr(self, "_on_sub_scan"):
-            self._on_sub_scan()
-        elif hasattr(self, "shelf"):
+        if hasattr(self, "_run_ai_cast_analysis"):
+            self._run_ai_cast_analysis()
+            return
+        if hasattr(self, "_open_frame_ocr_scanner"):
+            self._open_frame_ocr_scanner()
+            return
+        if hasattr(self, "_autodetect_genders"):
+            self._autodetect_genders(None, all_lines=True)
+            return
+        if hasattr(self, "shelf"):
             self.shelf.show_key("script")
 
     def _on_vocal_isolation(self):
-        self._status("Isolating BGM bed via AI stem separation...")
+        source = str(getattr(self, "selected_file", "") or "")
+        if not source or not os.path.isfile(source):
+            if hasattr(self, "timeline") and hasattr(self.timeline, "canvas"):
+                source = str(getattr(self.timeline.canvas, "source_path", "") or "")
+        if not source or not os.path.isfile(source):
+            tid = self._current_script_task_id() if hasattr(self, "_current_script_task_id") else -1
+            task = self._task_by_id(tid) if tid >= 0 and hasattr(self, "_task_by_id") else None
+            if task and task.get("source") and os.path.isfile(str(task.get("source"))):
+                source = str(task.get("source"))
+
+        if not source or not os.path.isfile(source):
+            self._status("No movie loaded. Please load a movie or footage first.")
+            if hasattr(self, "log"):
+                self.log.warn("Isolate BGM bed · no movie file loaded on timeline")
+            return
+
+        if getattr(self, "_vocal_isolation_worker", None) is not None:
+            if hasattr(self, "log"):
+                self.log.warn("Stem separation already running")
+            return
+
+        from claynext.gui.worker import Worker
+        from claynext.adapters.ffmpeg_service import ensure_speech_bed
+
+        self._status("Isolating BGM bed via AI stem separation…")
+        if hasattr(self, "_set_script_loading"):
+            self._set_script_loading(True, "Isolating BGM Bed…", "Stem separation in progress")
+
+        def _job(progress_callback=None):
+            def _ping(pct: int, msg: str):
+                if progress_callback:
+                    progress_callback(pct, msg)
+            return ensure_speech_bed(source, progress_callback=_ping, use_demucs=True)
+
+        worker = Worker(_job)
+        def _on_progress(p: int, m: str):
+            self._status(f"Isolating BGM bed ({p}%) · {m}")
+            if hasattr(self, "_set_script_loading_hint"):
+                self._set_script_loading_hint(f"{p}% · {m}")
+
+        worker.signals.progress.connect(_on_progress)
+        worker.signals.result.connect(self._on_vocal_isolation_ready)
+        worker.signals.error.connect(self._on_vocal_isolation_error)
+        worker.signals.finished.connect(self._on_vocal_isolation_finished)
+        self._vocal_isolation_worker = worker
+        self.thread_pool.start(worker)
+
+    def _on_vocal_isolation_ready(self, bed_path: str):
+        if not bed_path or not os.path.isfile(bed_path):
+            self._status("Could not isolate BGM bed")
+            if hasattr(self, "log"):
+                self.log.error("Stem separation produced no audio bed")
+            return
+
+        if hasattr(self, "timeline"):
+            if hasattr(self.timeline, "set_speech_bed"):
+                self.timeline.set_speech_bed(bed_path)
+            elif hasattr(self.timeline, "canvas"):
+                self.timeline.canvas.bed_path = bed_path
+            if hasattr(self.timeline, "canvas"):
+                self.timeline.canvas.update()
+            if hasattr(self.timeline, "auto_duck"):
+                self.timeline.auto_duck(0.0)
+
+        if hasattr(self, "preview") and hasattr(self.preview, "player"):
+            self.preview.player.set_stems(bed=bed_path)
+
+        base = os.path.basename(bed_path)
+        self._status(f"BGM bed isolated & applied: {base}")
+        if hasattr(self, "log"):
+            self.log.success(f"✨ BGM Bed Isolated & Applied: {base}")
+
+    def _on_vocal_isolation_error(self, message: str, _stack: str):
+        self._status(f"Vocal isolation failed: {message}")
+        if hasattr(self, "log"):
+            self.log.error(f"Vocal isolation error · {message}")
+
+    def _on_vocal_isolation_finished(self):
+        self._vocal_isolation_worker = None
+        if hasattr(self, "_set_script_loading"):
+            self._set_script_loading(False)
 
     def _on_load_bgm(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -352,7 +431,7 @@ class StudioView(
         )
         if path:
             from claynext.gui.views.studio.helpers import export_segments
-            export_segments(self._segments, path, fmt="srt")
+            export_segments(path, "srt", self._segments)
             self._status(f"Exported subtitles to {os.path.basename(path)}")
 
     def _on_export_video(self):

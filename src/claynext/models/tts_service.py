@@ -9,7 +9,10 @@ import wave
 from pathlib import Path
 from typing import Any, Callable, Dict, List
 
-import edge_tts
+try:
+    import edge_tts
+except ImportError:
+    edge_tts = None  # type: ignore[assignment]
 
 _kitten_lock = threading.Lock()
 _kitten_models: dict[str, Any] = {}
@@ -180,7 +183,25 @@ class TTSEngine:
         {"id": "zh-CN-XiaoxiaoNeural", "name": "Xiaoxiao", "alias": "Xiaoxiao", "lang": "Chinese", "tag": "Neural", "gender": "Female"},
     ]
 
-    VOICE_PRESETS = KITTEN_VOICES + VOXCPM_VOICES + EDGE_VOICES
+    CLONE_VOICES = [
+        {
+            "id": "clone:movie",
+            "name": "Actor Clone",
+            "alias": "Actor Clone",
+            "lang": "All",
+            "tag": "Voice Clone",
+            "gender": "Matched",
+            "design": "Direct zero-shot voice clone & tone matching from movie audio",
+        }
+    ]
+
+    VOICE_PRESETS = CLONE_VOICES + KITTEN_VOICES + VOXCPM_VOICES + EDGE_VOICES
+
+    @staticmethod
+    def _is_clone_voice(voice_id: str) -> bool:
+        if not voice_id:
+            return False
+        return voice_id.startswith("clone:") or voice_id == "clone:movie"
 
     @staticmethod
     def _is_kitten_voice(voice_id: str) -> bool:
@@ -205,6 +226,10 @@ class TTSEngine:
         return voice_id[:3] in {"en-", "vi-", "ja-", "ko-", "zh-", "es-", "fr-", "de-", "th-", "ru-", "km-"}
 
     @staticmethod
+    def clone_voices() -> List[Dict[str, Any]]:
+        return list(TTSEngine.CLONE_VOICES)
+
+    @staticmethod
     def kitten_voices() -> List[Dict[str, Any]]:
         return list(TTSEngine.KITTEN_VOICES)
 
@@ -220,6 +245,9 @@ class TTSEngine:
     def voice_label(voice: dict[str, Any] | str) -> str:
         """Short character name only (no engine / model prefix)."""
         if isinstance(voice, str):
+            if voice.startswith("clone:") or voice == "clone:movie":
+                spk = voice.split(":", 1)[1] if ":" in voice else ""
+                return f"Actor Clone ({spk})" if spk and spk != "movie" else "Actor Clone"
             for item in TTSEngine.VOICE_PRESETS:
                 if item.get("id") == voice:
                     return TTSEngine.voice_label(item)
@@ -252,7 +280,8 @@ class TTSEngine:
             want = "Chinese" if str(lang).startswith("Chinese") else str(lang)
         rows: list[dict[str, Any]] = []
         for voice in TTSEngine.VOICE_PRESETS:
-            if want and str(voice.get("lang") or "") != want:
+            v_lang = str(voice.get("lang") or "")
+            if want and v_lang not in {"All", "all", want}:
                 continue
             vid = str(voice.get("id") or "")
             if not vid:
@@ -341,6 +370,38 @@ class TTSEngine:
         progress_callback: Callable | None = None,
     ) -> str:
         """Engine dispatch without expression-tag expansion."""
+        if TTSEngine._is_clone_voice(voice_id):
+            if reference_wav and os.path.isfile(reference_wav):
+                try:
+                    return TTSEngine.synthesize_voxcpm(
+                        text,
+                        voice_id,
+                        output_path,
+                        model_name=model_name or TTSEngine.VOXCPM_DEFAULT_MODEL,
+                        reference_wav=reference_wav,
+                        progress_callback=progress_callback,
+                    )
+                except Exception:
+                    pass  # Fall back to tone-matched neural synthesis
+            # Tone-matched neural voice:
+            # Pick base neural voice according to detected pitch/gender
+            fallback = "km-KH-PisethNeural" if pitch <= 0 else "km-KH-SreymomNeural"
+            res_path = TTSEngine.synthesize_edge(
+                text,
+                fallback,
+                output_path,
+                speed=speed,
+                pitch=pitch,
+                progress_callback=progress_callback,
+            )
+            if reference_wav and os.path.isfile(reference_wav):
+                try:
+                    from claynext.models.voice_clone import match_timbre_eq
+                    match_timbre_eq(res_path, reference_wav, res_path)
+                except Exception:
+                    pass
+            return res_path
+
         if TTSEngine._is_voxcpm_voice(voice_id):
             return TTSEngine.synthesize_voxcpm(
                 text,

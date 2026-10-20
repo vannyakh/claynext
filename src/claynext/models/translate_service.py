@@ -26,9 +26,9 @@ from claynext.models.llm_keys import (
     parse_retry_after,
 )
 
-# Gemini Flash free tier: 15 RPM / 1,500 RPD. 15 lines/call ≈ 35–50 calls per episode.
-BATCH_SIZE = 15
-GEMINI_MIN_INTERVAL = 4.1
+# Gemini Flash free tier: 15 RPM / 1,500 RPD. 45 lines/call ≈ 1–2 calls per episode.
+BATCH_SIZE = 45
+GEMINI_MIN_INTERVAL = 2.0
 
 _gemini_lock = threading.Lock()
 _last_gemini_call = 0.0
@@ -247,10 +247,36 @@ class TranslateEngine:
     def ollama_available(host: str = "") -> bool:
         base = (host or TranslateEngine.ollama_host()).rstrip("/")
         try:
-            urllib.request.urlopen(base + "/api/tags", timeout=1.5)
-            return True
+            req = urllib.request.Request(base + "/api/tags", headers={"User-Agent": "Claynext/1.0"})
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                return resp.status == 200
         except Exception:
             return False
+
+    @staticmethod
+    def list_ollama_models(host: str = "") -> tuple[bool, list[dict[str, Any]]]:
+        """Check Ollama availability and return (available, model_records)."""
+        base = (host or TranslateEngine.ollama_host()).rstrip("/")
+        try:
+            req = urllib.request.Request(f"{base}/api/tags", headers={"User-Agent": "Claynext/1.0"})
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                models = data.get("models", [])
+                return True, models if isinstance(models, list) else []
+        except Exception:
+            return False, []
+
+    @staticmethod
+    def get_ollama_model_names(host: str = "") -> tuple[bool, list[str]]:
+        """Return (available, list_of_installed_model_names)."""
+        avail, models = TranslateEngine.list_ollama_models(host)
+        names: list[str] = []
+        for m in models:
+            if isinstance(m, dict):
+                n = str(m.get("name") or m.get("model") or "").strip()
+                if n and n not in names:
+                    names.append(n)
+        return avail, names
 
     @staticmethod
     def translate_subtitles(
@@ -746,17 +772,42 @@ class TranslateEngine:
         progress_callback: Callable = None,
         source_lang: str = "auto",
     ) -> List[Dict[str, Any]]:
-        translated: List[Dict[str, Any]] = []
+        import concurrent.futures
+
         total = len(segments)
+        if total == 0:
+            raise RuntimeError("No translatable speech found.")
+
+        results: dict[int, str] = {}
+        def _fetch(idx: int, text: str) -> tuple[int, str]:
+            if not text.strip():
+                return idx, ""
+            return idx, TranslateEngine.translate_text(text, target_lang, source_lang=source_lang)
+
+        # Concurrently fetch translations with up to 8 workers for low latency
+        workers = min(8, max(2, total))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [
+                executor.submit(_fetch, idx, str(seg.get("text") or seg.get("original_text") or ""))
+                for idx, seg in enumerate(segments)
+            ]
+            completed = 0
+            for fut in concurrent.futures.as_completed(futures):
+                idx, trans = fut.result()
+                results[idx] = trans
+                completed += 1
+                if progress_callback:
+                    pct = 8 + int((completed / total) * 88)
+                    progress_callback(pct, f"Translated {completed}/{total}")
+
+        translated: List[Dict[str, Any]] = []
         for idx, seg in enumerate(segments):
-            orig = (seg.get("text") or "").strip()
+            orig = (seg.get("text") or seg.get("original_text") or "").strip()
             if not orig:
                 continue
-            trans = TranslateEngine.translate_text(orig, target_lang, source_lang=source_lang)
-            translated.append(TranslateEngine._pack_row(seg, idx, trans))
-            if progress_callback:
-                pct = 8 + int(((idx + 1) / total) * 88)
-                progress_callback(pct, f"Translated {idx + 1}/{total}")
+            trans = results.get(idx, "")
+            translated.append(TranslateEngine._pack_row(seg, idx, trans or orig))
+
         if not translated:
             raise RuntimeError("No translatable speech found.")
         if progress_callback:
@@ -787,15 +838,16 @@ class TranslateEngine:
             rows = TranslateEngine._map_batch(
                 batch, mapped, target_lang, fallback_google=backend == "gemini", source_lang=source_lang
             )
-            if (style or {}).get("fit_duration", True):
+            # Only run tighten rewrite pass if explicitly requested to force fit, avoiding redundant latency
+            if (style or {}).get("force_fit", False):
                 TranslateEngine._tighten_to_slot(
                     rows, target_lang, backend, ollama_model, progress_callback,
                 )
             by_id.update(rows)
             if progress_callback:
                 pct = 10 + int(((b + 1) / len(batches)) * 85)
-                label = "Ollama" if backend == "ollama" else "Gemini"
-                progress_callback(pct, f"{label} batch {b + 1}/{len(batches)} ({BATCH_SIZE} lines)")
+                label = "Ollama" if backend == "ollama" else "Gemini Flash"
+                progress_callback(pct, f"{label} batch {b + 1}/{len(batches)} ({len(batch)} lines)")
         rows = [by_id[s.get("id")] for s in segments if s.get("id") in by_id]
         if not rows:
             raise RuntimeError("Translator returned no lines.")
@@ -807,7 +859,7 @@ class TranslateEngine:
     def _pace_gemini():
         global _last_gemini_call
         n_keys = max(1, len(get_key_pool().secrets("gemini")))
-        interval = max(1.0, GEMINI_MIN_INTERVAL / n_keys)
+        interval = max(0.5, GEMINI_MIN_INTERVAL / n_keys)
         with _gemini_lock:
             wait = interval - (time.monotonic() - _last_gemini_call)
             if wait > 0:
@@ -816,7 +868,7 @@ class TranslateEngine:
 
     @staticmethod
     def _gemini_batch(prompt: str, progress_callback: Callable = None) -> list[dict]:
-        models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+        models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
         last_err = "Gemini request failed"
         for model in models:
             try:

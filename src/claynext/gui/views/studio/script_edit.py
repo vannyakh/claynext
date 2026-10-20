@@ -285,6 +285,9 @@ class ScriptEditTools:
         act_ai_cast = menu.addAction("✨ AI Cast & Character Analysis")
         act_ai_cast.triggered.connect(self._run_ai_cast_analysis)
 
+        act_clone = menu.addAction("🎭 Clone Voice from Movie (Actor Tone & Pitch)")
+        act_clone.triggered.connect(lambda: self._clone_voices_from_movie(selected))
+
         regen_label = "Regenerate translation" if n == 1 else f"Regenerate {n} lines"
         regen = menu.addAction(regen_label)
         regen.setEnabled(self._script_worker is None)
@@ -415,6 +418,10 @@ class ScriptEditTools:
                     segs, audio, progress_callback=_ping,
                 )
                 used_audio = True
+            control.checkpoint()
+            from claynext.models.gender_voices import apply_character_cast, llm_analyze_cast_and_gender
+            llm_analyze_cast_and_gender(segs, progress_callback=_ping)
+            apply_character_cast(segs)
             control.checkpoint()
             lead, co_star = self._primary_voices()
             assign_gender_and_voices(

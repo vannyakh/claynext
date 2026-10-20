@@ -19,6 +19,7 @@ from claynext.models.tts_service import TTSEngine
 from claynext.models.translate_service import TranslateEngine
 from claynext.gui.components.controls.scrub_spin import ScrubSpinBox
 from claynext.gui.components.controls.tabs import SegmentTabs
+from claynext.gui.components.ollama_model_selector import OllamaModelSelector
 from claynext.gui.views.studio.captions import CAPTION_STYLES, CaptionLookGrid, CaptionMotionGrid
 from claynext.gui.views.studio.constants import SOURCE_LANGS
 
@@ -269,11 +270,9 @@ class StartLocalizeDialog(QDialog):
         api.addWidget(self._label("Translate"), 1, 0)
         api.addWidget(self.combo_translator, 1, 1)
 
-        self.edit_ollama = QLineEdit()
-        self.edit_ollama.setObjectName("start_localize_field")
-        self.edit_ollama.setFixedHeight(28)
-        self.edit_ollama.setPlaceholderText("qwen2.5:7b")
-        self.edit_ollama.setText(str(defaults.get("ollama_model") or "qwen2.5:7b"))
+        self.edit_ollama = OllamaModelSelector(
+            self, default_model=str(defaults.get("ollama_model") or "qwen2.5:7b")
+        )
         api.addWidget(self._label("Ollama"), 2, 0)
         api.addWidget(self.edit_ollama, 2, 1)
 
@@ -501,12 +500,12 @@ class StartLocalizeDialog(QDialog):
         duck_lbl = QLabel("Dialogue ducking")
         duck_lbl.setObjectName("asr_field_label")
         self.spin_duck = self._spin()
-        self.spin_duck.setRange(5, 50)
+        self.spin_duck.setRange(0, 100)
         self.spin_duck.setSuffix("%")
         try:
-            self.spin_duck.setValue(int(defaults.get("background", 20)))
+            self.spin_duck.setValue(int(defaults.get("background", 0)))
         except (TypeError, ValueError):
-            self.spin_duck.setValue(20)
+            self.spin_duck.setValue(0)
         duck_row.addWidget(duck_lbl, 1)
         duck_row.addWidget(self.spin_duck, 0, Qt.AlignmentFlag.AlignRight)
         edit.addLayout(duck_row, 0, 0, 1, 2)
@@ -573,7 +572,10 @@ class StartLocalizeDialog(QDialog):
 
     def _sync_ollama(self, *_args):
         eid = self.combo_translator.currentData() or "auto"
-        self.edit_ollama.setEnabled(eid in {"auto", "ollama"})
+        is_ollama = eid in {"auto", "ollama"}
+        self.edit_ollama.setEnabled(is_ollama)
+        if is_ollama and hasattr(self.edit_ollama, "check_and_refresh"):
+            self.edit_ollama.check_and_refresh()
 
     def _sync_translate_style(self, *_args):
         self._sync_ollama()

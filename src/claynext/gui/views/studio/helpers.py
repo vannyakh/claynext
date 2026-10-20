@@ -19,10 +19,29 @@ def _caption_line(seg: dict) -> str:
     return strip_expression_tags(raw)
 
 
-def export_segments(path: str, fmt: str, segments: list) -> None:
-    if fmt == "srt":
-        with open(path, "w", encoding="utf-8") as handle:
-            for i, seg in enumerate(segments, 1):
+def export_segments(
+    path: str | list,
+    fmt: str = "srt",
+    segments: list | str | None = None,
+    **kwargs: str,
+) -> None:
+    # Resolve parameter order flexibly:
+    # 1. Standard: export_segments(path: str, fmt: str, segments: list)
+    # 2. Inverted: export_segments(segments: list, path: str, fmt="srt")
+    actual_fmt = kwargs.get("fmt") or ""
+    if isinstance(path, list):
+        actual_segments = path
+        actual_path = str(fmt)
+        actual_fmt = actual_fmt or (str(segments) if isinstance(segments, str) else "srt")
+    else:
+        actual_path = str(path)
+        actual_fmt = actual_fmt or str(fmt)
+        actual_segments = segments if isinstance(segments, list) else []
+
+    target_fmt = str(actual_fmt or "srt").lower()
+    if target_fmt == "srt":
+        with open(actual_path, "w", encoding="utf-8") as handle:
+            for i, seg in enumerate(actual_segments, 1):
                 txt = _caption_line(seg)
                 speaker = seg.get("speaker")
                 prefix = f"[{speaker}] " if speaker else ""
@@ -30,10 +49,10 @@ def export_segments(path: str, fmt: str, segments: list) -> None:
                 end = str(seg.get("end", "00:00:00,000")).replace(".", ",")
                 handle.write(f"{i}\n{start} --> {end}\n{prefix}{txt}\n\n")
         return
-    if fmt == "vtt":
-        with open(path, "w", encoding="utf-8") as handle:
+    if target_fmt == "vtt":
+        with open(actual_path, "w", encoding="utf-8") as handle:
             handle.write("WEBVTT\n\n")
-            for i, seg in enumerate(segments, 1):
+            for i, seg in enumerate(actual_segments, 1):
                 txt = _caption_line(seg)
                 speaker = seg.get("speaker")
                 prefix = f"[{speaker}] " if speaker else ""
@@ -41,11 +60,11 @@ def export_segments(path: str, fmt: str, segments: list) -> None:
                 end = str(seg.get("end", "00:00:00.000")).replace(",", ".")
                 handle.write(f"{i}\n{start} --> {end}\n{prefix}{txt}\n\n")
         return
-    if fmt == "json":
-        with open(path, "w", encoding="utf-8") as handle:
-            json.dump(segments, handle, ensure_ascii=False, indent=2)
+    if target_fmt == "json":
+        with open(actual_path, "w", encoding="utf-8") as handle:
+            json.dump(actual_segments, handle, ensure_ascii=False, indent=2)
         return
-    raise ValueError(f"Unsupported export format: {fmt}")
+    raise ValueError(f"Unsupported export format: {actual_fmt}")
 
 
 def _normalize_ts(raw: str, *, srt: bool) -> str:

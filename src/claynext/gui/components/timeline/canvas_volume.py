@@ -276,6 +276,8 @@ class CanvasVolume:
         self.push_history()
         fade = max(20, int(fade_ms))
         level = max(0.0, min(1.0, float(level)))
+        if level <= 0.02:
+            level = 0.0
         merged: list[list[int]] = []
         for start, end in spans:
             if merged and start - fade * 2 <= merged[-1][1]:

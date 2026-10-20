@@ -528,7 +528,7 @@ class LineEditDialog(QDialog):
                 raw_mp3 = _preview_cache_path(vid, body)
                 TTSEngine.synthesize(body, vid, raw_mp3, progress_callback=progress_callback)
                 fit_wav = out.replace(".wav", "_rawfit.wav")
-                fit_duration(raw_mp3, fit_wav, dur, pad_or_trim=True)
+                fit_duration(raw_mp3, fit_wav, dur, pad_or_trim=False, never_trim=True)
                 return master_voiceover_track(fit_wav, out, volume_boost=1.15)
             return TTSEngine.synthesize(body, vid, out, progress_callback=progress_callback)
 

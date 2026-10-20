@@ -106,6 +106,13 @@ def main(argv: list[str] | None = None):
             state["win"] = _open_studio(tool_index, project_path=args.project)
         else:
             state["home"] = _open_home()
+        if state.get("loader") is not None:
+            try:
+                state["loader"].hide()
+                state["loader"].close()
+            except Exception:
+                pass
+            state["loader"] = None
 
     if args.no_splash:
         _after_loader()

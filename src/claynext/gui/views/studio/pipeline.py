@@ -832,8 +832,11 @@ class PipelineTools:
                 row["source"] = source
             if hasattr(self.timeline, "place_source_dialogue"):
                 self.timeline.place_source_dialogue(shifted, source)
-            self.timeline.duck_level = self.slider_duck.value() / 100.0
-            self.timeline.duck_fade_ms = self.slider_fade_ms.value()
+            duck_val = self.slider_duck.value() / 100.0 if hasattr(self, "slider_duck") else 0.0
+            if duck_val <= 0.02:
+                duck_val = 0.0
+            self.timeline.duck_level = duck_val
+            self.timeline.duck_fade_ms = self.slider_fade_ms.value() if hasattr(self, "slider_fade_ms") else 150
             self.timeline.auto_duck(self.timeline.duck_level)
             lang = self.combo_lang.currentText() or "Dub"
             index = int(getattr(self, "_merge_comp_index", -1))
@@ -1343,8 +1346,11 @@ class PipelineTools:
         if comp.get("footage"):
             self.timeline.apply_footage(comp["footage"])
         elif comp.get("duck"):
-            self.timeline.duck_level = self.slider_duck.value() / 100.0
-            self.timeline.duck_fade_ms = self.slider_fade_ms.value()
+            duck_val = self.slider_duck.value() / 100.0 if hasattr(self, "slider_duck") else 0.0
+            if duck_val <= 0.02:
+                duck_val = 0.0
+            self.timeline.duck_level = duck_val
+            self.timeline.duck_fade_ms = self.slider_fade_ms.value() if hasattr(self, "slider_fade_ms") else 150
             level = 0.0 if has_bed else self.timeline.duck_level
             spans = self.timeline.auto_duck(level)
             detect = self.chk_auto_mix.isChecked() and bool(self.timeline.speech_source)

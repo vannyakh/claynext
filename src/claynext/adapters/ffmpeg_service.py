@@ -281,57 +281,54 @@ def fit_duration(
     target_sec: float,
     *,
     min_tempo: float = 0.65,
-    max_tempo: float = 1.85,
-    pad_or_trim: bool = True,
+    max_tempo: float = 2.80,
+    pad_or_trim: bool = False,
+    never_trim: bool = True,
 ) -> str:
+    """
+    Fit TTS dialogue duration to slot timing.
+
+    Guarantees full speech preservation (NEVER trims/cuts off spoken text).
+    When audio is longer than the slot duration, dynamically speeds up tempo (up to max_tempo).
+    If it still slightly exceeds target duration after maximum speed-up, plays full text to completion.
+    """
     current = probe_duration(src)
     target = max(0.10, float(target_sec))
     if current <= 0:
         raise RuntimeError("Could not read TTS clip duration.")
     ratio = current / target
 
-    if 0.96 <= ratio <= 1.04:
-        # Pacing already matches character slot; add soft fade guard if trimming
-        args = ["-y", "-i", src]
-        if pad_or_trim:
-            fade_st = max(0.0, target - 0.06)
-            args += [
-                "-filter:a", f"afade=t=in:st=0:d=0.012,afade=t=out:st={fade_st:.3f}:d=0.06",
-                "-ar", "48000", "-ac", "2",
-                "-c:a", "pcm_s16le",
-                "-t", f"{target:.3f}",
-                dst,
-            ]
-        else:
-            args += [
-                "-filter:a", "afade=t=in:st=0:d=0.012",
-                "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", dst
-            ]
+    if 0.96 <= ratio <= 1.04 and not (pad_or_trim and not never_trim):
+        # Pacing already matches character slot; preserve speech naturally
+        args = [
+            "-y", "-i", src,
+            "-filter:a", "afade=t=in:st=0:d=0.012",
+            "-ar", "48000", "-ac", "2",
+            "-c:a", "pcm_s16le",
+            dst,
+        ]
         proc = run_ffmpeg(args)
     else:
-        # Tempo clamp via DubbingAdapter → Rust align-speed; Python fallback.
-        try:
-            from claynext.adapters.dubbing import get_dubbing_adapter
+        # Scale speed up when audio is longer than target (up to max_tempo)
+        tempo = max(min_tempo, min(max_tempo, ratio))
 
-            tempo = get_dubbing_adapter().align_speech_speed(
-                current, target, min_speed=min_tempo, max_speed=max_tempo
-            )
-        except Exception:
-            tempo = max(min_tempo, min(max_tempo, ratio))
-        # Build atempo filter chain (atempo filter accepts values in [0.5, 2.0])
+        # Build multi-stage atempo filter chain (each atempo accepts values in [0.5, 2.0])
         filters = ["afade=t=in:st=0:d=0.012"]
-        if tempo > 2.0:
-            filters += [f"atempo=2.0", f"atempo={tempo / 2.0:.4f}"]
-        elif tempo < 0.5:
-            filters += [f"atempo=0.5", f"atempo={tempo / 0.5:.4f}"]
-        else:
-            filters += [f"atempo={tempo:.4f}"]
+        t = tempo
+        while t > 2.0:
+            filters.append("atempo=2.0")
+            t /= 2.0
+        while t < 0.5:
+            filters.append("atempo=0.5")
+            t /= 0.5
+        filters.append(f"atempo={t:.4f}")
 
-        args = ["-y", "-i", src]
-        if pad_or_trim:
+        # NEVER trim speech by default: guarantee 100% full spoken text
+        if pad_or_trim and not never_trim:
             fade_st = max(0.0, target - 0.06)
             filters.append(f"afade=t=out:st={fade_st:.3f}:d=0.06")
-            args += [
+            args = [
+                "-y", "-i", src,
                 "-filter:a", ",".join(filters),
                 "-ar", "48000", "-ac", "2",
                 "-c:a", "pcm_s16le",
@@ -339,7 +336,13 @@ def fit_duration(
                 dst,
             ]
         else:
-            args += ["-filter:a", ",".join(filters), "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", dst]
+            args = [
+                "-y", "-i", src,
+                "-filter:a", ",".join(filters),
+                "-ar", "48000", "-ac", "2",
+                "-c:a", "pcm_s16le",
+                dst,
+            ]
         proc = run_ffmpeg(args)
 
     if proc.returncode != 0 or not os.path.isfile(dst) or os.path.getsize(dst) == 0:
@@ -428,7 +431,7 @@ def dynamic_duck_audio(
 
     fade_in_len = max(1, int(fade_in_sec * rate))
     fade_out_len = max(1, int(fade_out_sec * rate))
-    target_vol = max(0.05, min(0.60, float(duck_vol)))
+    target_vol = max(0.0, min(0.60, float(duck_vol)))
 
     for s, e in merged:
         i_s = int(s * rate)
@@ -461,8 +464,12 @@ def dynamic_duck_audio(
         M = 0.5 * (L + R)
         S = 0.5 * (L - R)
         duck_mask = (1.0 - gain)
-        center_factor = gain * (1.0 - duck_mask * center_attenuation)
-        side_factor = np.clip(gain * (1.0 + duck_mask * 0.25), 0.0, 1.0)
+        if target_vol == 0.0:
+            center_factor = gain
+            side_factor = gain
+        else:
+            center_factor = gain * (1.0 - duck_mask * center_attenuation)
+            side_factor = np.clip(gain * (1.0 + duck_mask * 0.25), 0.0, 1.0)
         out_L = center_factor * M + side_factor * S
         out_R = center_factor * M - side_factor * S
         out_samples = np.stack([out_L, out_R], axis=1)
@@ -978,9 +985,11 @@ def ensure_speech_bed(media_path: str, progress_callback=None, *, use_demucs: bo
     out_dir.mkdir(parents=True, exist_ok=True)
     dst = out_dir / f"{key}.wav"
     if dst.is_file() and dst.stat().st_size > 0:
+        if progress_callback:
+            progress_callback(100, "Loaded cached BGM bed")
         return str(dst)
     if progress_callback:
-        progress_callback(20, "Building FFmpeg mid-side music bed…")
+        progress_callback(25, "Building FFmpeg mid-side music bed…")
     # Mid-side + low/air residual: approximate speech removal without Demucs.
     graph = (
         "[0:a]aformat=sample_rates=48000:channel_layouts=stereo,asplit=3[a][b][c];"
@@ -998,6 +1007,8 @@ def ensure_speech_bed(media_path: str, progress_callback=None, *, use_demucs: bo
         tmp.unlink(missing_ok=True)
         return ""
     tmp.replace(dst)
+    if progress_callback:
+        progress_callback(100, "BGM bed isolated successfully")
     return str(dst)
 
 

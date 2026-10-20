@@ -164,12 +164,30 @@ class ToolLoaderScreen(QWidget):
             self.status_lbl.setText(self._phase_labels[1])
 
         if self._progress >= 100:
+            if getattr(self, "_completed", False):
+                return
+            self._completed = True
             self._timer.stop()
             self.status_lbl.setText(self._phase_labels[3])
-            if self.on_complete:
-                QTimer.singleShot(40, self.on_complete)
-            QTimer.singleShot(60, self.finished.emit)
-            QTimer.singleShot(100, self.close)
+
+            def _finish():
+                try:
+                    self.hide()
+                    self.close()
+                except Exception:
+                    pass
+                if self.on_complete:
+                    try:
+                        self.on_complete()
+                    except Exception as e:
+                        import logging
+                        logging.getLogger("claynext").exception("Loader callback failed: %s", e)
+                try:
+                    self.finished.emit()
+                except Exception:
+                    pass
+
+            QTimer.singleShot(40, _finish)
 
     def paintEvent(self, event):
         painter = QPainter(self)

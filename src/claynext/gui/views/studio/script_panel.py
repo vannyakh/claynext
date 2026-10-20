@@ -251,9 +251,16 @@ class ScriptPanelTools:
         )
         self.btn_frame_capture.clicked.connect(self._open_frame_ocr_scanner)
 
+        self.btn_script_translate = make_shelf_button(
+            "Translate", tip="✨ Translate transcript lines with AI (fast, direct, no heavy jobs)", icon_name="globe", icon_color="#10b981",
+        )
+        self.btn_script_translate.setEnabled(False)
+        self.btn_script_translate.clicked.connect(lambda: self._translate_transcript_direct())
+
         self.script_header = make_shelf_header(
             "Script",
             self.lbl_script_count,
+            self.btn_script_translate,
             self.btn_frame_capture,
             self.btn_script_import,
             self.btn_script_export,
@@ -771,6 +778,8 @@ class ScriptPanelTools:
             self.btn_empty_import.setEnabled(True)
         if hasattr(self, "btn_script_export"):
             self.btn_script_export.setEnabled(n > 0)
+        if hasattr(self, "btn_script_translate"):
+            self.btn_script_translate.setEnabled(n > 0)
         has_source = bool(
             str(getattr(self, "selected_file", "") or "")
             and os.path.isfile(str(self.selected_file))
@@ -839,6 +848,8 @@ class ScriptPanelTools:
         for name in (
             "btn_script_import",
             "btn_script_export",
+            "btn_script_translate",
+            "btn_frame_capture",
             "btn_script_regen",
             "btn_script_actions",
             "btn_script_pending",

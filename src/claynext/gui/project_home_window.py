@@ -200,6 +200,10 @@ class ProjectHomeWindow(QMainWindow):
         self._launch_studio(str(dest))
 
     def _launch_studio(self, project_path: str):
+        if getattr(self, "_is_launching_studio", False):
+            return
+        self._is_launching_studio = True
+
         from claynext.gui.components.shell.loader import ToolLoaderScreen
         from claynext.gui.main_window import ToolWindow
 
@@ -215,16 +219,19 @@ class ProjectHomeWindow(QMainWindow):
         tool_data = NAV_ITEMS[tool_index] if NAV_ITEMS else {"label": "Studio", "color": "#a855f7"}
 
         def _open():
-            win = ToolWindow(
-                tool_index=tool_index,
-                home_window=self,
-                project_path=project_path,
-            )
-            self._studio = win
-            win.show()
-            win.raise_()
-            win.activateWindow()
-            self.project_chosen.emit(project_path)
+            try:
+                win = ToolWindow(
+                    tool_index=tool_index,
+                    home_window=self,
+                    project_path=project_path,
+                )
+                self._studio = win
+                win.show()
+                win.raise_()
+                win.activateWindow()
+                self.project_chosen.emit(project_path)
+            finally:
+                self._is_launching_studio = False
 
         # Fast mini loader while Studio boots from Project Home
         loader = ToolLoaderScreen(tool_data=tool_data, parent=None, on_complete=_open)

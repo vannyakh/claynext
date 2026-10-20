@@ -93,7 +93,6 @@ class HomeRecentPanel(QWidget):
         self.list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.list.setAttribute(Qt.WidgetAttribute.WA_MacShowFocusRect, False)
         self.list.itemActivated.connect(self._on_item_activated)
-        self.list.itemDoubleClicked.connect(self._on_item_activated)
         self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list.customContextMenuRequested.connect(self._show_context_menu)
 

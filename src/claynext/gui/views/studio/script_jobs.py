@@ -57,17 +57,17 @@ class ScriptJobTools:
         act_ocr.setEnabled(has_source and not busy)
 
         act_tr = self._script_menu_action(
-            menu, "globe", "Retry translate (all)",
-            lambda: self._regenerate_rows(all_rows),
-            tip="Re-translate every line from the source text",
+            menu, "globe", "✨ Translate transcript (direct AI)",
+            lambda: self._translate_transcript_direct(all_rows),
+            tip="Directly translate transcript lines with AI (fast, no heavy jobs)",
         )
         act_tr.setEnabled(n > 0 and not busy)
 
         if selected:
             act_tr_sel = self._script_menu_action(
-                menu, "globe", f"Retry translate ({len(selected)} selected)",
-                lambda rows=list(selected): self._regenerate_rows(rows),
-                tip="Re-translate only the selected lines",
+                menu, "globe", f"✨ Translate ({len(selected)} selected)",
+                lambda rows=list(selected): self._translate_transcript_direct(rows),
+                tip="Directly translate only the selected lines",
             )
             act_tr_sel.setEnabled(not busy)
 
@@ -77,6 +77,20 @@ class ScriptJobTools:
             tip="Re-phrase dialogue with AI so speaking pace fits each video scene exactly",
         )
         act_fit.setEnabled(n > 0 and not busy)
+
+        act_cast = self._script_menu_action(
+            menu, "sparkles", "AI Cast & Gender Analysis (LLM / High Quality)",
+            self._run_ai_cast_analysis if hasattr(self, "_run_ai_cast_analysis") else lambda: self._autodetect_genders(None, all_lines=True),
+            tip="Identify character names, true genders, and assign complementary neural voices using AI",
+        )
+        act_cast.setEnabled(n > 0 and not busy)
+
+        act_clone = self._script_menu_action(
+            menu, "sparkles", "🎭 Clone voices from movie (Actor Tone & Pitch)",
+            self._clone_voices_from_movie,
+            tip="Detect character voices in the movie, copy their pitch & tone, and generate reference voice clones",
+        )
+        act_clone.setEnabled(n > 0 and has_source and not busy)
 
         act_tts = self._script_menu_action(
             menu, "volume", "Retry TTS (all)",
@@ -115,6 +129,10 @@ class ScriptJobTools:
         menu.clear()
         n = len(self._segments)
         busy = self._script_worker is not None or bool(getattr(self, "_dub_busy", False))
+        has_source = bool(
+            str(getattr(self, "selected_file", "") or "")
+            and os.path.isfile(str(self.selected_file))
+        )
         all_rows = list(range(n))
         pending_n = sum(1 for seg in self._segments if seg.get("pending"))
 
@@ -139,11 +157,18 @@ class ScriptJobTools:
 
         menu.addSeparator()
         act_gender = self._script_menu_action(
-            menu, "sparkles", "Auto-detect gender · best voices",
-            lambda: self._autodetect_genders(None, all_lines=True),
-            tip="Match character gender and assign TTS voices",
+            menu, "sparkles", "✨ AI Cast & Gender Analysis (High Quality LLM)",
+            self._run_ai_cast_analysis if hasattr(self, "_run_ai_cast_analysis") else lambda: self._autodetect_genders(None, all_lines=True),
+            tip="Identify character names, true genders, and assign complementary neural voices using AI",
         )
         act_gender.setEnabled(n > 0 and not busy)
+
+        act_clone_act = self._script_menu_action(
+            menu, "sparkles", "🎭 Clone Movie Voices & Match Actor Tone",
+            self._clone_voices_from_movie,
+            tip="Extract character voice samples from movie audio and copy pitch/timbre",
+        )
+        act_clone_act.setEnabled(n > 0 and has_source and not busy)
 
         menu.addSeparator()
         copy_menu = menu.addMenu(icon("copy", size=14), "Copy visible…")
@@ -251,6 +276,8 @@ class ScriptJobTools:
             voice = str(seg.get("tts_voice_hint") or seg.get("voice_id") or lead or co_star or "")
             if not text or not voice:
                 continue
+            ref_wav = str(seg.get("reference_wav") or (seg.get("clone_voice") or {}).get("reference_wav") or "")
+            pitch_val = float(seg.get("pitch_offset") or (seg.get("clone_voice") or {}).get("pitch_offset_hz") or 0.0)
             work.append({
                 "row": row,
                 "text": text,
@@ -259,6 +286,8 @@ class ScriptJobTools:
                 "end": seg.get("end", ""),
                 "start_sec": seg.get("start_sec"),
                 "end_sec": seg.get("end_sec"),
+                "reference_wav": ref_wav,
+                "pitch": pitch_val,
             })
         if not work:
             self.log.warn("Retry TTS · no speakable lines")
@@ -288,11 +317,11 @@ class ScriptJobTools:
             folder = CACHE_DIR / "script_tts"
             folder.mkdir(parents=True, exist_ok=True)
             if mode == "natural":
-                min_t, max_t = 1.0, 1.0
+                min_t, max_t = 0.95, 1.60
             elif mode == "subtle":
-                min_t, max_t = 0.85, 1.25
+                min_t, max_t = 0.85, 2.00
             else:
-                min_t, max_t = 0.65, 1.85
+                min_t, max_t = 0.65, 2.80
             out = []
             total = len(items)
             for i, item in enumerate(items):
@@ -300,22 +329,30 @@ class ScriptJobTools:
                 if progress_callback:
                     progress_callback(int((i / max(1, total)) * 100), f"TTS {i + 1}/{total}")
                 digest = hashlib.sha1(
-                    f"{item['voice']}\n{item['text']}".encode("utf-8")
+                    f"{item['voice']}\n{item['text']}\n{item.get('pitch', 0.0)}".encode("utf-8")
                 ).hexdigest()[:10]
                 raw = str(folder / f"row_{item['row']}_{digest}.mp3")
                 fitted = str(folder / f"row_{item['row']}_{digest}_fit.wav")
-                TTSEngine.synthesize(item["text"], item["voice"], raw)
+                TTSEngine.synthesize(
+                    item["text"],
+                    item["voice"],
+                    raw,
+                    pitch=float(item.get("pitch") or 0.0),
+                    reference_wav=str(item.get("reference_wav") or ""),
+                )
                 control.checkpoint()
                 start = float(item.get("start_sec") or timestamp_to_sec(item.get("start", "")))
                 end = float(item.get("end_sec") or timestamp_to_sec(item.get("end", "")))
                 slot = max(0.15, end - start) if end > start else 2.0
-                fit_duration(raw, fitted, slot, min_tempo=min_t, max_tempo=max_t, pad_or_trim=True)
+                fit_duration(raw, fitted, slot, min_tempo=min_t, max_tempo=max_t, pad_or_trim=False, never_trim=True)
+                from claynext.adapters.ffmpeg_service import probe_duration
+                actual_dur = probe_duration(fitted) if os.path.isfile(fitted) else slot
                 control.checkpoint()
                 out.append({
                     "row": item["row"],
                     "audio_path": fitted,
                     "start_ms": int(start * 1000),
-                    "duration_sec": round(slot, 2),
+                    "duration_sec": round(actual_dur, 2),
                     "voice_id": item["voice"],
                 })
             if progress_callback:
@@ -460,4 +497,226 @@ class ScriptJobTools:
         self._end_script_job()
         self._regen_rows = []
         self.table_spinner.stop()
+
+    def _translate_transcript_direct(self, rows: list[int] | None = None):
+        """Translate script lines directly with AI, updating the Dub track instantly without full dub jobs."""
+        segs = getattr(self, "_segments", None) or []
+        if not segs:
+            if hasattr(self, "log"):
+                self.log.warn("No transcript lines to translate")
+            return
+        if getattr(self, "_script_worker", None) is not None:
+            if hasattr(self, "log"):
+                self.log.warn("Another script job is already running")
+            return
+
+        if rows is None:
+            selected = self._selected_rows() if hasattr(self, "_selected_rows") else []
+            rows = list(selected) if selected else list(range(len(segs)))
+
+        valid_rows = [
+            r for r in rows
+            if 0 <= r < len(segs) and str(segs[r].get("text") or segs[r].get("original_text") or "").strip()
+        ]
+        if not valid_rows:
+            if hasattr(self, "log"):
+                self.log.warn("No text found in selected transcript lines")
+            return
+
+        lines = []
+        for r in valid_rows:
+            seg = segs[r]
+            orig = str(seg.get("original_text") or seg.get("text") or "").strip()
+            lines.append({
+                "id": seg.get("id", r + 1),
+                "text": orig,
+                "original_text": orig,
+                "start": seg.get("start", ""),
+                "end": seg.get("end", ""),
+                "start_sec": seg.get("start_sec"),
+                "end_sec": seg.get("end_sec"),
+                "duration_sec": seg.get("duration_sec"),
+                "recommended_syllables": seg.get("recommended_syllables") or {},
+                "speed_tolerance": seg.get("speed_tolerance") or {},
+                "speaker": seg.get("speaker") or "",
+            })
+
+        self._direct_translate_rows = valid_rows
+        control = self._begin_script_job()
+        target_lang = self.combo_lang.currentText() if hasattr(self, "combo_lang") else "Khmer"
+        source_lang = self.combo_source_lang.currentText() if hasattr(self, "combo_source_lang") else "auto"
+        translator = (self.combo_translator.currentData() or "auto") if hasattr(self, "combo_translator") else "auto"
+        ollama_model = (self.edit_ollama.text().strip() or "qwen2.5:7b") if hasattr(self, "edit_ollama") else "qwen2.5:7b"
+
+        if hasattr(self, "table_spinner"):
+            self.table_spinner.start()
+        if hasattr(self, "log"):
+            self.log.info(f"✨ Translating {len(valid_rows)} transcript line(s) → {target_lang} ({translator})… · Esc to stop")
+
+        def _job(progress_callback=None):
+            def _ping(pct: int, msg: str):
+                control.checkpoint()
+                if progress_callback:
+                    progress_callback(pct, msg)
+
+            control.checkpoint()
+            store = getattr(self, "store", None)
+            def _flag(key: str, default: str = "1") -> bool:
+                if store is None:
+                    return default == "1"
+                return store.get_setting("dub", key, default) == "1"
+
+            return TranslateEngine.translate_subtitles(
+                lines,
+                target_lang,
+                source_lang=source_lang,
+                translator=translator,
+                ollama_model=ollama_model,
+                fit_duration=_flag("translate_fit_duration"),
+                use_slang=_flag("translate_slang"),
+                use_expression=_flag("translate_expression"),
+                progress_callback=_ping,
+            )
+
+        worker = Worker(_job)
+        worker.signals.result.connect(self._on_direct_translate_ready)
+        worker.signals.error.connect(self._on_direct_translate_error)
+        worker.signals.finished.connect(self._on_direct_translate_finished)
+        self._script_worker = worker
+        self.thread_pool.start(worker)
+
+    def _on_direct_translate_ready(self, result):
+        rows = getattr(self, "_direct_translate_rows", []) or []
+        lines = result if isinstance(result, list) else []
+        by_id = {str(item.get("id")): item for item in lines if isinstance(item, dict)}
+
+        updated = 0
+        for r, line_item in zip(rows, lines):
+            if 0 <= r < len(self._segments):
+                seg = self._segments[r]
+                res_line = by_id.get(str(seg.get("id", r + 1))) or line_item
+                fresh = str(res_line.get("translated_text") or res_line.get("khmer_text") or "").strip()
+                if fresh:
+                    seg["translated_text"] = fresh
+                    seg["text"] = fresh
+                    updated += 1
+
+        # Refresh cast & voices so characters match the translated dialogue
+        try:
+            from claynext.models.gender_voices import apply_character_cast, assign_gender_and_voices
+            lead, co_star = self._primary_voices() if hasattr(self, "_primary_voices") else ("", "")
+            apply_character_cast(self._segments)
+            assign_gender_and_voices(
+                self._segments,
+                primary_voice=lead,
+                secondary_voice=co_star,
+                lang=self._voice_lang() if hasattr(self, "_voice_lang") else "",
+                force_redetect=False,
+            )
+        except Exception:
+            pass
+
+        if hasattr(self, "_fill_table"):
+            self._fill_table(self._segments)
+        if hasattr(self, "_ensure_auto_captions"):
+            self._ensure_auto_captions(force=True)
+        if hasattr(self, "_stash_composition"):
+            self._stash_composition()
+        if hasattr(self, "log"):
+            self.log.success(f"✨ Translation complete: {updated} line(s) translated & updated directly!")
+
+    def _on_direct_translate_error(self, message: str, _stack: str):
+        if self._is_script_cancelled(message):
+            if hasattr(self, "log"):
+                self.log.info("Translation stopped")
+            return
+        if hasattr(self, "log"):
+            self.log.error(f"Translation failed · {message}")
+        QMessageBox.warning(self, "Translate Transcript", str(message))
+
+    def _on_direct_translate_finished(self):
+        self._end_script_job()
+        self._direct_translate_rows = []
+        if hasattr(self, "table_spinner"):
+            self.table_spinner.stop()
+
+    def _clone_voices_from_movie(self, rows: list[int] | None = None):
+        """Extract character speech turns from movie audio, detect tone & pitch, and clone voices."""
+        if not self._segments:
+            if hasattr(self, "log"):
+                self.log.warn("Clone voices · no script lines yet")
+            return
+        if self._script_worker is not None:
+            if hasattr(self, "log"):
+                self.log.warn("Another script job is already running")
+            return
+
+        media_source = str(getattr(self, "selected_file", "") or "")
+        if not media_source or not os.path.isfile(media_source):
+            tid = self._current_script_task_id()
+            task = self._task_by_id(tid) if tid >= 0 and hasattr(self, "_task_by_id") else None
+            if task and task.get("source") and os.path.isfile(str(task.get("source"))):
+                media_source = str(task.get("source"))
+
+        if not media_source or not os.path.isfile(media_source):
+            if hasattr(self, "log"):
+                self.log.warn("Clone voices · original movie file not found")
+            return
+
+        from claynext.models.voice_clone import clone_character_voices_from_movie
+
+        control = self._begin_script_job()
+        if hasattr(self, "table_spinner"):
+            self.table_spinner.start()
+        if hasattr(self, "log"):
+            self.log.info("🎭 Analyzing movie audio & cloning character voices… · Esc to stop")
+
+        def _job(progress_callback=None):
+            def _ping(pct: int, msg: str):
+                control.checkpoint()
+                if progress_callback:
+                    progress_callback(pct, msg)
+
+            return clone_character_voices_from_movie(
+                media_source,
+                self._segments,
+                progress_callback=_ping,
+            )
+
+        worker = Worker(_job)
+        worker.signals.result.connect(self._on_clone_ready)
+        worker.signals.error.connect(self._on_clone_error)
+        worker.signals.finished.connect(self._on_clone_finished)
+        self._script_worker = worker
+        self.thread_pool.start(worker)
+
+    def _on_clone_ready(self, profiles: dict):
+        if hasattr(self, "_fill_table"):
+            self._fill_table(self._segments)
+        if hasattr(self, "_stash_composition"):
+            self._stash_composition()
+        count = len(profiles) if isinstance(profiles, dict) else 0
+        if hasattr(self, "log"):
+            self.log.success(f"🎭 Voice clone ready: {count} character voice(s) extracted with movie tone & pitch!")
+        QMessageBox.information(
+            self,
+            "Voice Clone Ready",
+            f"Successfully cloned {count} character voice(s) directly from the movie audio!\n\n"
+            f"The actor's tone, pitch frequency, and vocal timbre will be copied automatically when synthesizing dialogue.",
+        )
+
+    def _on_clone_error(self, message: str, _stack: str):
+        if self._is_script_cancelled(message):
+            if hasattr(self, "log"):
+                self.log.info("Voice clone stopped")
+            return
+        if hasattr(self, "log"):
+            self.log.error(f"Voice clone failed · {message}")
+        QMessageBox.warning(self, "Voice Clone", str(message))
+
+    def _on_clone_finished(self):
+        self._end_script_job()
+        if hasattr(self, "table_spinner"):
+            self.table_spinner.stop()
+
 

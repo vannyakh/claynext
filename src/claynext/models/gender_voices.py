@@ -96,18 +96,46 @@ def voice_entry_gender(voice: dict[str, Any] | str) -> str:
     return "Unknown"
 
 
+_MALE_SELF_REFS = {
+    "下官", "微臣", "末将", "在下", "卑职", "草民", "贫僧", "老衲", "老夫", "老朽",
+    "朕", "孤", "本王", "寡人", "为父", "愚兄", "小弟",
+}
+
+_FEMALE_SELF_REFS = {
+    "臣妾", "民女", "妾身", "奴婢", "奴家", "小女", "本宫", "为娘", "愚妹",
+}
+
+
 def infer_gender_from_text(text: str) -> str:
     """Lightweight pronoun / kinship cues from dialogue (source or dub)."""
-    blob = f" {str(text or '').lower()} "
+    raw = str(text or "").strip()
+    if not raw:
+        return "Unknown"
+
+    # 1. 1st-person self-references take highest priority (speaker identifies own gender)
+    if any(ref in raw for ref in _MALE_SELF_REFS):
+        return "Male"
+    if any(ref in raw for ref in _FEMALE_SELF_REFS):
+        return "Female"
+
+    # Prioritize Chinese historical, official, imperial, and drama cues
+    c_male = sum(1 for c in _MALE_CHINESE_CUES if c in raw)
+    c_female = sum(1 for c in _FEMALE_CHINESE_CUES if c in raw)
+    if c_male > c_female and c_male > 0:
+        return "Male"
+    if c_female > c_male and c_female > 0:
+        return "Female"
+
+    blob = f" {raw.lower()} "
     female = sum(1 for hint in _FEMALE_HINTS if f" {hint} " in blob or hint in blob)
     male = sum(1 for hint in _MALE_HINTS if f" {hint} " in blob or hint in blob)
     # Prefer whole-word-ish English pronouns.
     for token, gender in ((" she ", "Female"), (" her ", "Female"), (" he ", "Male"), (" him ", "Male")):
         if token in blob:
             return gender
-    if "她" in text:
+    if "她" in raw:
         return "Female"
-    if "他" in text and "她" not in text:
+    if "他" in raw and "她" not in raw:
         return "Male"
     if female > male and female > 0:
         return "Female"
@@ -141,7 +169,7 @@ def detect_segment_gender(seg: dict[str, Any], *, honor_manual: bool = True) -> 
     audio_g = normalize_gender(seg.get("audio_gender"))
     if audio_g != "Unknown":
         return audio_g
-    if existing != "Unknown" and seg.get("gender_source") == "audio":
+    if existing != "Unknown" and seg.get("gender_source") in ("audio", "llm"):
         return existing
     speaker_g = infer_gender_from_speaker(str(seg.get("speaker") or ""))
     if speaker_g != "Unknown":
@@ -170,6 +198,16 @@ _INTRO = re.compile(
     r"([A-Z][\w'’\-]{1,18}|[\u4e00-\u9fff]{2,4})",
     re.IGNORECASE,
 )
+_CHINESE_OFFICIAL_INTRO = re.compile(
+    r"(?:下官|微臣|末将|在下|卑职|草民|贫僧|老衲)"
+    r"(?:[\u4e00-\u9fff]{2,6}?(?:通判|知府|巡抚|总督|尚书|侍郎|将军|都督|提督|统领|知县|县令|大人|侍卫|太医|捕头|推官|官员|学士))?"
+    r"([\u4e00-\u9fff]{2,3})(?:[，,、\s]|$|率|恭迎|拜见|启奏|参见|领命|告退)"
+)
+_CHINESE_FEMALE_INTRO = re.compile(
+    r"(?:臣妾|民女|妾身|奴婢|奴家|小女|本宫)"
+    r"(?:[\u4e00-\u9fff]{2,6}?(?:娘娘|皇后|贵妃|公主|郡主|夫人|小姐|姑娘))?"
+    r"([\u4e00-\u9fff]{2,3})(?:[，,、\s]|$|参见|拜见|叩见)"
+)
 _VOCATIVE = re.compile(r"^([A-Z][\w'’\-]{1,16})[,，]\s")
 _VOCATIVE_TAIL = re.compile(r"[,，]\s*([A-Z][\w'’\-]{1,16})[!?\.。！？]*$")
 _VOCATIVE_MID = re.compile(
@@ -188,7 +226,10 @@ _KINSHIP_NAME = re.compile(
     re.IGNORECASE,
 )
 _CHINESE_TITLES = (
-    r"(?:总|队长|警官|主任|局长|教授|医生|老师|律师|师傅|大哥|大姐|小姐|大叔|阿姨|爷爷|奶奶|老板|会长|司令)"
+    r"(?:总|队长|警官|主任|局长|教授|医生|老师|律师|师傅|大哥|大姐|小姐|大叔|阿姨|爷爷|奶奶|老板|会长|司令|"
+    r"通判|大人|知府|巡抚|总督|尚书|侍郎|将军|提督|都督|统领|知县|县令|公公|太医|国师|道长|方丈|王爷|侯爷|"
+    r"圣上|陛下|皇上|殿下|公子|少爷|老爷|少主|庄主|掌门|大侠|少侠|兄台|仁兄|兄长|师兄|师弟|师父|相公|"
+    r"娘娘|皇后|太后|贵妃|公主|郡主|夫人|姑娘|姑姑|姨娘|师姐|师妹|师娘)"
 )
 _CHINESE_TITLED_NAME = re.compile(rf"([\u4e00-\u9fff]{{1,2}})({_CHINESE_TITLES})")
 
@@ -202,6 +243,9 @@ _NON_NAMES = {
     "again", "now", "then", "just", "see", "watch", "tell", "say", "know", "think",
     "good", "bad", "great", "god", "lord", "damn", "shit", "fuck", "hold", "take",
     "leave", "back", "away", "ready", "remember", "forget", "believe", "careful",
+    "请安", "叩安", "问安", "谢恩", "领旨", "告退", "遵旨", "启奏", "万福", "参见",
+    "拜见", "领命", "恕罪", "知错", "吉祥", "遵命", "禀告", "回禀", "回话", "属实",
+    "明白", "知道", "救命",
 }
 
 _EXPR_CUES = (
@@ -255,6 +299,8 @@ def _is_valid_character_name(candidate: str) -> bool:
         return False
     if clean.casefold() in _NON_NAMES:
         return False
+    if any(non in clean for non in ("恭迎", "参见", "拜见", "启奏", "叩见", "请安", "叩安", "问安", "谢恩", "领旨", "告退", "遵旨", "万福", "领命", "恕罪", "回禀", "禀报")):
+        return False
     if is_generic_speaker(clean):
         return False
     # Avoid numbers or code symbols
@@ -299,6 +345,24 @@ def apply_character_cast(segments: list[dict[str, Any]]) -> list[dict[str, Any]]
             if _is_valid_character_name(candidate):
                 intros[speaker][candidate] += 5
 
+        # 1b. Chinese official / historical self-introduction ("下官秦州通判莫宗明")
+        off_intro = _CHINESE_OFFICIAL_INTRO.search(text)
+        if off_intro:
+            candidate = off_intro.group(1).strip(" ,，.。")
+            if _is_valid_character_name(candidate):
+                intros[speaker][candidate] += 8
+                seg["gender"] = "Male"
+                seg["gender_source"] = "text_intro"
+
+        # 1c. Chinese female self-introduction ("臣妾甄嬛", "民女窦娥")
+        fem_intro = _CHINESE_FEMALE_INTRO.search(text)
+        if fem_intro:
+            candidate = fem_intro.group(1).strip(" ,，.。")
+            if _is_valid_character_name(candidate):
+                intros[speaker][candidate] += 8
+                seg["gender"] = "Female"
+                seg["gender_source"] = "text_intro"
+
         # Adjacent conversation partner
         other = ""
         if index + 1 < len(segments):
@@ -328,10 +392,21 @@ def apply_character_cast(segments: list[dict[str, Any]]) -> list[dict[str, Any]]
             if _is_valid_character_name(candidate):
                 addressed[other][candidate] += 4
 
+        self_spans = []
+        if intro:
+            self_spans.append(intro.span())
+        if off_intro:
+            self_spans.append(off_intro.span())
+        if fem_intro:
+            self_spans.append(fem_intro.span())
+
         # 4. Chinese titled address ("李队长")
         for cn_match in _CHINESE_TITLED_NAME.finditer(text):
+            start_pos = cn_match.start()
+            if any(s_s <= start_pos < s_e for s_s, s_e in self_spans):
+                continue
             cand_cn = cn_match.group(0)
-            if len(cand_cn) >= 2:
+            if len(cand_cn) >= 2 and _is_valid_character_name(cand_cn):
                 addressed[other][cand_cn] += 4
 
         # 5. Leading vocative ("Elena, look at this")
@@ -394,22 +469,28 @@ def character_gender_map(segments: list[dict[str, Any]]) -> dict[str, str]:
 
 
 def _catalog_voices(lang: str = "") -> list[dict[str, Any]]:
-    from claynext.models.tts_service import TTSEngine
+    try:
+        from claynext.models.tts_service import TTSEngine
 
-    voices = list(TTSEngine.VOICE_PRESETS)
-    if lang:
-        matched = [v for v in voices if str(v.get("lang") or "") == lang]
-        if matched:
-            return matched
-    return voices
+        voices = list(TTSEngine.VOICE_PRESETS)
+        if lang:
+            matched = [v for v in voices if str(v.get("lang") or "") == lang]
+            if matched:
+                return matched
+        return voices
+    except Exception:
+        return []
 
 
 def _lookup_voice_gender(voice_id: str) -> str:
-    from claynext.models.tts_service import TTSEngine
+    try:
+        from claynext.models.tts_service import TTSEngine
 
-    for voice in TTSEngine.VOICE_PRESETS:
-        if voice.get("id") == voice_id:
-            return voice_entry_gender(voice)
+        for voice in TTSEngine.VOICE_PRESETS:
+            if voice.get("id") == voice_id:
+                return voice_entry_gender(voice)
+    except Exception:
+        pass
     return voice_entry_gender(voice_id)
 
 
@@ -524,7 +605,11 @@ def assign_gender_and_voices(
         seg["gender"] = detect_segment_gender(seg, honor_manual=False)
 
     char_gender = character_gender_map(segments)
-    # If still Unknown, alternate Female/Male by character order for casting.
+    # If still Unknown, analyze entire character dialogue and fallback to primary voice gender.
+    primary_g = voice_entry_gender(primary_voice)
+    lead_fallback = primary_g if primary_g != "Unknown" else "Male"
+    alt_fallback = "Female" if lead_fallback == "Male" else "Male"
+
     order: list[str] = []
     for seg in segments:
         name = str(seg.get("speaker") or "").strip() or "Character 1"
@@ -532,7 +617,16 @@ def assign_gender_and_voices(
             order.append(name)
     for idx, name in enumerate(order):
         if char_gender.get(name, "Unknown") == "Unknown":
-            char_gender[name] = "Female" if idx % 2 == 0 else "Male"
+            char_lines = " ".join(
+                str(s.get("original_text") or s.get("text") or "")
+                for s in segments
+                if (str(s.get("speaker") or "").strip() or "Character 1") == name
+            )
+            g = infer_gender_from_text(char_lines)
+            if g != "Unknown":
+                char_gender[name] = g
+            else:
+                char_gender[name] = lead_fallback if idx == 0 else alt_fallback
 
     # Assign one voice per character, rotating within gender.
     used_voices: set[str] = set()
@@ -620,6 +714,175 @@ def apply_manual_gender(
     )
 
 
+def _apply_llm_cast_result(segments: list[dict[str, Any]], res: dict[str, Any]) -> bool:
+    if not isinstance(res, dict):
+        return False
+    chars = res.get("characters")
+    if not isinstance(chars, list) or not chars:
+        return False
+
+    applied_any = False
+    for char in chars:
+        if not isinstance(char, dict):
+            continue
+        c_name = str(char.get("name") or "").strip()
+        c_gender = normalize_gender(char.get("gender"))
+        c_role = str(char.get("role") or "")
+        indices = char.get("line_indices") or []
+        for idx in indices:
+            if isinstance(idx, int) and 0 <= idx < len(segments):
+                seg = segments[idx]
+                if c_name and not seg.get("speaker_manual"):
+                    seg["speaker"] = c_name
+                    seg["character"] = c_name
+                if c_gender != "Unknown" and not seg.get("gender_manual"):
+                    seg["gender"] = c_gender
+                    seg["gender_source"] = "llm"
+                if c_role:
+                    seg["character_role"] = c_role
+                applied_any = True
+    return applied_any
+
+
+def llm_analyze_cast_and_gender(
+    segments: list[dict[str, Any]],
+    *,
+    progress_callback: Any = None,
+) -> bool:
+    """Use Gemini Flash AI or Ollama to classify characters, true genders, and dialogue lines."""
+    if not segments:
+        return False
+    import json
+    import os
+    import urllib.request
+    import urllib.error
+    import urllib.parse
+    from claynext.models.llm_keys import get_key_pool, InvalidKeyError, RateLimitError
+
+    # Prepare compact transcript for LLM
+    lines_summary = []
+    for i, s in enumerate(segments[:120]):
+        spk = str(s.get("speaker") or f"Speaker_{i+1}")
+        txt = str(s.get("text") or s.get("original_text") or s.get("translated_text") or "").strip()
+        if txt:
+            lines_summary.append({"index": i, "speaker": spk, "text": txt})
+
+    if not lines_summary:
+        return False
+
+    prompt = (
+        "You are an expert film casting director and subtitle editor.\n"
+        "Analyze the following movie dialogue lines from a scene. Detect each character's true name, "
+        "their exact gender ('Male' or 'Female'), their cinematic role ('Lead', 'Co-Star', 'Supporting', or 'Minor'), "
+        "and list all line indices that character speaks.\n\n"
+        "Important domain knowledge:\n"
+        "1. Chinese historical / costume / modern dramas:\n"
+        "   - Male cues: 下官, 通判, 官员, 属官, 大人, 微臣, 末将, 在下, 卑职, 贫僧, 老衲, 老夫, 朕, 孤, 本王, 圣上, 陛下, 皇上, 殿下, 公子, 少爷, 兄台, 贤弟, 师兄, 师父, 丈夫, etc.\n"
+        "   - Female cues: 臣妾, 娘娘, 皇后, 太后, 贵妃, 公主, 郡主, 民女, 小女, 小姐, 姑娘, 夫人, 奴婢, 妾身, 姑姑, 丫鬟, 师姐, 师娘, 娘子, etc.\n"
+        "   - Self-introductions (e.g. '下官秦州通判莫宗明，率本州属官，恭迎圣上任' -> Character Name: '莫宗明', Title: '秦州通判', Gender: 'Male').\n"
+        "2. If a male character speaks, gender MUST be 'Male'. Never mark an official, general, emperor, or male character as 'Female'.\n\n"
+        "Input lines:\n"
+        + json.dumps(lines_summary, ensure_ascii=False, indent=2)
+        + "\n\nReturn ONLY a valid JSON object matching this schema:\n"
+        "{\n"
+        '  "characters": [\n'
+        '    {\n'
+        '      "name": "Character Name",\n'
+        '      "gender": "Male" or "Female",\n'
+        '      "role": "Lead",\n'
+        '      "line_indices": [0, 1, 2]\n'
+        '    }\n'
+        '  ]\n'
+        "}\n"
+    )
+
+    # 1. Try Gemini rotation if keys available
+    pool = get_key_pool()
+    gemini_keys = pool.secrets("gemini")
+    if gemini_keys:
+        if progress_callback:
+            try:
+                progress_callback(20, "Calling Gemini Flash AI for character cast & gender…")
+            except Exception:
+                pass
+
+        def _do_gemini(api_key: str) -> dict:
+            models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+            last_err = None
+            for model in models:
+                url = (
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+                    f"?key={urllib.parse.quote(api_key)}"
+                )
+                body = json.dumps({
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"},
+                }).encode("utf-8")
+                req = urllib.request.Request(
+                    url,
+                    data=body,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                try:
+                    with urllib.request.urlopen(req, timeout=45) as resp:
+                        raw = json.loads(resp.read().decode("utf-8"))
+                        text_res = (
+                            raw.get("candidates", [{}])[0]
+                            .get("content", {})
+                            .get("parts", [{}])[0]
+                            .get("text", "")
+                        )
+                        return json.loads(text_res)
+                except urllib.error.HTTPError as exc:
+                    detail = exc.read().decode("utf-8", errors="replace")
+                    if exc.code in (401, 403):
+                        raise InvalidKeyError(f"{model}: {exc.code}") from exc
+                    from claynext.models.llm_keys import is_rate_limit, parse_retry_after
+                    if is_rate_limit(exc.code, detail):
+                        raise RateLimitError(f"{model}: rate limited", parse_retry_after(exc.headers, detail)) from exc
+                    last_err = exc
+                except Exception as exc:
+                    last_err = exc
+            if last_err:
+                raise last_err
+            return {}
+
+        try:
+            res = pool.call_with_rotation("gemini", _do_gemini, progress=progress_callback)
+            if _apply_llm_cast_result(segments, res):
+                return True
+        except Exception:
+            pass
+
+    # 2. Try Ollama local LLM if running
+    try:
+        from claynext.models.translate_service import TranslateEngine
+        if TranslateEngine.ollama_available():
+            if progress_callback:
+                try:
+                    progress_callback(25, "Calling local Ollama LLM for character cast…")
+                except Exception:
+                    pass
+            host = TranslateEngine.ollama_host()
+            model = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
+            req = urllib.request.Request(
+                f"{host}/api/generate",
+                data=json.dumps({"model": model, "prompt": prompt, "format": "json", "stream": False}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=45) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                res = json.loads(data.get("response", "{}"))
+                if _apply_llm_cast_result(segments, res):
+                    return True
+    except Exception:
+        pass
+
+    return False
+
+
 def ai_analyze_movie_cast(
     segments: list[dict[str, Any]],
     *,
@@ -649,6 +912,8 @@ def ai_analyze_movie_cast(
                 pass
 
     _ping(15, "Analyzing dialogue context, names, and titles…")
+    # Step 0: Try high-precision LLM cast detection first (Gemini Flash / Ollama)
+    llm_analyze_cast_and_gender(segments, progress_callback=_ping)
     # Step 1: Detect and assign character names + line expressions
     apply_character_cast(segments)
 
