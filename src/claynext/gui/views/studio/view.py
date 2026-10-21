@@ -127,6 +127,7 @@ class StudioView(
         self.timeline.clip_selected.connect(self._on_timeline_clip)
         self.timeline.selection_changed.connect(self._on_timeline_selection)
         self.timeline.composition_changed.connect(self._on_composition_changed)
+        self.timeline.sequences.add_requested.connect(self._add_composition)
         self.timeline.sequences.reordered.connect(self._reorder_composition)
         self.timeline.sequences.rename_requested.connect(self._rename_composition)
         self.timeline.sequences.delete_requested.connect(self._delete_composition)

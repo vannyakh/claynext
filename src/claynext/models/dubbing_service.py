@@ -237,43 +237,143 @@ def _try_demucs(wav_path: str, out_dir: Path, ping: Callable) -> tuple[str | Non
         return None, None
 
 
-def _speech_clip_pairs(path: str, duration: float) -> list[float] | None:
-    """Pack the extracted track into speech windows. Short media stays one pass."""
-    if duration <= 45 or not path or not os.path.isfile(path):
-        return None
-    spans: list[tuple[float, float]] = []
+def _soundtrack_turns(path: str) -> list[dict]:
+    """Speech turns on the soundtrack. Empty when the core tool is unavailable."""
+    if not path or not os.path.isfile(path):
+        return []
     try:
         from claynext.adapters.ai import get_ai_adapter
 
-        for item in get_ai_adapter().vad_chunk(path) or []:
+        turns = []
+        for item in get_ai_adapter().vad_chunk(path, threshold=0.22) or []:
             start = float(item.get("start_sec") or 0)
             end = float(item.get("end_sec") or 0)
-            if end > start:
-                spans.append((start, end))
+            if end - start >= 0.18:
+                turns.append({
+                    "start_sec": start,
+                    "end_sec": end,
+                    "confidence": float(item.get("confidence") or 0.85),
+                })
+        return turns
     except Exception:
-        spans = []
-    windows: list[tuple[float, float]] = []
-    if spans:
-        cur_s, cur_e = spans[0]
-        for start, end in spans[1:]:
-            if end - cur_s <= 36 and start - cur_e <= 0.8:
-                cur_e = end
-            else:
-                windows.append((max(0.0, cur_s - 0.12), min(duration, cur_e + 0.2)))
-                cur_s, cur_e = start, end
-        windows.append((max(0.0, cur_s - 0.12), min(duration, cur_e + 0.2)))
-    else:
-        cursor = 0.0
-        while cursor < duration - 0.3:
-            windows.append((cursor, min(duration, cursor + 40.0)))
-            cursor += 40.0
-    if len(windows) <= 1:
+        return []
+
+
+def _speech_clip_pairs(path: str, duration: float) -> list[float] | None:
+    """One Whisper window per soundtrack speech turn.
+
+    A pause stays a pause, so a quiet reply is its own window instead of being
+    skipped inside a long clip. A turn longer than half a minute is sliced.
+    """
+    if duration <= 20 or not path or not os.path.isfile(path):
+        return None
+    spans = [
+        (float(item["start_sec"]), float(item["end_sec"]))
+        for item in _soundtrack_turns(path)
+    ]
+    if len(spans) < 2:
         return None
     pairs: list[float] = []
-    for start, end in windows:
-        if end - start >= 0.4:
-            pairs.extend([round(start, 3), round(end, 3)])
+    for start, end in spans:
+        cursor = max(0.0, start)
+        limit = min(duration, end)
+        while cursor < limit - 0.12:
+            nxt = min(limit, cursor + 32.0)
+            if nxt - cursor >= 0.28:
+                pairs.extend([round(cursor, 3), round(nxt, 3)])
+            if nxt >= limit - 0.05:
+                break
+            cursor = nxt
     return pairs if len(pairs) >= 4 else None
+
+
+def _fit_lines_fallback(lines: list[dict], turns: list[dict]) -> list[dict]:
+    """Same snap as the Rust fitter, used when that binary is not built yet."""
+    if not lines or not turns:
+        return lines
+
+    def _overlap(a0: float, a1: float, b0: float, b1: float) -> float:
+        return max(0.0, min(a1, b1) - max(a0, b0))
+
+    owners: list[int | None] = []
+    for line in lines:
+        best_i = None
+        best = 0.0
+        for i, turn in enumerate(turns):
+            score = _overlap(line["start_sec"], line["end_sec"], turn["start_sec"], turn["end_sec"])
+            if score > best:
+                best = score
+                best_i = i
+        owners.append(best_i if best > 0.04 else None)
+    groups: dict[int, list[int]] = {}
+    for index, owner in enumerate(owners):
+        if owner is not None:
+            groups.setdefault(owner, []).append(index)
+    out = [dict(line) for line in lines]
+    for turn_i, members in groups.items():
+        turn = turns[turn_i]
+        if len(members) == 1:
+            line = out[members[0]]
+            line["start_sec"] = max(turn["start_sec"], line["start_sec"] - 0.45)
+            line["start_sec"] = min(line["start_sec"], lines[members[0]]["start_sec"])
+            line["end_sec"] = min(turn["end_sec"], line["end_sec"] + 0.45)
+            line["end_sec"] = max(line["end_sec"], lines[members[0]]["end_sec"])
+            continue
+        members = sorted(members, key=lambda i: lines[i]["start_sec"])
+        weights = [max(0.2, lines[i]["end_sec"] - lines[i]["start_sec"]) for i in members]
+        total = sum(weights) or 0.2
+        cursor = float(turn["start_sec"])
+        span = max(0.12 * len(members), float(turn["end_sec"]) - cursor)
+        for n, index in enumerate(members):
+            if n + 1 == len(members):
+                end = float(turn["end_sec"])
+            else:
+                end = min(
+                    float(turn["end_sec"]) - 0.12 * (len(members) - n - 1),
+                    cursor + max(0.12, span * weights[n] / total),
+                )
+            out[index]["start_sec"] = cursor
+            out[index]["end_sec"] = max(cursor + 0.12, end)
+            cursor = out[index]["end_sec"]
+    return out
+
+
+def _fit_segments_to_soundtrack(segments: list[dict], path: str) -> list[dict]:
+    """Move each transcript line onto the speech it belongs to on the track."""
+    turns = _soundtrack_turns(path)
+    if not turns or not segments:
+        return segments
+    lines = []
+    for seg in segments:
+        start = float(seg.get("start_sec") or timestamp_to_sec(seg.get("start", "")))
+        end = float(seg.get("end_sec") or timestamp_to_sec(seg.get("end", "")))
+        if end <= start:
+            end = start + 0.4
+        lines.append({
+            "start_sec": start,
+            "end_sec": end,
+            "text": str(seg.get("text") or ""),
+        })
+    fitted = None
+    try:
+        from claynext.adapters.ai import get_ai_adapter
+
+        fitted = get_ai_adapter().fit_speech(lines, turns)
+    except Exception:
+        fitted = None
+    if not fitted or len(fitted) != len(segments):
+        fitted = _fit_lines_fallback(lines, turns)
+    from claynext.models.asr_service import _fmt_ts
+
+    for seg, line in zip(segments, fitted):
+        start = max(0.0, float(line.get("start_sec") or 0))
+        end = max(start + 0.12, float(line.get("end_sec") or start))
+        seg["start"] = _fmt_ts(start)
+        seg["end"] = _fmt_ts(end)
+        seg["start_sec"] = round(start, 3)
+        seg["end_sec"] = round(end, 3)
+        seg["duration_sec"] = round(end - start, 3)
+    return segments
 
 
 def _tts_workers(requested: int | None) -> int:
@@ -539,19 +639,26 @@ class DubbingEngine:
         else:
             effective_lang = source_lang if source_lang and source_lang != "Auto Detect" else asr_language
             clips = _speech_clip_pairs(asr_source, duration)
-            chunk_note = f" · {len(clips) // 2} speech chunks" if clips else ""
+            if clips:
+                chunk_note = f" · {len(clips) // 2} speech turns on the soundtrack"
+            else:
+                chunk_note = " · full track"
             ping(16, f"Transcribing the source track ({effective_lang}){chunk_note}…")
             segments = ASREngine.transcribe(
                 asr_source,
                 model_name=asr_model,
                 language=effective_lang,
                 clip_timestamps=clips,
+                vad_filter=not bool(clips),
                 progress_callback=lambda p, m: ping(16 + int(p * 0.22), m),
             )
             segments = merge_dialogue_segments(segments)
 
+        ping(37, "Fitting each line to the speech on the soundtrack…")
+        segments = _fit_segments_to_soundtrack(segments, asr_source)
+
         if auto_chain:
-            ping(38, "Reading gender, expression, and character names…")
+            ping(38, "Classifying who speaks, gender, intent, and expression…")
             segments = analyze_movie_characters(
                 segments,
                 primary_voice=voice_id,

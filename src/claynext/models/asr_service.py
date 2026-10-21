@@ -79,11 +79,13 @@ def transcript_keep(
         return False
     if _HALLUCINATION_RE.search(text or ""):
         return False
-    if no_speech_prob >= 0.72:
+    # Dialogue under a score often scores lower than clean speech. Drop only
+    # lines that are clearly not speech, so a quiet reply still reaches TTS.
+    if no_speech_prob >= 0.88:
         return False
-    if avg_logprob <= -1.45:
+    if avg_logprob <= -2.05:
         return False
-    if avg_logprob <= -1.15 and no_speech_prob >= 0.40:
+    if avg_logprob <= -1.55 and no_speech_prob >= 0.62:
         return False
     return True
 
@@ -111,8 +113,8 @@ def is_meaningful_speech(text: str) -> bool:
 
 def merge_dialogue_segments(
     segments: list[dict[str, Any]],
-    max_gap_sec: float = 0.50,
-    max_duration_sec: float = 8.0,
+    max_gap_sec: float = 0.40,
+    max_duration_sec: float = 6.0,
 ) -> list[dict[str, Any]]:
     """
     Clean up hallucinated ellipses/artifacts and merge adjacent sub-second speech
@@ -449,9 +451,9 @@ class ASREngine:
             transcribe_kwargs["condition_on_previous_text"] = False
             if vad_filter:
                 transcribe_kwargs["vad_parameters"] = dict(
-                    min_silence_duration_ms=280,
-                    speech_pad_ms=300,
-                    threshold=0.32,
+                    min_silence_duration_ms=160,
+                    speech_pad_ms=480,
+                    threshold=0.20,
                 )
             if initial_prompt and initial_prompt.strip():
                 transcribe_kwargs["initial_prompt"] = initial_prompt.strip()

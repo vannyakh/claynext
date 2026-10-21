@@ -327,7 +327,8 @@ def apply_character_cast(segments: list[dict[str, Any]]) -> list[dict[str, Any]]
         if name not in speakers:
             speakers.append(name)
         text = str(seg.get("text") or seg.get("original_text") or "")
-        seg["expression"] = detect_line_expression(text)
+        if not str(seg.get("expression") or "").strip():
+            seg["expression"] = detect_line_expression(text)
 
     intros: dict[str, Counter[str]] = {sp: Counter() for sp in speakers}
     addressed: dict[str, Counter[str]] = {sp: Counter() for sp in speakers}
@@ -600,7 +601,7 @@ def assign_gender_and_voices(
         if seg.get("gender_manual"):
             seg["gender"] = normalize_gender(seg.get("gender"))
             continue
-        if force_redetect:
+        if force_redetect and seg.get("gender_source") not in {"llm", "audio", "text_intro"}:
             seg.pop("gender", None)
         seg["gender"] = detect_segment_gender(seg, honor_manual=False)
 
@@ -724,8 +725,8 @@ def _apply_llm_cast_result(segments: list[dict[str, Any]], res: dict[str, Any]) 
     if not isinstance(res, dict):
         return False
     chars = res.get("characters")
-    if not isinstance(chars, list) or not chars:
-        return False
+    if not isinstance(chars, list):
+        chars = []
 
     applied_any = False
     for char in chars:
@@ -747,7 +748,51 @@ def _apply_llm_cast_result(segments: list[dict[str, Any]], res: dict[str, Any]) 
                 if c_role:
                     seg["character_role"] = c_role
                 applied_any = True
+    if _apply_llm_line_reads(segments, res.get("lines")):
+        applied_any = True
     return applied_any
+
+
+_LINE_EXPRESSIONS = {
+    "laugh", "sigh", "whisper", "sad", "shout", "angry", "gasp", "excited", "calm",
+}
+_LINE_INTENTS = {
+    "question", "answer", "command", "plea", "aside", "narration", "statement",
+}
+
+
+def _apply_llm_line_reads(segments: list[dict[str, Any]], lines: Any) -> bool:
+    """Intent, gender, and expression for each spoken turn."""
+    if not isinstance(lines, list):
+        return False
+    applied = False
+    for row in lines:
+        if not isinstance(row, dict):
+            continue
+        try:
+            index = int(row.get("index"))
+        except (TypeError, ValueError):
+            continue
+        if not 0 <= index < len(segments):
+            continue
+        seg = segments[index]
+        gender = normalize_gender(row.get("gender"))
+        if gender != "Unknown" and not seg.get("gender_manual"):
+            seg["gender"] = gender
+            seg["gender_source"] = "llm"
+        expr = str(row.get("expression") or "").strip().lower()
+        if expr in _LINE_EXPRESSIONS and not seg.get("expression_manual"):
+            seg["expression"] = expr
+        intent = str(row.get("intent") or "").strip().lower()
+        if intent in _LINE_INTENTS:
+            seg["intent"] = intent
+        name = str(row.get("character") or "").strip()
+        if name and not seg.get("speaker_manual") and _is_valid_character_name(name):
+            seg["speaker"] = name
+            seg["character"] = name
+        if gender != "Unknown" or expr in _LINE_EXPRESSIONS or intent in _LINE_INTENTS:
+            applied = True
+    return applied
 
 
 def llm_analyze_cast_and_gender(
@@ -777,28 +822,31 @@ def llm_analyze_cast_and_gender(
         return False
 
     prompt = (
-        "You are an expert film casting director and subtitle editor.\n"
-        "Analyze the following movie dialogue lines from a scene. Detect each character's true name, "
-        "their exact gender ('Male' or 'Female'), their cinematic role ('Lead', 'Co-Star', 'Supporting', or 'Minor'), "
-        "and list all line indices that character speaks.\n\n"
-        "Important domain knowledge:\n"
-        "1. Chinese historical / costume / modern dramas:\n"
-        "   - Male cues: 下官, 通判, 官员, 属官, 大人, 微臣, 末将, 在下, 卑职, 贫僧, 老衲, 老夫, 朕, 孤, 本王, 圣上, 陛下, 皇上, 殿下, 公子, 少爷, 兄台, 贤弟, 师兄, 师父, 丈夫, etc.\n"
-        "   - Female cues: 臣妾, 娘娘, 皇后, 太后, 贵妃, 公主, 郡主, 民女, 小女, 小姐, 姑娘, 夫人, 奴婢, 妾身, 姑姑, 丫鬟, 师姐, 师娘, 娘子, etc.\n"
-        "   - Self-introductions (e.g. '下官秦州通判莫宗明，率本州属官，恭迎圣上任' -> Character Name: '莫宗明', Title: '秦州通判', Gender: 'Male').\n"
-        "2. If a male character speaks, gender MUST be 'Male'. Never mark an official, general, emperor, or male character as 'Female'.\n\n"
+        "You are a film dialogue analyst. The transcript is already finished. "
+        "Read the turns in order and decide who is speaking, whether that person is male or female, "
+        "what they intend, and how the line should be delivered. Voices are chosen later from the "
+        "studio voice collection using the gender you assign, so the gender must match the speaker of that turn.\n\n"
+        "For every line index, set:\n"
+        "- character: the speaker's name when the dialogue reveals it, otherwise a stable label such as Man or Woman\n"
+        "- gender: Male or Female for the person who speaks that turn\n"
+        "- intent: one of question, answer, command, plea, aside, narration, statement\n"
+        "- expression: one of laugh, sigh, whisper, sad, shout, angry, gasp, excited, calm, or empty when the line is plain speech\n\n"
+        "Also group the same people into characters.\n"
+        "Chinese costume and modern drama cues:\n"
+        "Male: 下官, 通判, 大人, 微臣, 末将, 在下, 朕, 本王, 陛下, 皇上, 公子, 少爷, 丈夫.\n"
+        "Female: 臣妾, 娘娘, 皇后, 公主, 民女, 小姐, 姑娘, 夫人, 奴婢, 妾身, 丫鬟, 娘子.\n"
+        "A self-introduction such as '下官秦州通判莫宗明' is name 莫宗明, gender Male.\n"
+        "Never mark an official, general, emperor, or clearly male speaker as Female.\n\n"
         "Input lines:\n"
         + json.dumps(lines_summary, ensure_ascii=False, indent=2)
-        + "\n\nReturn ONLY a valid JSON object matching this schema:\n"
+        + "\n\nReturn ONLY JSON:\n"
         "{\n"
         '  "characters": [\n'
-        '    {\n'
-        '      "name": "Character Name",\n'
-        '      "gender": "Male" or "Female",\n'
-        '      "role": "Lead",\n'
-        '      "line_indices": [0, 1, 2]\n'
-        '    }\n'
-        '  ]\n'
+        '    {"name": "莫宗明", "gender": "Male", "role": "Lead", "line_indices": [0, 2]}\n'
+        "  ],\n"
+        '  "lines": [\n'
+        '    {"index": 0, "character": "莫宗明", "gender": "Male", "intent": "statement", "expression": ""}\n'
+        "  ]\n"
         "}\n"
     )
 

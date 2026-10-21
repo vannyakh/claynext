@@ -302,7 +302,8 @@ fn main() {
                 }
             } else {
                 eprintln!(
-                    "Usage: claynext-ffmpeg mux <video_in> <audio_in> <output> [--reencode] [--crf 18] [--preset medium] [--audio-bitrate 256] [--vf FILTER]"
+                    "Usage: claynext-ffmpeg mux <video_in> <audio_in> <output> [--reencode] [--crf 18] [--preset medium] [--audio-bitrate 256] [--vf FILTER]\n\
+A canvas graph (split/overlay) is applied with -filter_complex so the encode matches the preview."
                 );
                 std::process::exit(1);
             }

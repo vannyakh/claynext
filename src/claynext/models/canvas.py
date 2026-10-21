@@ -117,10 +117,11 @@ def canvas_size(src_w: int, src_h: int, ratio_key: str) -> tuple[int, int]:
     return _even(short), _even(short / ratio)
 
 
-def canvas_filter(canvas: dict | None, src_w: int, src_h: int, grade: str = "") -> str:
+def canvas_filter(canvas: dict | None, src_w: int, src_h: int, grade: str = "", fg: str = "") -> str:
+    """Filter graph for the preview canvas. `grade` hits the whole frame; `fg` hits only the video."""
     c = clean_canvas(canvas)
     if is_neutral(c) or src_w <= 0 or src_h <= 0:
-        return grade
+        return ",".join(part for part in (grade, fg) if part)
     cw, ch = canvas_size(src_w, src_h, c["ratio"])
     bx, by, bw, bh = video_box(cw, ch, src_w / src_h, c)
     fw, fh = _even(bw), _even(bh)
@@ -138,8 +139,9 @@ def canvas_filter(canvas: dict | None, src_w: int, src_h: int, grade: str = "") 
         color = c["color"] if c["bg"] == "color" else "#000000"
         background = f"[a]scale={cw}:{ch},setsar=1,drawbox=x=0:y=0:w=iw:h=ih:color=0x{color[1:]}@1:t=fill[bg]"
     head = f"{grade}," if grade else ""
+    front = f",{fg}" if fg else ""
     return (
-        f"{head}split[a][b];{background};[b]scale={fw}:{fh},setsar=1[fg];"
+        f"{head}split[a][b];{background};[b]scale={fw}:{fh},setsar=1{front}[fg];"
         f"[bg][fg]overlay=x={ox}:y={oy}:shortest=1,format=yuv420p"
     )
 

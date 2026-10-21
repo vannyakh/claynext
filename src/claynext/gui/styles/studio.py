@@ -267,6 +267,18 @@ QPushButton#sequence_chip[drop="true"] {{
     margin: 0;
     outline: none;
 }}
+QPushButton#sequence_add {{
+    background-color: transparent;
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 4px;
+    padding: 0;
+    margin: 0;
+    outline: none;
+}}
+QPushButton#sequence_add:hover {{
+    background-color: {wash};
+    border-color: {accent};
+}}
 #timeline_meta {{
     color: {COLOR_TEXT_MUTED};
     font-size: 11px;
@@ -1514,9 +1526,25 @@ QComboBox#prop_combo QAbstractItemView {{
     background-color: {COLOR_BG_CARD};
 }}
 #startLocalizeDialog QScrollArea#start_dub_captions,
-#startLocalizeDialog QScrollArea#start_dub_captions > QWidget {{
+#startLocalizeDialog QScrollArea#start_dub_captions > QWidget,
+#startLocalizeDialog QScrollArea#start_dub_scroll,
+#startLocalizeDialog QScrollArea#start_dub_scroll > QWidget > QWidget {{
     background: transparent;
     border: none;
+}}
+#startLocalizeDialog QScrollArea#start_dub_scroll QScrollBar:vertical {{
+    background: transparent;
+    width: 8px;
+    margin: 2px 0;
+}}
+#startLocalizeDialog QScrollArea#start_dub_scroll QScrollBar::handle:vertical {{
+    background: {COLOR_BORDER};
+    border-radius: 4px;
+    min-height: 24px;
+}}
+#startLocalizeDialog QScrollArea#start_dub_scroll QScrollBar::add-line:vertical,
+#startLocalizeDialog QScrollArea#start_dub_scroll QScrollBar::sub-line:vertical {{
+    height: 0;
 }}
 /* Match Settings field size (28px) */
 #startLocalizeDialog QComboBox#start_localize_combo {{

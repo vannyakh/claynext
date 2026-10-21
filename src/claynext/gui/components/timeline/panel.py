@@ -2134,11 +2134,11 @@ class TimelinePanel(QWidget):
         grade = adjust_filter(footage[0].extra.get("adjust")) if footage else ""
         frame = clean_canvas(footage[0].extra.get("canvas")) if footage else clean_canvas(None)
         fx = self.export_fx()
-        info = probe_media(canvas.media_path) if canvas.media_path and (fx or not is_neutral(frame)) else {}
+        info = probe_media(canvas.media_path) if canvas.media_path and (fx or grade or not is_neutral(frame)) else {}
         src_w, src_h = int(info.get("width") or 0), int(info.get("height") or 0)
-        if fx and src_w and src_h:
-            grade = ",".join(part for part in [grade, *fx_filters(fx, src_w, src_h)] if part)
-        video_filter = canvas_filter(frame, src_w, src_h, grade) if not is_neutral(frame) and src_w else grade
+        # Grade covers the frame (video and blur fill). Effects stay on the video, as in the preview.
+        front = ",".join(fx_filters(fx, src_w, src_h)) if fx and src_w and src_h else ""
+        video_filter = canvas_filter(frame, src_w, src_h, grade or "", front) if src_w else (grade or "")
         return {
             "video_filter": video_filter,
             "canvas": frame,

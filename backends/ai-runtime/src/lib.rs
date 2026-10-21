@@ -31,4 +31,6 @@ pub use translation::{
 };
 pub use tts::TtsVoiceSpec;
 pub use tts_expression::{parse_expression_tags, UtteranceSegment};
-pub use vad::{energy_vad_chunking, VadConfig, VadSegment};
+pub use vad::{
+    energy_vad_chunking, fit_lines_to_speech, FitSpeechRequest, TimedLine, VadConfig, VadSegment,
+};

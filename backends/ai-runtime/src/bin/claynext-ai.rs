@@ -1,10 +1,11 @@
 use claynext_ai_runtime::{
     align_speech_speed_result, build_dubbing_llm_prompt_from_request, build_fit_rewrite_prompt,
     build_llm_translation_prompt, calculate_ducked_background_volume,
-    chunk_subtitles_for_translation, energy_vad_chunking, estimate_speech_quota,     filter_ocr_results, scan_burned_captions,
+    chunk_subtitles_for_translation, energy_vad_chunking, estimate_speech_quota, filter_ocr_results,
+    fit_lines_to_speech, scan_burned_captions,
     is_rate_limit_status, parse_expression_tags, spoken_units,
-    parse_retry_after, ApiKeyItem, CaptionScanRequest, DubPromptRequest, InferenceDeviceConfig, NativeKeyPool, OcrBox,
-    RateLimitDecision, VadConfig, WhisperConfig,
+    parse_retry_after, ApiKeyItem, CaptionScanRequest, DubPromptRequest, FitSpeechRequest,
+    InferenceDeviceConfig, NativeKeyPool, OcrBox, RateLimitDecision, VadConfig, WhisperConfig,
 };
 use std::env;
 use std::fs::File;
@@ -46,7 +47,7 @@ fn main() {
             // Args: pcm_f32_path sample_rate [threshold]
             let path = args.get(2).map(|s| s.as_str()).unwrap_or("");
             let sample_rate: u32 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(16000);
-            let threshold: f32 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(0.5);
+            let threshold: f32 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(0.22);
             match read_pcm_f32(path) {
                 Ok(samples) => {
                     let mut cfg = VadConfig::default();
@@ -59,6 +60,22 @@ fn main() {
                     std::process::exit(2);
                 }
             }
+        }
+        "fit-speech" => {
+            // JSON on stdin when the arg is "-", otherwise a file path or inline JSON.
+            let raw = args.get(2).map(|s| s.as_str()).unwrap_or("-");
+            let text = if raw == "-" {
+                let mut buf = String::new();
+                io::Read::read_to_string(&mut io::stdin(), &mut buf).ok();
+                buf
+            } else if Path::new(raw).is_file() {
+                std::fs::read_to_string(raw).unwrap_or_default()
+            } else {
+                raw.to_string()
+            };
+            let req: FitSpeechRequest = serde_json::from_str(&text).unwrap_or_default();
+            let fitted = fit_lines_to_speech(&req.lines, &req.turns);
+            println!("{}", serde_json::to_string(&fitted).unwrap_or_default());
         }
         "llm-parse-retry" => {
             let status: u16 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(200);
@@ -216,7 +233,7 @@ fn main() {
         _ => {
             eprintln!("Claynext AI Runtime Tool");
             eprintln!(
-                "Usage: claynext-ai [device | whisper-config | vad-sim | energy-vad | \
+                "Usage: claynext-ai [device | whisper-config | vad-sim | energy-vad | fit-speech | \
                  llm-parse-retry | llm-acquire | llm-soonest-cooldown | parse-expression-tags | \
                  chunk-subtitles | filter-ocr | scan-captions | speech-quota | spoken-units | \
                  build-dub-prompt | build-fit-prompt | build-translate-prompt | \

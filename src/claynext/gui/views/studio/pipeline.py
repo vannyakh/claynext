@@ -1183,6 +1183,48 @@ class PipelineTools:
         if apply:
             self._apply_composition(new_index)
 
+    def _add_composition(self) -> None:
+        if getattr(self, "_dub_busy", False):
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(self, "Sequences", "Wait for the dub to finish before adding a sequence.")
+            return
+        self._stash_composition()
+        number = len(self._compositions) + 1
+        self._compositions.append({
+            "name": f"Sequence {number}",
+            "output": "",
+            "source": "",
+            "segments": [],
+            "language": "",
+            "voice": "",
+            "bed": "",
+            "dialogue": "",
+            "clean_audio": "",
+            "vocals": "",
+            "duck": False,
+            "footage": [],
+            "takes": [],
+            "overlays": [],
+            "fx": [],
+            "tracks": [],
+        })
+        index = len(self._compositions) - 1
+        self._composition_index = index
+        self.timeline.set_compositions(self._sequence_names(), index)
+        self._sequence_switching = True
+        try:
+            self.timeline.begin_sequence()
+            try:
+                self.timeline.canvas.clips.clear()
+                self.timeline.set_media("")
+                self._apply_composition(index, preview=False)
+            finally:
+                self.timeline.end_sequence()
+        finally:
+            self._sequence_switching = False
+        QTimer.singleShot(0, self.show_timeline_player)
+        self.log.info(f"Sequence · {self._compositions[index]['name']}")
+
     def _on_composition_changed(self, index: int):
         if index == int(getattr(self, "_composition_index", -1)):
             return

@@ -116,6 +116,53 @@ class RustAiAdapter:
         return []
 
     @classmethod
+    def fit_speech(
+        cls, lines: list[dict[str, Any]], turns: list[dict[str, Any]]
+    ) -> list[dict[str, Any]] | None:
+        """Snap line times onto soundtrack turns via Rust ``fit-speech``."""
+        if not lines or not turns:
+            return list(lines or [])
+        payload = {
+            "lines": [
+                {
+                    "start_sec": float(item.get("start_sec") or 0),
+                    "end_sec": float(item.get("end_sec") or 0),
+                    "text": str(item.get("text") or ""),
+                }
+                for item in lines
+            ],
+            "turns": [
+                {
+                    "start_sec": float(item.get("start_sec") or 0),
+                    "end_sec": float(item.get("end_sec") or 0),
+                    "confidence": float(item.get("confidence") or 0.85),
+                }
+                for item in turns
+            ],
+        }
+        tmp_path: str | None = None
+        try:
+            import tempfile
+
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as tmp:
+                json.dump(payload, tmp, ensure_ascii=False)
+                tmp_path = tmp.name
+            res = cls._ai("fit-speech", tmp_path, check=False)
+            if res and res.returncode == 0 and res.stdout.strip():
+                data = json.loads(res.stdout.strip())
+                if isinstance(data, list):
+                    return data
+        except Exception as exc:
+            logger.debug(f"Rust fit-speech failed: {exc}")
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+        return None
+
+    @classmethod
     def parse_retry_after(cls, status: int, header: str | None = None, body: str = "") -> tuple[bool, float]:
         try:
             res = cls._ai("llm-parse-retry", str(status), header or "", body or "")

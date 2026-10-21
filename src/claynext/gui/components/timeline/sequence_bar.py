@@ -31,6 +31,7 @@ class SequenceBar(QFrame):
     rename_requested = Signal(int)
     delete_requested = Signal(int)
     export_requested = Signal(int)
+    add_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -229,8 +230,14 @@ class SequenceBar(QFrame):
             self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             self.setFixedHeight(SEQUENCE_ROW_H)
         self._row = layout
+        add = self._make_add()
+        if self._vertical:
+            layout.addWidget(add, 0, Qt.AlignmentFlag.AlignLeft)
 
         if not self._names:
+            if not self._vertical:
+                layout.addWidget(add, 0, Qt.AlignmentFlag.AlignVCenter)
+            layout.addStretch(1)
             self._fit_host()
             return
 
@@ -256,6 +263,8 @@ class SequenceBar(QFrame):
             else:
                 layout.addWidget(chip, 0, Qt.AlignmentFlag.AlignVCenter)
             self._chips.append(chip)
+        if not self._vertical:
+            layout.addWidget(add, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addStretch(1)
         if self._index < 0:
             self._group.setExclusive(False)
@@ -266,6 +275,18 @@ class SequenceBar(QFrame):
         self._fit_host()
         self._reveal(self._index)
         self.updateGeometry()
+
+    def _make_add(self) -> QPushButton:
+        button = QPushButton()
+        button.setObjectName("sequence_add")
+        size = 32 if self._vertical else 26
+        button.setIcon(icon("plus", size=14))
+        button.setIconSize(QSize(14, 14))
+        button.setFixedSize(size, size)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setToolTip("New sequence")
+        button.clicked.connect(self.add_requested.emit)
+        return button
 
     def _fit_host(self) -> None:
         if self._fitting:

@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QScrollArea,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -99,6 +101,26 @@ _QUICK_ENGINES = [
 ]
 
 
+class _CaptionWidthPin(QObject):
+    """Keep the captions page exactly as wide as the dialog, so cards cannot slide off."""
+
+    def __init__(self, scroll: QScrollArea, page: QWidget):
+        super().__init__(scroll)
+        self._scroll = scroll
+        self._page = page
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.Resize:
+            width = self._scroll.viewport().width()
+            if width > 8 and self._page.maximumWidth() != width:
+                self._page.setMinimumWidth(0)
+                self._page.setMaximumWidth(width)
+            bar = self._scroll.horizontalScrollBar()
+            if bar.value():
+                bar.setValue(0)
+        return False
+
+
 class StartLocalizeDialog(QDialog):
     """Fast-start localization confirm — presets first, details on Tune/Captions."""
 
@@ -106,9 +128,9 @@ class StartLocalizeDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Start Localization")
         self.setObjectName("startLocalizeDialog")
-        self.setMinimumWidth(500)
-        self.setMinimumHeight(420)
-        self.resize(520, 460)
+        self.setMinimumWidth(480)
+        self.setMinimumHeight(360)
+        self._fit_to_screen()
         self.setModal(True)
         self._sources = [p for p in (sources or []) if p and os.path.isfile(p)]
         self._defaults = dict(defaults or {})
@@ -147,8 +169,9 @@ class StartLocalizeDialog(QDialog):
         body_l.setSpacing(8)
 
         self.stack = QStackedWidget()
-        self.stack.addWidget(self._build_quick_page(self._defaults))
-        self.stack.addWidget(self._build_tune_page(self._defaults))
+        self.stack.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.stack.addWidget(self._scroll_page(self._build_quick_page(self._defaults)))
+        self.stack.addWidget(self._scroll_page(self._build_tune_page(self._defaults)))
         # Lazy captions page — heavy look grids only when opened.
         self._captions_placeholder = QWidget()
         self.stack.addWidget(self._captions_placeholder)
@@ -164,6 +187,7 @@ class StartLocalizeDialog(QDialog):
         self.lbl_path = QLabel("")
         self.lbl_path.setObjectName("start_dub_sources_head")
         self.lbl_path.setWordWrap(True)
+        self.lbl_path.setMaximumHeight(36)
         actions.addWidget(self.lbl_path, 1)
         cancel = QPushButton("Cancel")
         cancel.setObjectName("start_localize_btn")
@@ -192,6 +216,30 @@ class StartLocalizeDialog(QDialog):
         self._apply_speed_preset(self._speed, force=True)
         self._sync_ollama(defer_refresh=True)
         self._update_path_hint()
+
+    def _fit_to_screen(self):
+        """Use the space under the menu bar, and let the form scroll when it is shorter."""
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            self.resize(520, 560)
+            return
+        avail = screen.availableGeometry()
+        width = min(560, max(500, int(avail.width() * 0.42)))
+        height = min(820, max(440, int(avail.height() * 0.84)))
+        self.resize(width, height)
+        self.setMaximumHeight(max(self.minimumHeight(), avail.height() - 32))
+
+    def _scroll_page(self, page: QWidget) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setObjectName("start_dub_scroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        page.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        scroll.setWidget(page)
+        return scroll
 
     def _accept_if_ready(self):
         from claynext.gui.dialogs.env_alert import ensure_job_environment
@@ -515,47 +563,67 @@ class StartLocalizeDialog(QDialog):
 
     def _build_captions_page(self, defaults: dict) -> QWidget:
         page, lay = self._page()
-        tip = QLabel("Optional. Leave off on Fast for lower latency.")
+        page.setMinimumWidth(0)
+        lay.setSpacing(6)
+        tip = QLabel("Optional. Leave off on Fast for a quicker job.")
         tip.setObjectName("start_dub_sources_head")
         tip.setWordWrap(True)
+        tip.setMinimumWidth(0)
         lay.addWidget(tip)
 
-        lay.addWidget(self._section_divider("Layout"))
-        grid = self._grid(lay)
+        lay.addWidget(self._section_divider("Place"))
+        place = QHBoxLayout()
+        place.setSpacing(6)
+        self._place_group = QButtonGroup(self)
+        self._place_group.setExclusive(True)
+        self._place_buttons: list[QPushButton] = []
+        for label, y in (("Bottom", 86), ("Center", 50), ("Top", 12)):
+            btn = QPushButton(label)
+            btn.setObjectName("start_localize_preset")
+            btn.setCheckable(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFixedHeight(28)
+            btn.setProperty("place_y", y)
+            btn.setToolTip(f"Place captions at {y}% from the top")
+            btn.clicked.connect(lambda _=False, value=y: self.spin_caption_y.setValue(value))
+            self._place_group.addButton(btn)
+            self._place_buttons.append(btn)
+            place.addWidget(btn, 1)
         self.spin_caption_y = self._spin()
-        self.spin_caption_y.setRange(60, 95)
+        self.spin_caption_y.setRange(8, 95)
         self.spin_caption_y.setSuffix("%")
+        self.spin_caption_y.setFixedWidth(78)
         try:
             self.spin_caption_y.setValue(int(defaults.get("caption_y", 86)))
         except (TypeError, ValueError):
             self.spin_caption_y.setValue(86)
-        y_row = QHBoxLayout()
-        y_row.setSpacing(10)
-        self.lbl_caption_y = self._label("Vertical position")
-        y_row.addWidget(self.lbl_caption_y, 1)
-        y_row.addWidget(self.spin_caption_y, 0, Qt.AlignmentFlag.AlignRight)
-        grid.addLayout(y_row, 0, 0, 1, 2)
+        self.spin_caption_y.valueChanged.connect(self._sync_caption_place)
+        place.addWidget(self.spin_caption_y)
+        lay.addLayout(place)
+        self._sync_caption_place(self.spin_caption_y.value())
 
-        more = QVBoxLayout()
-        more.setSpacing(6)
+        checks = QHBoxLayout()
+        checks.setSpacing(14)
         self.chk_caption_fit = self._option(
-            more,
+            checks,
             "Safe-area fit",
             "Keep captions inside title-safe width",
             bool(defaults.get("caption_fit", True)),
         )
         self.chk_export_srt = self._option(
-            more,
-            "Export SRT on finish",
+            checks,
+            "Export SRT",
             "Write a sidecar .srt next to the output",
             bool(defaults.get("export_srt", False)),
         )
-        lay.addLayout(more)
+        checks.addStretch(1)
+        lay.addLayout(checks)
 
         head = QHBoxLayout()
         head.addWidget(self._section_divider("Look"), 1)
         self.chk_caption_lock = QCheckBox("Lock")
         self.chk_caption_lock.setObjectName("dub_switch")
+        self.chk_caption_lock.setToolTip("Keep the current look when this job starts")
         self.chk_caption_lock.setChecked(bool(defaults.get("caption_lock", False)))
         head.addWidget(self.chk_caption_lock, 0, Qt.AlignmentFlag.AlignRight)
         lay.addLayout(head)
@@ -583,14 +651,16 @@ class StartLocalizeDialog(QDialog):
         lay.addStretch(1)
 
         self.chk_caption_lock.toggled.connect(self._sync_caption_lock)
-        # Picture FX removed from start dialog (set later in Studio) — less clutter / latency.
 
         scroll = QScrollArea()
         scroll.setObjectName("start_dub_captions")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         scroll.setWidget(page)
+        scroll.viewport().installEventFilter(_CaptionWidthPin(scroll, page))
         return scroll
 
     def _on_speed_clicked(self, key: str):
@@ -670,6 +740,16 @@ class StartLocalizeDialog(QDialog):
             return CAPTION_ANIMS[idx][0]
         return "none"
 
+    def _sync_caption_place(self, value: int):
+        group = getattr(self, "_place_group", None)
+        if group is None:
+            return
+        group.setExclusive(False)
+        for btn in group.buttons():
+            target = int(btn.property("place_y") or 0)
+            btn.setChecked(abs(target - int(value)) <= 3)
+        group.setExclusive(True)
+
     def _sync_caption_lock(self, *_args):
         locked = bool(getattr(self, "chk_caption_lock", None) and self.chk_caption_lock.isChecked())
         use = bool(getattr(self, "chk_auto_captions", None) and self.chk_auto_captions.isChecked())
@@ -681,12 +761,12 @@ class StartLocalizeDialog(QDialog):
             return
         on = bool(getattr(self, "chk_auto_captions", None) and self.chk_auto_captions.isChecked())
         for w in (
-            getattr(self, "lbl_caption_y", None),
             getattr(self, "spin_caption_y", None),
             getattr(self, "chk_caption_fit", None),
             getattr(self, "chk_export_srt", None),
             getattr(self, "chk_caption_lock", None),
             getattr(self, "caption_motion_grid", None),
+            *list(getattr(self, "_place_buttons", None) or []),
         ):
             if w is not None:
                 w.setEnabled(on)

@@ -90,21 +90,116 @@ def fx_label(kind_or_data: Any = None, data: dict | None = None) -> str:
     return kind.replace("_", " ").title()
 
 
+def _split_chain(chain: str) -> list[str]:
+    """Split an ffmpeg chain on commas that are not inside quotes."""
+    parts: list[str] = []
+    buf: list[str] = []
+    quote = False
+    i = 0
+    while i < len(chain):
+        ch = chain[i]
+        if ch == "\\" and i + 1 < len(chain):
+            buf.append(ch)
+            buf.append(chain[i + 1])
+            i += 2
+            continue
+        if ch == "'":
+            quote = not quote
+        if ch == "," and not quote:
+            parts.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+        i += 1
+    if buf:
+        parts.append("".join(buf))
+    return [part for part in parts if part]
+
+
+def _window(chain: str, item: dict) -> str:
+    """Keep an effect on only while its timeline clip is active."""
+    if not chain:
+        return ""
+    try:
+        start = int(item.get("start_ms"))
+        end = int(item.get("end_ms"))
+    except (TypeError, ValueError):
+        return chain
+    if end <= start:
+        return chain
+    tag = f":enable='between(t,{start / 1000.0:.3f},{end / 1000.0:.3f})'"
+    return ",".join(part + tag for part in _split_chain(chain))
+
+
+def _look_chain(look: str, intensity: int) -> str:
+    from claynext.models.adjust import FILTER_PRESETS, adjust_filter, scaled_adjust
+
+    preset = FILTER_PRESETS.get(look)
+    if not preset or not preset[1]:
+        return ""
+    return adjust_filter(scaled_adjust(preset[1], intensity)) or ""
+
+
+def _effect_chain(effect: str, intensity: int) -> str:
+    from claynext.models.adjust import _vignette_filter
+
+    amount = max(0, min(100, int(intensity))) / 100.0
+    if effect == "vignette":
+        return _vignette_filter(amount)
+    if effect in ("grayscale", "noir", "mono"):
+        return f"eq=saturation={1.0 - amount:.3f}"
+    if effect == "sepia":
+        return "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131"
+    if effect == "invert":
+        if amount >= 0.99:
+            return "negate"
+        keep = 1.0 - amount
+        return (
+            "lutrgb="
+            f"r='clip(val*{keep:.3f}+(255-val)*{amount:.3f},0,255)':"
+            f"g='clip(val*{keep:.3f}+(255-val)*{amount:.3f},0,255)':"
+            f"b='clip(val*{keep:.3f}+(255-val)*{amount:.3f},0,255)'"
+        )
+    if effect == "fade_black":
+        gain = max(0.0, 1.0 - amount)
+        return (
+            "lutrgb="
+            f"r='clip(val*{gain:.3f},0,255)':g='clip(val*{gain:.3f},0,255)':b='clip(val*{gain:.3f},0,255)'"
+        )
+    if effect == "flash":
+        add = int(round(255 * amount * 0.5))
+        return f"lutrgb=r='clip(val+{add},0,255)':g='clip(val+{add},0,255)':b='clip(val+{add},0,255)'"
+    return ""
+
+
 def fx_filters(fx_data: dict | list | None, src_w: int = 1920, src_h: int = 1080) -> list[str]:
+    """Encode the same looks the preview paints, active only on each clip's span."""
+    _ = (src_w, src_h)
     if isinstance(fx_data, list):
-        out = []
+        out: list[str] = []
         for item in fx_data:
             out.extend(fx_filters(item, src_w, src_h))
         return out
+    src = fx_data if isinstance(fx_data, dict) else {}
     c = clean_fx(fx_data)
-    filters = []
-    if c["effect"] == "vignette":
-        filters.append(f"vignette=PI/{max(1, int(100 - c['intensity']))}")
-    elif c["effect"] == "grayscale":
-        filters.append("colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3")
-    elif c["effect"] == "sepia":
-        filters.append("colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131")
-    return filters
+    filters: list[str] = []
+    kind = str(c.get("kind") or src.get("kind") or "")
+    look = str(c.get("look") or "")
+    if kind == "filter" and look not in ("", "none", "clean"):
+        chain = _look_chain(look, int(c["intensity"]))
+        if chain:
+            filters.append(_window(chain, src))
+    effect = str(c.get("effect") or "none")
+    if effect not in ("", "none"):
+        chain = _effect_chain(effect, int(c["intensity"]))
+        if chain:
+            filters.append(_window(chain, src))
+    transition = str(src.get("transition") or "")
+    if kind == "transition" and transition not in ("", "none"):
+        chain = _effect_chain(transition, int(src.get("intensity") or c.get("intensity") or 80))
+        if chain:
+            filters.append(_window(chain, src))
+    return [part for part in filters if part]
 
 
 def apply_fx(rgb: Any, spans: list[dict] | dict | None = None, now_ms: int = 0) -> Any:

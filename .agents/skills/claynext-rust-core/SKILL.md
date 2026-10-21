@@ -58,7 +58,8 @@ moves to Rust** (`backends/`, `crates/`), invoked through **Adapters**.
 | `build-translate-prompt` | Simple subtitle prompt |
 | `align-speed` | Tempo to fit TTS into slot |
 | `ducked-volume` | Linear vol from dB attenuation |
-| `energy-vad` / `vad-sim` | Voice activity spans |
+| `energy-vad` / `vad-sim` | Soundtrack speech turns (quiet replies kept, pauses split) |
+| `fit-speech` | Snap transcript lines onto those turns |
 | `parse-expression-tags` | TTS cue parsing |
 | `chunk-subtitles` | Batch packing |
 | `filter-ocr` | Confidence filter |
@@ -74,7 +75,7 @@ moves to Rust** (`backends/`, `crates/`), invoked through **Adapters**.
 | `extract-crop` | Accurate playhead crop of a normalized capture zone |
 | `decode-audio` | PCM f32 (+ optional `.f32` out path) |
 | `demux-audio` | Extract PCM WAV (sample rate / channels) |
-| `export` / `mux` | Transcode / mux |
+| `export` / `mux` | Transcode / mux. `--vf` canvas graphs (split, overlay) encode with `-filter_complex` so the picture matches the preview |
 
 ### Also
 

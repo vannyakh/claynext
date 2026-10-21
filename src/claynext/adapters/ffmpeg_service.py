@@ -947,7 +947,7 @@ def compose_overlays(
         args += ["-map", "0:v"]
     args += [
         "-map", "0:a?",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
         "-c:a", "copy",
         "-movflags", "+faststart",
         "-shortest",
@@ -1197,6 +1197,33 @@ def mix_timeline_audio(
     return dst_wav
 
 
+def _video_filter_args(video_filter: str) -> list[str]:
+    """Map a preview filter. Simple chains use `-vf`; canvas graphs use `-filter_complex`."""
+    graph = (video_filter or "").strip()
+    if not graph:
+        return ["-map", "0:v:0", "-map", "1:a:0"]
+    if ";" in graph or "[" in graph:
+        if not graph.startswith("["):
+            graph = f"[0:v]{graph}"
+        if "[vout]" not in graph:
+            graph = f"{graph}[vout]"
+        return ["-filter_complex", graph, "-map", "[vout]", "-map", "1:a:0"]
+    return ["-map", "0:v:0", "-map", "1:a:0", "-vf", graph]
+
+
+def _shift_filter_window(graph: str, origin_sec: float) -> str:
+    """Move effect windows so they match a seeked export (output time starts at 0)."""
+    if not graph or origin_sec <= 0:
+        return graph
+
+    def repl(match: re.Match) -> str:
+        start = max(0.0, float(match.group(1)) - origin_sec)
+        end = max(0.0, float(match.group(2)) - origin_sec)
+        return f"between(t,{start:.3f},{end:.3f})"
+
+    return re.sub(r"between\(t,([0-9.]+),([0-9.]+)\)", repl, graph)
+
+
 def render_timeline(
     video_path: str,
     output_path: str,
@@ -1231,6 +1258,7 @@ def render_timeline(
     video_start = video_duration = None
     if window:
         timeline_start, file_in, dur = (int(window[0]), int(window[1]), int(window[2]))
+        video_filter = _shift_filter_window(video_filter, timeline_start / 1000.0)
         video_start = file_in / 1000.0
         video_duration = dur / 1000.0
         overlays = _fit_window(overlays, timeline_start, timeline_start + dur)
@@ -1320,7 +1348,6 @@ def mux_video(
         _ = exc
 
     video_codec = ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p"] if reencode else ["-c:v", "copy"]
-    vf = ["-vf", video_filter] if video_filter else []
     duration = float(video_duration) if video_duration else probe_duration(video_path)
     seek = ["-ss", f"{float(video_start):.3f}"] if video_start and video_start > 0 else []
     limit = ["-t", f"{float(video_duration):.3f}"] if video_duration and video_duration > 0 else []
@@ -1330,8 +1357,8 @@ def mux_video(
 
     proc = run_ffmpeg_progress([
         "-y", *seek, *limit, "-i", video_path, "-i", audio_path,
-        "-map", "0:v:0", "-map", "1:a:0",
-        *vf, *video_codec, "-c:a", "aac", "-b:a", audio_bitrate,
+        *_video_filter_args(video_filter),
+        *video_codec, "-c:a", "aac", "-b:a", audio_bitrate,
         "-shortest", "-movflags", "+faststart",
         output_path,
     ], duration_sec=duration, on_fraction=_on_fraction, timeout=3600 if reencode else 900)

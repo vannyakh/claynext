@@ -134,12 +134,19 @@ where
     }
     cmd.args(["-i", audio_input.to_str().unwrap_or_default()]);
 
-    // Explicit stream mappings
-    cmd.args(["-map", "0:v:0", "-map", "1:a:0"]);
-
+    // A canvas graph (split / overlay / labels) is not a `-vf` chain. `-vf` drops
+    // it, so the encode stayed the source frame while the preview showed the canvas.
     let copy_video = options.copy_video && options.video_filter.is_empty();
-    if !options.video_filter.is_empty() {
-        cmd.args(["-vf", &options.video_filter]);
+    match classify_video_filter(&options.video_filter) {
+        AppliedFilter::None => {
+            cmd.args(["-map", "0:v:0", "-map", "1:a:0"]);
+        }
+        AppliedFilter::Simple(chain) => {
+            cmd.args(["-map", "0:v:0", "-map", "1:a:0", "-vf", &chain]);
+        }
+        AppliedFilter::Graph(graph) => {
+            cmd.args(["-filter_complex", &graph, "-map", "[vout]", "-map", "1:a:0"]);
+        }
     }
 
     // Video codec handling
@@ -205,4 +212,63 @@ where
     }
 
     Ok(())
+}
+
+/// How a preview filter string is applied. Graphs need `-filter_complex`.
+enum AppliedFilter {
+    None,
+    Simple(String),
+    Graph(String),
+}
+
+fn classify_video_filter(filter: &str) -> AppliedFilter {
+    let filter = filter.trim();
+    if filter.is_empty() {
+        return AppliedFilter::None;
+    }
+    if filter.contains(';') || filter.contains('[') {
+        AppliedFilter::Graph(link_filter_graph(filter))
+    } else {
+        AppliedFilter::Simple(filter.to_string())
+    }
+}
+
+/// Bind input 0's video and label the graph output `[vout]` for `-map`.
+fn link_filter_graph(filter: &str) -> String {
+    let linked = if filter.starts_with('[') {
+        filter.to_string()
+    } else {
+        format!("[0:v]{filter}")
+    };
+    if linked.contains("[vout]") {
+        linked
+    } else {
+        format!("{linked}[vout]")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::classify_video_filter;
+
+    #[test]
+    fn a_grade_chain_stays_on_vf() {
+        match classify_video_filter("eq=contrast=1.2:saturation=0.85") {
+            super::AppliedFilter::Simple(chain) => assert!(chain.starts_with("eq=")),
+            _ => panic!("grade chain should stay a simple filter"),
+        }
+    }
+
+    #[test]
+    fn a_canvas_graph_is_mapped_as_vout() {
+        let graph = "split[a][b];[a]scale=16:16[bg];[b]scale=8:8[fg];[bg][fg]overlay=0:0,format=yuv420p";
+        match classify_video_filter(graph) {
+            super::AppliedFilter::Graph(linked) => {
+                assert!(linked.starts_with("[0:v]split"));
+                assert!(linked.ends_with("[vout]"));
+                assert!(!linked.contains("-vf"));
+            }
+            _ => panic!("canvas graph should use filter_complex"),
+        }
+    }
 }

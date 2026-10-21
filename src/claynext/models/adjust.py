@@ -127,16 +127,56 @@ def _grade_array(rgb: Any, adjust: dict | None) -> Any:
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
+def _vignette_filter(strength: float) -> str:
+    """Radial darkening that follows the preview mask (power 1.4, floor 0.15)."""
+    s = max(0.0, min(1.0, float(strength)))
+    mask = (
+        "clip(1-pow(hypot((X-W/2)/max(W/2\\,1)\\,(Y-H/2)/max(H/2\\,1))\\,1.4)*"
+        f"{s:.3f}\\,0.15\\,1)"
+    )
+    return (
+        "format=rgb24,"
+        f"geq=r='r(X,Y)*{mask}':g='g(X,Y)*{mask}':b='b(X,Y)*{mask}',"
+        "format=yuv420p"
+    )
+
+
 def adjust_filter(adjust: dict | None) -> str | None:
-    if not adjust:
-        return None
+    """FFmpeg chain for the same grade the preview paints (grade_rgb)."""
     c = clean_adjust(adjust)
-    if all(v == 0 for v in c.values()):
+    if not c:
         return None
-    br = c.get("brightness", 0) / 100.0
+    parts: list[str] = []
+    # Preview adds brightness*1.2 in 8-bit after contrast around mid grey.
+    br = c.get("brightness", 0) * 1.2 / 255.0
     ct = 1.0 + (c.get("contrast", 0) / 100.0)
     sat = 1.0 + (c.get("saturation", 0) / 100.0)
-    return f"eq=brightness={br:.2f}:contrast={ct:.2f}:saturation={sat:.2f}"
+    eq: list[str] = []
+    if abs(br) > 1e-4:
+        eq.append(f"brightness={br:.4f}")
+    if abs(ct - 1.0) > 1e-3:
+        eq.append(f"contrast={ct:.4f}")
+    if abs(sat - 1.0) > 1e-3:
+        eq.append(f"saturation={sat:.4f}")
+    if eq:
+        parts.append("eq=" + ":".join(eq))
+    temp = c.get("temperature", 0) / 100.0
+    tint = c.get("tint", 0) / 100.0
+    luts: list[str] = []
+    if temp:
+        luts.append(f"r='clip(val+{int(round(28.0 * temp))},0,255)'")
+        luts.append(f"b='clip(val+{int(round(-28.0 * temp))},0,255)'")
+    if tint:
+        luts.append(f"g='clip(val+{int(round(22.0 * tint))},0,255)'")
+    if luts:
+        parts.append("lutrgb=" + ":".join(luts))
+    hue = c.get("hue", 0)
+    if hue:
+        parts.append(f"hue=h={int(hue)}")
+    vig = c.get("vignette", 0)
+    if vig:
+        parts.append(_vignette_filter(vig / 100.0))
+    return ",".join(parts) if parts else None
 
 
 def filter_sample_rgb(w: int = 160, h: int = 90):

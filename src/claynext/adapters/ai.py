@@ -80,6 +80,12 @@ class AiAdapter:
             media_path, sample_rate=sample_rate, threshold=threshold
         )
 
+    def fit_speech(
+        self, lines: list[dict[str, Any]], turns: list[dict[str, Any]]
+    ) -> list[dict[str, Any]] | None:
+        """Snap transcript lines onto soundtrack speech turns. None if Rust is missing."""
+        return RustAiAdapter.fit_speech(lines, turns)
+
     def build_translate_prompt(
         self, source_lang: str, target_lang: str, text: str
     ) -> str | None:
