@@ -10,6 +10,8 @@ from claynext.models.gender_voices import (
     infer_gender_from_text,
     apply_character_cast,
     assign_gender_and_voices,
+    detect_line_intent,
+    delivery_for_intent,
 )
 from claynext.adapters.ffmpeg_service import dynamic_duck_audio
 
@@ -45,6 +47,48 @@ def test_chinese_female_greeting_detection():
     )
     assert segs[0]["gender"] == "Female"
     assert segs[0]["tts_voice_hint"] == "km-KH-SreymomNeural"
+
+
+def test_intent_picks_the_voice_delivery():
+    assert detect_line_intent("Where are you going?") == "question"
+    assert detect_line_intent("អ្នកសុខសប្បាយទេ") == "question"
+    assert detect_line_intent("Please, don't leave me.") == "plea"
+    assert delivery_for_intent("plea") == "sad"
+    assert delivery_for_intent("aside") == "whisper"
+    assert delivery_for_intent("narration") == "calm"
+    segs = [{"speaker": "Character 1", "text": "Please, I beg you."}]
+    assign_gender_and_voices(
+        segs,
+        primary_voice="km-KH-SreymomNeural",
+        secondary_voice="km-KH-PisethNeural",
+        lang="Khmer",
+    )
+    assert segs[0]["intent"] == "plea"
+    assert segs[0]["expression"] == "sad"
+
+
+def test_jev_keeps_a_low_confidence_line():
+    from claynext.models.jev_decisions import apply_cast_judgment, translation_failed
+
+    line = {"speaker": "Mo", "text": "I will wait.", "intent": "statement", "gender": "Unknown"}
+    weak = {
+        "intent_0": {"type": "choice", "choice": "command", "confidence": 0.4},
+        "expression_0": {"type": "choice", "choice": "shout", "confidence": 0.4},
+        "gender_0": {"type": "choice", "choice": "Female", "confidence": 0.4},
+    }
+    assert apply_cast_judgment(line, weak, 0) is False
+    assert line["intent"] == "statement"
+    sure = {
+        "intent_0": {"type": "choice", "choice": "plea", "confidence": 0.9},
+        "expression_0": {"type": "choice", "choice": "sad", "confidence": 0.8},
+        "gender_0": {"type": "choice", "choice": "Male", "confidence": 0.86},
+    }
+    assert apply_cast_judgment(line, sure, 0) is True
+    assert line["intent"] == "plea"
+    assert line["expression"] == "sad"
+    assert line["gender"] == "Male"
+    assert translation_failed(0.2, 0.9) is True
+    assert translation_failed(0.8, 0.7) is False
 
 
 def test_spoken_source_ducking_volume_zero():

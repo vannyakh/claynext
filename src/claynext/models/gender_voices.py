@@ -266,6 +266,43 @@ def is_generic_speaker(name: str) -> bool:
     return not clean or bool(_GENERIC_SPEAKER.match(clean))
 
 
+def detect_line_intent(text: str) -> str:
+    """What the line is doing: question, command, plea, aside, narration, or statement."""
+    raw = str(text or "").strip()
+    if not raw:
+        return "statement"
+    low = f" {raw.lower()} "
+    if any(cue in low or cue in raw for cue in ("once upon", "meanwhile", "narrator", "旁白", "话说", "镜头")):
+        return "narration"
+    if any(cue in low or cue in raw for cue in ("psst", "aside", "quietly", "under my breath", "小声", "悄悄", "嘘")):
+        return "aside"
+    if any(cue in low or cue in raw for cue in (
+        "please", "i beg", "don't leave", "forgive me", "求求", "求你", "饶了", "សូមអង្វរ", "អង្វរ",
+    )):
+        return "plea"
+    if raw.endswith(("?", "？")) or any(raw.endswith(mark) for mark in ("吗", "呢", "ទេ", "ឬ")):
+        return "question"
+    if low.startswith((" what ", " why ", " who ", " where ", " when ", " how ", "តើ")) or raw.startswith("តើ"):
+        return "question"
+    if any(cue in low or cue in raw for cue in (
+        "shut up", "get out", "stop it", "don't", "滚", "闭嘴", "快", "កុំ", "ឈប់", "ទៅឱ្យឆ្ងាយ",
+    )):
+        return "command"
+    if raw.endswith(("!", "！")) and len(raw) <= 48:
+        return "command"
+    return "statement"
+
+
+def delivery_for_intent(intent: str) -> str:
+    """A voice delivery when the line has no stronger expression cue."""
+    return {
+        "command": "shout",
+        "plea": "sad",
+        "aside": "whisper",
+        "narration": "calm",
+    }.get(str(intent or "").strip().lower(), "")
+
+
 def detect_line_expression(text: str) -> str:
     """A short delivery cue from the spoken line. Empty when the line is plain."""
     raw = str(text or "")
@@ -327,8 +364,10 @@ def apply_character_cast(segments: list[dict[str, Any]]) -> list[dict[str, Any]]
         if name not in speakers:
             speakers.append(name)
         text = str(seg.get("text") or seg.get("original_text") or "")
+        if not str(seg.get("intent") or "").strip():
+            seg["intent"] = detect_line_intent(text)
         if not str(seg.get("expression") or "").strip():
-            seg["expression"] = detect_line_expression(text)
+            seg["expression"] = detect_line_expression(text) or delivery_for_intent(seg.get("intent"))
 
     intros: dict[str, Counter[str]] = {sp: Counter() for sp in speakers}
     addressed: dict[str, Counter[str]] = {sp: Counter() for sp in speakers}
@@ -671,6 +710,14 @@ def assign_gender_and_voices(
         if not seg.get("gender_manual"):
             seg["gender"] = g
         voice = char_voice.get(old) or primary_voice
+        spoken = str(seg.get("text") or seg.get("original_text") or seg.get("translated_text") or "")
+        if not str(seg.get("intent") or "").strip():
+            seg["intent"] = detect_line_intent(spoken)
+        if not str(seg.get("expression") or "").strip() and not seg.get("expression_manual"):
+            delivery = delivery_for_intent(seg.get("intent"))
+            if delivery:
+                seg["expression"] = delivery
+                seg["expression_source"] = "intent"
         seg["speaker"] = name
         # Keep a movie clone already built for this line — character detection owns TTS.
         existing = str(seg.get("voice_id") or seg.get("tts_voice_hint") or "")
@@ -994,6 +1041,12 @@ def ai_analyze_movie_cast(
     llm_analyze_cast_and_gender(segments, progress_callback=_ping)
     # Step 1: Detect and assign character names + line expressions
     apply_character_cast(segments)
+    try:
+        from claynext.models.jev_decisions import refine_cast
+
+        refine_cast(segments, progress_callback=_ping)
+    except Exception:
+        pass
 
     _ping(45, "Classifying character roles and delivery traits…")
     total_lines = len(segments)
@@ -1030,6 +1083,16 @@ def ai_analyze_movie_cast(
             char_roles[name] = "Supporting"
         else:
             char_roles[name] = "Minor"
+
+    for name in ranked_speakers:
+        intents = Counter(
+            str(seg.get("intent") or "")
+            for seg in segments
+            if (str(seg.get("speaker") or "").strip() or "Character 1") == name
+        )
+        told = intents.get("narration", 0)
+        if told >= 2 and told >= speaker_lines[name] * 0.55:
+            char_roles[name] = "Narrator"
 
     # Step 2: Gender and Voice Assignment
     _ping(70, "Casting distinct neural voices per character…")

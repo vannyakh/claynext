@@ -146,7 +146,8 @@ class LaneRail(QWidget):
             row.selected.connect(self.selected)
             row.height_changed.connect(self.height_changed)
             row.renamed.connect(self.renamed)
-            row.reorder_dragged.connect(self._on_row_reorder)
+            row.reorder_moved.connect(self._on_row_reorder_move)
+            row.reorder_finished.connect(self._on_row_reorder_finish)
             row.context_menu_requested.connect(self.context_menu_requested)
             row.set_deletable(track.id != source_id)
             row.setVisible(self._lane_shown(track.kind))
@@ -191,13 +192,46 @@ class LaneRail(QWidget):
             f"Tracks ({shown})" if self._dub_focus else f"Tracks ({total})"
         )
 
-    def _on_row_reorder(self, track_id: str, delta_y: int):
-        from_idx = next((i for i, row in enumerate(self._rows) if row.track.id == track_id), -1)
+    def _row_index(self, track_id: str) -> int:
+        return next((i for i, row in enumerate(self._rows) if row.track.id == track_id), -1)
+
+    def _insert_index_at(self, global_y: int) -> int:
+        """Lane slot under the cursor. Top of the list is index 0."""
+        rows = [(i, row) for i, row in enumerate(self._rows) if row.isVisible()]
+        if not rows:
+            return 0
+        for index, row in rows:
+            top = row.mapToGlobal(QPoint(0, 0)).y()
+            if global_y < top + row.height() / 2:
+                return index
+        return rows[-1][0] + 1
+
+    def _mark_drop(self, index: int):
+        last = len(self._rows) - 1
+        for i, row in enumerate(self._rows):
+            if index <= last and i == index:
+                row.set_drop_hint("top")
+            elif index > last and i == last:
+                row.set_drop_hint("bottom")
+            else:
+                row.set_drop_hint("")
+
+    def _clear_drop(self):
+        for row in self._rows:
+            row.set_drop_hint("")
+
+    def _on_row_reorder_move(self, track_id: str, global_y: int):
+        if self._row_index(track_id) < 0:
+            return
+        self._mark_drop(self._insert_index_at(global_y))
+
+    def _on_row_reorder_finish(self, track_id: str, global_y: int):
+        from_idx = self._row_index(track_id)
+        self._clear_drop()
         if from_idx < 0:
             return
-        to_idx = from_idx + (1 if delta_y > 0 else -1)
-        if 0 <= to_idx < len(self._rows):
-            self.reorder_requested.emit(from_idx, to_idx)
+        to_idx = self._insert_index_at(global_y)
+        self.reorder_requested.emit(from_idx, to_idx)
 
     def apply_compact(self, compact: bool):
         self._compact = compact

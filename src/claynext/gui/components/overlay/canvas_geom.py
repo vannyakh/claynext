@@ -16,6 +16,9 @@ from claynext.models.text_style import anim_frame
 
 class CanvasGeom:
     def _frame_for(self, item: OverlayItem, style: dict) -> dict:
+        style = dict(style)
+        style["x"] = item.x
+        style["y"] = item.y
         if self._demo is not None and self._demo[0] == item.id:
             slot = self._demo[1]
             solo = dict(style, anim_in="none", anim_out="none", anim_loop="none")

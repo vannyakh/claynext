@@ -20,8 +20,10 @@ def audio_stem_role(stem: bool, track_name: str, label: str) -> str:
     if not stem:
         return ""
     name = f"{track_name} {label}".lower()
-    if "effect" in name:
+    if "effect" in name or "sfx" in name:
         return "effects"
+    if "music" in name:
+        return "music"
     if "vocal" in name:
         return "vocals"
     if "source" in name:
@@ -76,24 +78,28 @@ class CanvasMedia:
             kept.append(clip)
         self.clips = kept
         if path:
-            if duration_ms:
-                dur = duration_ms
-            elif int(getattr(self, "_quiet", 0)):
-                dur = max(int(self.duration_ms or 0), 1000)
-            else:
-                dur = int(probe_duration(path) * 1000)
-            self.duration_ms = max(dur, 1000)
+            probed = int(duration_ms or 0)
+            if not probed and not int(getattr(self, "_quiet", 0)):
+                probed = int(probe_duration(path) * 1000)
+            elif not probed:
+                probed = max(int(self.duration_ms or 0), 0)
+            dur = max(probed, 1000)
+            self.duration_ms = dur
+            extra = {"path": path, "master": True, "auto": True}
+            if probed > 0:
+                extra["file_ms"] = probed
             video = self.ensure_track("video")
             self.clips.append(TimelineClip(
                 id="footage",
                 track_id=video.id,
                 kind="video",
                 start_ms=0,
-                duration_ms=self.duration_ms,
+                duration_ms=dur,
                 label=self.media_name,
                 locked=video.locked,
-                extra={"path": path, "master": True, "auto": True},
+                extra=extra,
             ))
+            self.fit_source_to_timeline()
         else:
             self.duration_ms = 0
         self.playhead_ms = 0
@@ -162,14 +168,93 @@ class CanvasMedia:
             extra=extra,
         )
 
+    def pack_lanes(self, clips: list[TimelineClip], kind: str) -> None:
+        """Give each clip a lane of `kind` that does not overlap another clip."""
+        pending = [clip for clip in clips if clip is not None]
+        if not pending:
+            return
+        for clip in pending:
+            clip.track_id = ""
+        for clip in sorted(pending, key=lambda row: (row.start_ms, row.id)):
+            track = self.free_track(kind, clip.start_ms, clip.end_ms)
+            clip.track_id = track.id
+        if hasattr(self, "prune_empty_tracks"):
+            self.prune_empty_tracks()
+
+    def unpack_voice_conflicts(self) -> bool:
+        """Overlapping voice clips each get their own lane."""
+        voices = [clip for clip in self.clips if clip.kind == "voice"]
+        grouped: dict[str, list[TimelineClip]] = {}
+        for clip in voices:
+            grouped.setdefault(clip.track_id, []).append(clip)
+        for rows in grouped.values():
+            rows.sort(key=lambda clip: clip.start_ms)
+            if any(left.end_ms > right.start_ms for left, right in zip(rows, rows[1:])):
+                self.pack_lanes(voices, "voice")
+                return True
+        return False
+
     def set_dialogue(self, segments: list[dict]):
         self.clips = [c for c in self.clips if not (c.kind == "voice" and c.extra.get("auto"))]
-        voice = self.ensure_track("voice")
+        self.ensure_track("voice")
+        laid: list[TimelineClip] = []
         for i, seg in enumerate(segments or []):
             if isinstance(seg, dict):
-                self.clips.append(self._dialogue_clip(i, seg, voice.id))
+                clip = self._dialogue_clip(i, seg, "")
+                self.clips.append(clip)
+                laid.append(clip)
+        self.pack_lanes(laid, "voice")
         self._extend_duration()
         self._relayout()
+
+    def fit_source_to_timeline(self) -> bool:
+        """Stretch an untrimmed source clip so the picture covers the caption and voice timeline.
+
+        A master the user already trimmed inside a known file stays trimmed.
+        """
+        masters = [
+            clip for clip in self.clips
+            if clip.kind == "video" and (clip.extra.get("master") or clip.id == "footage")
+        ]
+        if len(masters) != 1:
+            return False
+        clip = masters[0]
+        inn = int(clip.extra.get("in_ms") or 0)
+        file_ms = int(clip.extra.get("file_ms") or 0)
+        if clip.extra.get("user_trim") or clip.start_ms != 0 or inn != 0:
+            self._fit_auto_picture(clip)
+            return False
+        content_end = max((other.end_ms for other in self.clips if other is not clip), default=0)
+        # The picture lane covers the whole file and the whole ruler.
+        target = max(int(clip.duration_ms), int(content_end), int(file_ms), int(self.duration_ms or 0))
+        changed = False
+        if target > clip.duration_ms + 40:
+            clip.duration_ms = target
+            if file_ms <= 0:
+                clip.extra["file_ms"] = target
+            changed = True
+        if clip.end_ms > self.duration_ms:
+            self.duration_ms = clip.end_ms
+            changed = True
+        if self._fit_auto_picture(clip):
+            changed = True
+        return changed
+
+    def _fit_auto_picture(self, master: TimelineClip) -> bool:
+        """Picture filters and effects stay locked to the source clip."""
+        changed = False
+        start = int(master.start_ms)
+        dur = max(1000, int(master.duration_ms))
+        for clip in self.clips:
+            if not clip.extra.get("auto_picture"):
+                continue
+            if clip.kind not in {"effect", "filter"}:
+                continue
+            if clip.start_ms != start or abs(int(clip.duration_ms) - dur) > 40:
+                clip.start_ms = start
+                clip.duration_ms = dur
+                changed = True
+        return changed
 
     def sync_dialogue(self, segments: list[dict]) -> bool:
         """Patch voice clips in place. Rebuild only when the line count changes."""
@@ -178,11 +263,11 @@ class CanvasMedia:
         if len(autos) != len(segs):
             self.set_dialogue(segs)
             return True
-        voice = self.ensure_track("voice")
+        self.ensure_track("voice")
         by_id = {clip.id: clip for clip in autos}
         changed = False
         for index, seg in enumerate(segs):
-            fresh = self._dialogue_clip(index, seg, voice.id)
+            fresh = self._dialogue_clip(index, seg, "")
             clip = by_id.get(fresh.id)
             if clip is None:
                 self.set_dialogue(segs)
@@ -201,9 +286,11 @@ class CanvasMedia:
             clip.duration_ms = fresh.duration_ms
             clip.label = fresh.label
             clip.locked = fresh.locked
-            clip.track_id = voice.id
             clip.extra = fresh.extra
             changed = True
+        if changed:
+            self.pack_lanes(autos, "voice")
+        self.fit_source_to_timeline()
         if changed:
             self._extend_duration()
             self._relayout(notify=False)
@@ -213,6 +300,7 @@ class CanvasMedia:
         last = max((c.end_ms for c in self.clips), default=self.duration_ms)
         if last > self.duration_ms:
             self.duration_ms = last
+        self.fit_source_to_timeline()
 
     def caption_cues(self) -> list[tuple[int, int, str]]:
         """Dubbed lines as (start, end, text) at wherever their voice clips sit now."""
@@ -418,7 +506,7 @@ class CanvasMedia:
         """Replace only this movie's voice lines. Other movies on the sequence stay."""
         source = os.path.abspath(source) if source else ""
         segs = [seg for seg in (segments or []) if isinstance(seg, dict)]
-        voice = self.ensure_track("voice")
+        self.ensure_track("voice")
         owned = [
             clip for clip in self.clips
             if clip.kind == "voice" and clip.extra.get("auto") and clip.extra.get("merge_source") == source
@@ -426,18 +514,21 @@ class CanvasMedia:
         if len(owned) != len(segs):
             drop = {clip.id for clip in owned}
             self.clips = [clip for clip in self.clips if clip.id not in drop]
+            laid: list[TimelineClip] = []
             for index, seg in enumerate(segs):
-                clip = self._dialogue_clip(index, seg, voice.id)
+                clip = self._dialogue_clip(index, seg, "")
                 clip.id = f"dlg-{abs(hash(source)) % 1_000_000:06d}-{index}"
                 clip.extra["merge_source"] = source
                 self.clips.append(clip)
+                laid.append(clip)
+            self.pack_lanes(laid, "voice")
             self._extend_duration()
             self._relayout()
             return True
         by_id = {clip.id: clip for clip in owned}
         changed = False
         for index, seg in enumerate(segs):
-            fresh = self._dialogue_clip(index, seg, voice.id)
+            fresh = self._dialogue_clip(index, seg, "")
             clip_id = f"dlg-{abs(hash(source)) % 1_000_000:06d}-{index}"
             clip = by_id.get(clip_id)
             if clip is None:
@@ -456,16 +547,56 @@ class CanvasMedia:
             clip.duration_ms = fresh.duration_ms
             clip.label = fresh.label
             clip.locked = fresh.locked
-            clip.track_id = voice.id
             clip.extra = fresh.extra
             changed = True
         if changed:
+            self.pack_lanes(owned, "voice")
             self._extend_duration()
             self._relayout(notify=False)
         return changed
 
+    def mix_audio_clips(self) -> list[TimelineClip]:
+        """Extracted soundtrack the mix keys belong on. The picture track stays silent."""
+        return [
+            clip for clip in self.clips
+            if clip.kind == "audio" and (
+                clip.extra.get("extracted") or self.stem_role(clip) == "source"
+            )
+        ]
+
+    def silence_picture(self) -> bool:
+        """The source film is picture only once its sound lives on an audio track."""
+        extracted = any(clip.kind == "audio" and clip.extra.get("stem") for clip in self.clips)
+        targets = self.mix_audio_clips()
+        if not targets and not extracted:
+            return False
+        changed = False
+        host = targets[0] if targets else None
+        for clip in self.footage_clips():
+            if not clip.extra.get("no_audio"):
+                clip.extra["no_audio"] = True
+                changed = True
+            keys = clip.extra.pop("keys", None)
+            if keys:
+                changed = True
+                if host is not None and not host.extra.get("keys"):
+                    host.extra["keys"] = keys
+        track = self.source_track()
+        if track is not None and (not track.muted or not getattr(track, "silent", False)):
+            track.muted = True
+            track.silent = True
+            changed = True
+        elif track is not None:
+            track.silent = True
+        return changed
+
     def source_track(self) -> TimelineTrack | None:
-        """Master footage lane — the first video track."""
+        """Master footage lane — the video track that holds the film, else the top video track."""
+        for clip in self.clips:
+            if clip.kind == "video" and (clip.extra.get("master") or clip.id == "footage"):
+                track = self.track_by_id(clip.track_id)
+                if track is not None:
+                    return track
         return next((t for t in self.tracks if t.kind == "video"), None)
 
     def master_clips(self) -> list[TimelineClip]:
@@ -556,10 +687,20 @@ class CanvasMedia:
             clip.label or "",
         )
 
+    def music_bus_gain(self) -> float:
+        """Preview level for the separate music stem. Zero when music is not its own track."""
+        for clip in self.clips:
+            if self.stem_role(clip) != "music" or not clip.extra.get("path"):
+                continue
+            track = self.track_by_id(clip.track_id)
+            if track is not None and not track.muted and not track.hidden:
+                return max(0.0, min(1.5, track.volume / 100.0))
+        return 0.0
+
     def effects_bed_active(self) -> bool:
         """An audible Effects stem is the soundtrack, so the full movie mix stays out."""
         for clip in self.clips:
-            if self.stem_role(clip) != "effects" or not clip.extra.get("path"):
+            if self.stem_role(clip) not in {"effects", "music"} or not clip.extra.get("path"):
                 continue
             track = self.track_by_id(clip.track_id)
             if track is not None and not track.muted and not track.hidden:
@@ -588,7 +729,7 @@ class CanvasMedia:
                 if clip.track_id != track.id or bool(clip.extra.get("take")) != take:
                     continue
                 role = self.stem_role(clip)
-                if role == "effects" or (replaced and role in {"source", "vocals"}):
+                if role in {"effects", "music"} or (replaced and role in {"source", "vocals"}):
                     continue
                 if clip.extra.get("path") and clip.start_ms <= ms < clip.end_ms:
                     return clip

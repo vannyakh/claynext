@@ -253,6 +253,9 @@ QPushButton#sequence_chip[drop="true"] {{
     border-style: dashed;
     border-color: {accent};
 }}
+QPushButton#sequence_chip[busy="true"] {{
+    padding-right: 26px;
+}}
 #sequence_bar[flow="row"] QPushButton#sequence_chip {{
     min-height: 26px;
     max-height: 26px;

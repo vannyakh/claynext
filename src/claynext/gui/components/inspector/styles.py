@@ -161,7 +161,9 @@ def text_tile_frame(style_name: str, step: int) -> QIcon:
     dur = 1600
     t = int((step % 8) / 7.0 * dur)
     fr = anim_frame(s, t, dur)
-    pm = template_pixmap(s, s["text"], TILE.width(), TILE.height(), frame=fr)
+    # clean_text_style drops shelf fields such as the sample string.
+    sample = style.get("text") or style.get("name") or ""
+    pm = template_pixmap(s, sample, TILE.width(), TILE.height(), frame=fr)
     return QIcon(pm)
 
 

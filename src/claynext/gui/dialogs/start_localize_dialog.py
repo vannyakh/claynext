@@ -30,23 +30,22 @@ from claynext.models.tts_service import TTSEngine
 from claynext.models.translate_service import TranslateEngine
 from claynext.gui.components.controls.scrub_spin import ScrubSpinBox
 from claynext.gui.components.controls.tabs import SegmentTabs
-from claynext.gui.components.ollama_model_selector import OllamaModelSelector
 from claynext.gui.views.studio.captions import CAPTION_STYLES, CaptionLookGrid, CaptionMotionGrid
 from claynext.gui.views.studio.constants import SOURCE_LANGS
 
 # Quick / Tune / Captions — fewer clicks to Start.
 _TAB_LABELS = ["Quick", "Tune", "Captions"]
 _TAB_TIPS = [
-    "Speed, languages, voices — start here",
-    "Mix, timing, and AI line style",
-    "Optional burned-in captions",
+    "Speed, languages, and voices",
+    "Mix, timing, and line style",
+    "Burned-in captions",
 ]
 
 # Presets cut latency paths (stems / gender ML / slot-fit rewrite / heavy ASR).
 _SPEED_PRESETS: dict[str, dict] = {
     "fast": {
         "label": "Fast",
-        "tip": "Skip stems + gender ML · literal translate · small ASR",
+        "tip": "Literal translation. Skips stems and cast.",
         "asr_model": "whisper-small",
         "translator": "google",
         "translate_fit_duration": False,
@@ -61,7 +60,7 @@ _SPEED_PRESETS: dict[str, dict] = {
     },
     "balanced": {
         "label": "Balanced",
-        "tip": "Best everyday path · movie translate · stems when available",
+        "tip": "Movie translation. Stems when ready.",
         "asr_model": "whisper-small",
         "translator": "auto",
         "translate_fit_duration": True,
@@ -76,7 +75,7 @@ _SPEED_PRESETS: dict[str, dict] = {
     },
     "best": {
         "label": "Best",
-        "tip": "Large ASR · cinematic movie rewrite · full cast assist",
+        "tip": "Large speech model and full rewrite.",
         "asr_model": "whisper-large-v3",
         "translator": "movie",
         "translate_fit_duration": True,
@@ -93,20 +92,20 @@ _SPEED_PRESETS: dict[str, dict] = {
 
 # Slim engine list for Quick (NLLB still used inside Auto/Movie chain).
 _QUICK_ENGINES = [
-    ("auto", "Auto · best movie path"),
-    ("movie", "Movie · cinematic"),
-    ("gemini", "Gemini · API"),
-    ("qwen", "Qwen · API"),
-    ("deepseek", "DeepSeek · API"),
-    ("groq", "Groq · API"),
-    ("openrouter", "OpenRouter · API"),
-    ("openai", "OpenAI · API"),
-    ("mistral", "Mistral · API"),
-    ("moonshot", "Moonshot · API"),
-    ("glm", "GLM · API"),
-    ("xai", "xAI · API"),
-    ("ollama", "Ollama · local"),
-    ("google", "Google · fast literal"),
+    ("auto", "Auto", "Best available movie translator"),
+    ("movie", "Movie", "Cinematic rewrite"),
+    ("gemini", "Gemini", "Gemini API"),
+    ("qwen", "Qwen", "Qwen API"),
+    ("deepseek", "DeepSeek", "DeepSeek API"),
+    ("groq", "Groq", "Groq API"),
+    ("openrouter", "OpenRouter", "OpenRouter API"),
+    ("openai", "OpenAI", "OpenAI API"),
+    ("mistral", "Mistral", "Mistral API"),
+    ("moonshot", "Moonshot", "Moonshot API"),
+    ("glm", "GLM", "GLM API"),
+    ("xai", "xAI", "xAI API"),
+    ("ollama", "Ollama", "Local model from the studio settings"),
+    ("google", "Google", "Fast literal translation"),
 ]
 
 
@@ -148,6 +147,7 @@ class StartLocalizeDialog(QDialog):
         self._speed = str(self._defaults.get("speed_preset") or "balanced")
         if self._speed not in _SPEED_PRESETS:
             self._speed = "balanced"
+        self._ollama_model = str(self._defaults.get("ollama_model") or "qwen3:8b").strip() or "qwen3:8b"
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -223,7 +223,6 @@ class StartLocalizeDialog(QDialog):
         self._voice_sec = self._defaults.get("secondary_voice", "")
         self._refill_voices(self.combo_target.currentText())
         self._apply_speed_preset(self._speed, force=True)
-        self._sync_ollama(defer_refresh=True)
         self._update_path_hint()
 
     def _fit_to_screen(self):
@@ -233,8 +232,8 @@ class StartLocalizeDialog(QDialog):
             self.resize(520, 560)
             return
         avail = screen.availableGeometry()
-        width = min(560, max(500, int(avail.width() * 0.42)))
-        height = min(820, max(440, int(avail.height() * 0.84)))
+        width = min(520, max(460, int(avail.width() * 0.36)))
+        height = min(520, max(400, int(avail.height() * 0.58)))
         self.resize(width, height)
         self.setMaximumHeight(max(self.minimumHeight(), avail.height() - 32))
 
@@ -363,89 +362,76 @@ class StartLocalizeDialog(QDialog):
     def _build_quick_page(self, defaults: dict) -> QWidget:
         page, lay = self._page()
 
-        lay.addWidget(self._section_divider("Speed"))
-        preset_row = QHBoxLayout()
-        preset_row.setSpacing(8)
-        self._speed_group = QButtonGroup(self)
-        self._speed_group.setExclusive(True)
-        for key, meta in _SPEED_PRESETS.items():
-            btn = QPushButton(meta["label"])
-            btn.setObjectName("start_localize_preset")
-            btn.setCheckable(True)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setFixedHeight(30)
-            btn.setToolTip(meta["tip"])
-            btn.setProperty("preset", key)
-            btn.clicked.connect(lambda _=False, k=key: self._on_speed_clicked(k))
-            self._speed_group.addButton(btn)
-            preset_row.addWidget(btn, 1)
-            if key == self._speed:
-                btn.setChecked(True)
-        lay.addLayout(preset_row)
-        self.lbl_speed_tip = QLabel(_SPEED_PRESETS[self._speed]["tip"])
-        self.lbl_speed_tip.setObjectName("start_dub_sources_head")
-        self.lbl_speed_tip.setWordWrap(True)
-        lay.addWidget(self.lbl_speed_tip)
-
-        lay.addWidget(self._section_divider("Languages & cast"))
         grid = self._grid(lay)
+        self.combo_speed = self._combo()
+        for key, meta in _SPEED_PRESETS.items():
+            self.combo_speed.addItem(meta["label"], key)
+            self.combo_speed.setItemData(
+                self.combo_speed.count() - 1,
+                meta["tip"],
+                Qt.ItemDataRole.ToolTipRole,
+            )
+        self._set_data(self.combo_speed, self._speed)
+        self.combo_speed.currentIndexChanged.connect(self._on_speed_menu)
+        grid.addWidget(self._label("Speed"), 0, 0)
+        grid.addWidget(self.combo_speed, 0, 1)
+
         self.combo_source = self._combo()
         self.combo_source.addItems(list(SOURCE_LANGS))
         self._set_text(self.combo_source, defaults.get("source_lang", "Chinese"))
-        grid.addWidget(self._label("Source"), 0, 0)
-        grid.addWidget(self.combo_source, 0, 1)
+        grid.addWidget(self._label("Source"), 1, 0)
+        grid.addWidget(self.combo_source, 1, 1)
 
         self.combo_target = self._combo()
         self.combo_target.addItems(list(TranslateEngine.TARGET_LANGUAGES))
         self._set_text(self.combo_target, defaults.get("target_lang", "Khmer"))
         self.combo_target.currentTextChanged.connect(self._refill_voices)
-        grid.addWidget(self._label("Target"), 1, 0)
-        grid.addWidget(self.combo_target, 1, 1)
+        self.combo_target.currentTextChanged.connect(self._update_path_hint)
+        grid.addWidget(self._label("Target"), 2, 0)
+        grid.addWidget(self.combo_target, 2, 1)
 
         self.combo_voice = self._combo()
-        grid.addWidget(self._label("Lead voice"), 2, 0)
-        grid.addWidget(self.combo_voice, 2, 1)
+        grid.addWidget(self._label("Lead"), 3, 0)
+        grid.addWidget(self.combo_voice, 3, 1)
 
         self.combo_voice_sec = self._combo()
-        grid.addWidget(self._label("Co-star"), 3, 0)
-        grid.addWidget(self.combo_voice_sec, 3, 1)
+        grid.addWidget(self._label("Co-star"), 4, 0)
+        grid.addWidget(self.combo_voice_sec, 4, 1)
 
-        lay.addWidget(self._section_divider("Engine"))
-        api = self._grid(lay)
         self.combo_translator = self._combo()
-        for eid, label in _QUICK_ENGINES:
+        for eid, label, tip in _QUICK_ENGINES:
             self.combo_translator.addItem(label, eid)
+            self.combo_translator.setItemData(
+                self.combo_translator.count() - 1,
+                tip,
+                Qt.ItemDataRole.ToolTipRole,
+            )
         # Map full catalog ids (e.g. nllb) onto closest quick choice.
         tr = str(defaults.get("translator") or "auto")
         if tr == "nllb":
             tr = "auto"
         self._set_data(self.combo_translator, tr)
         self.combo_translator.currentIndexChanged.connect(self._on_translator_changed)
-        api.addWidget(self._label("Translate"), 0, 0)
-        api.addWidget(self.combo_translator, 0, 1)
+        grid.addWidget(self._label("Translate"), 5, 0)
+        grid.addWidget(self.combo_translator, 5, 1)
 
-        self.edit_ollama = OllamaModelSelector(
-            self, default_model=str(defaults.get("ollama_model") or "qwen3:8b")
-        )
-        # Avoid blocking UI with Ollama ping until local engine is chosen.
-        if hasattr(self.edit_ollama, "check_and_refresh"):
-            # Selector auto-checks in __init__; stop if Fast/Google won't need it.
-            pass
-        api.addWidget(self._label("Ollama"), 1, 0)
-        api.addWidget(self.edit_ollama, 1, 1)
+        self.lbl_speed_tip = QLabel(_SPEED_PRESETS[self._speed]["tip"])
+        self.lbl_speed_tip.setObjectName("start_dub_sources_head")
+        self.lbl_speed_tip.setWordWrap(True)
+        lay.addWidget(self.lbl_speed_tip)
 
         opts = QVBoxLayout()
         opts.setSpacing(6)
         self.chk_auto_captions = self._option(
             opts,
-            "Captions on finish",
-            "Generate burned-in captions after dub. Turn off for a faster job.",
+            "Captions",
+            "Burn captions in after the dub.",
             bool(defaults.get("auto_captions", True)),
         )
         self.chk_clone_voices = self._option(
             opts,
-            "Clone character voices",
-            "After cast detection, extract each speaker and use that clone for TTS.",
+            "Clone voices",
+            "Use a clone of each speaker for TTS.",
             bool(defaults.get("clone_voices", True)),
         )
         self.chk_auto_captions.toggled.connect(self._update_path_hint)
@@ -476,20 +462,20 @@ class StartLocalizeDialog(QDialog):
         )
         self.chk_gender_detect = self._option(
             cast_opts,
-            "Gender / cast assist",
-            "Audio gender + AI naming. Off = faster (skip ML cast).",
+            "Cast assist",
+            "Name speakers and detect gender. Off is faster.",
             bool(defaults.get("gender_detect", True)),
         )
         self.chk_gender_detect.toggled.connect(self._update_path_hint)
         lay.addLayout(cast_opts)
 
-        lay.addWidget(self._section_divider("AI line style"))
+        lay.addWidget(self._section_divider("Line style"))
         style = QVBoxLayout()
         style.setSpacing(6)
         self.chk_translate_fit = self._option(
             style,
-            "Fit words to the segment",
-            "Extra rewrite pass for lines that overrun the slot (uses API).",
+            "Fit the line",
+            "Rewrite lines that run past the slot.",
             bool(defaults.get("translate_fit_duration", True)),
         )
         self.chk_translate_slang = self._option(
@@ -500,8 +486,8 @@ class StartLocalizeDialog(QDialog):
         )
         self.chk_translate_expression = self._option(
             style,
-            "Expression tags",
-            "Allow [laugh] [sigh] cues for TTS timing",
+            "Expression",
+            "Keep [laugh] and [sigh] cues for delivery.",
             bool(defaults.get("translate_expression", True)),
         )
         for w in (self.chk_translate_fit, self.chk_translate_slang, self.chk_translate_expression):
@@ -512,7 +498,7 @@ class StartLocalizeDialog(QDialog):
         edit = self._grid(lay)
         duck_row = QHBoxLayout()
         duck_row.setSpacing(10)
-        duck_lbl = QLabel("Dialogue ducking")
+        duck_lbl = QLabel("Ducking")
         duck_lbl.setObjectName("asr_field_label")
         self.spin_duck = self._spin()
         self.spin_duck.setRange(0, 100)
@@ -525,7 +511,7 @@ class StartLocalizeDialog(QDialog):
         duck_row.addWidget(self.spin_duck, 0, Qt.AlignmentFlag.AlignRight)
         edit.addLayout(duck_row, 0, 0, 1, 2)
         self.spin_center = self._spin_row(
-            edit, 1, "Original speech fade", 0, 100, "%", defaults.get("center_attenuation", 70)
+            edit, 1, "Original fade", 0, 100, "%", defaults.get("center_attenuation", 70)
         )
         self.spin_fade = self._spin_row(
             edit, 2, "Ducking fade", 50, 350, " ms", defaults.get("fade_ms", 150)
@@ -535,8 +521,8 @@ class StartLocalizeDialog(QDialog):
         mix_opts.setSpacing(6)
         self.chk_auto_mix = self._option(
             mix_opts,
-            "Isolate music / effects bed",
-            "Demucs stems — slower, cleaner bed. Off skips separation (big speed win).",
+            "Music and effects",
+            "Split the bed from speech. Off is faster.",
             bool(defaults.get("auto_mix", True)),
         )
         self.chk_auto_mix.toggled.connect(self._update_path_hint)
@@ -549,14 +535,17 @@ class StartLocalizeDialog(QDialog):
         lay.addWidget(self._section_divider("TTS"))
         voice = self._grid(lay)
         self.combo_sync = self._combo()
-        self.combo_sync.addItem("Smart tempo · 0.65×–1.85×", "stretch")
-        self.combo_sync.addItem("Subtle tempo · 0.85×–1.25×", "subtle")
-        self.combo_sync.addItem("Natural speed · 1.0×", "natural")
+        self.combo_sync.addItem("Smart", "stretch")
+        self.combo_sync.setItemData(0, "Tempo from 0.65× to 1.85×", Qt.ItemDataRole.ToolTipRole)
+        self.combo_sync.addItem("Subtle", "subtle")
+        self.combo_sync.setItemData(1, "Tempo from 0.85× to 1.25×", Qt.ItemDataRole.ToolTipRole)
+        self.combo_sync.addItem("Natural", "natural")
+        self.combo_sync.setItemData(2, "Keep the spoken speed at 1.0×", Qt.ItemDataRole.ToolTipRole)
         self._set_data(self.combo_sync, defaults.get("sync_mode", "stretch"))
         voice.addWidget(self._label("Timing"), 0, 0)
         voice.addWidget(self.combo_sync, 0, 1)
         self.spin_vo = self._spin_row(
-            voice, 1, "New voice level", 80, 160, "%", defaults.get("voiceover_boost", 115)
+            voice, 1, "Voice level", 80, 160, "%", defaults.get("voiceover_boost", 115)
         )
         voice_opts = QVBoxLayout()
         voice_opts.setSpacing(6)
@@ -574,7 +563,7 @@ class StartLocalizeDialog(QDialog):
         page, lay = self._page()
         page.setMinimumWidth(0)
         lay.setSpacing(6)
-        tip = QLabel("Optional. Leave off on Fast for a quicker job.")
+        tip = QLabel("Used when Captions is on.")
         tip.setObjectName("start_dub_sources_head")
         tip.setWordWrap(True)
         tip.setMinimumWidth(0)
@@ -672,16 +661,18 @@ class StartLocalizeDialog(QDialog):
         scroll.viewport().installEventFilter(_CaptionWidthPin(scroll, page))
         return scroll
 
-    def _on_speed_clicked(self, key: str):
-        self._apply_speed_preset(key, force=True)
+    def _on_speed_menu(self, *_args):
+        if self._applying_preset:
+            return
+        self._apply_speed_preset(str(self.combo_speed.currentData() or "balanced"), force=True)
 
     def _apply_speed_preset(self, key: str, *, force: bool = False):
         meta = _SPEED_PRESETS.get(key) or _SPEED_PRESETS["balanced"]
-        self._speed = key
+        self._speed = key if key in _SPEED_PRESETS else "balanced"
         self._applying_preset = True
         try:
-            for btn in self._speed_group.buttons():
-                btn.setChecked(btn.property("preset") == key)
+            if hasattr(self, "combo_speed"):
+                self._set_data(self.combo_speed, self._speed)
             if hasattr(self, "lbl_speed_tip"):
                 self.lbl_speed_tip.setText(meta["tip"])
             if force or True:
@@ -699,38 +690,22 @@ class StartLocalizeDialog(QDialog):
                     self.chk_clone_voices.setChecked(bool(meta.get("clone_voices", True)))
         finally:
             self._applying_preset = False
-        self._sync_ollama(defer_refresh=key == "fast")
         self._sync_translate_style()
         self._update_path_hint()
 
     def _on_translator_changed(self, *_args):
         if not self._applying_preset:
-            # Manual engine pick → leave speed label but refresh ollama/path.
-            self._sync_ollama(defer_refresh=False)
             self._sync_translate_style()
             self._update_path_hint()
 
     def _update_path_hint(self, *_args):
-        skips = []
-        if hasattr(self, "chk_auto_mix") and not self.chk_auto_mix.isChecked():
-            skips.append("stems")
-        if hasattr(self, "chk_gender_detect") and not self.chk_gender_detect.isChecked():
-            skips.append("cast ML")
-        if hasattr(self, "chk_translate_fit") and not self.chk_translate_fit.isChecked():
-            skips.append("slot-fit API")
-        if hasattr(self, "chk_auto_captions") and not self.chk_auto_captions.isChecked():
-            skips.append("captions")
-        tr = self.combo_translator.currentData() if hasattr(self, "combo_translator") else "auto"
-        asr = self.combo_model.currentText() if hasattr(self, "combo_model") else ""
-        bits = [f"{_SPEED_PRESETS.get(self._speed, {}).get('label', 'Custom')} path"]
-        if asr:
-            bits.append(asr.replace("whisper-", ""))
-        if tr:
-            bits.append(str(tr))
+        label = _SPEED_PRESETS.get(self._speed, {}).get("label", "Custom")
+        target = self.combo_target.currentText() if hasattr(self, "combo_target") else ""
+        bits = [label]
+        if target:
+            bits.append(target)
         if hasattr(self, "chk_clone_voices") and self.chk_clone_voices.isChecked():
-            bits.append("clone TTS")
-        if skips:
-            bits.append("skip " + " · ".join(skips))
+            bits.append("clone voices")
         self.lbl_path.setText(" · ".join(bits))
 
     def _caption_look_name(self) -> str:
@@ -804,13 +779,6 @@ class StartLocalizeDialog(QDialog):
         grid.addLayout(row_l, row, 0, 1, 2)
         return spin
 
-    def _sync_ollama(self, *_args, defer_refresh: bool = False):
-        eid = self.combo_translator.currentData() or "auto"
-        is_ollama = eid in {"auto", "movie", "ollama"}
-        self.edit_ollama.setEnabled(is_ollama)
-        if is_ollama and not defer_refresh and hasattr(self.edit_ollama, "check_and_refresh"):
-            self.edit_ollama.check_and_refresh()
-
     def _sync_translate_style(self, *_args):
         eid = self.combo_translator.currentData() or "auto"
         from claynext.models.llm_providers import CHAT_PROVIDERS
@@ -845,7 +813,7 @@ class StartLocalizeDialog(QDialog):
             "secondary_voice": self.combo_voice_sec.currentData() or "",
             "asr_model": self.combo_model.currentText(),
             "translator": self.combo_translator.currentData() or "auto",
-            "ollama_model": self.edit_ollama.text().strip() or "qwen3:8b",
+            "ollama_model": self._ollama_model,
             "sync_mode": self.combo_sync.currentData() or "stretch",
             "background": self.spin_duck.value(),
             "center_attenuation": self.spin_center.value(),

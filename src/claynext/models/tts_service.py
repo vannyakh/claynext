@@ -21,6 +21,43 @@ _voxcpm_models: dict[str, Any] = {}
 _edge_endpoint_ready = False
 
 
+def _seed_voxcpm(seed: int) -> None:
+    """VoxCPM dropped the generate(seed=) argument. Seed the RNGs instead."""
+    try:
+        import numpy as np
+
+        np.random.seed(seed % (2**32))
+    except Exception:
+        pass
+    try:
+        import torch
+
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+    except Exception:
+        pass
+
+
+def _call_voxcpm(model: Any, **kwargs: Any):
+    """Call generate with only the arguments this VoxCPM build accepts."""
+    import inspect
+
+    seed = kwargs.get("seed")
+    inner = getattr(model, "_generate", None) or getattr(model, "_VoxCPM__generate", None)
+    allowed: set[str] | None = None
+    if inner is not None:
+        try:
+            allowed = set(inspect.signature(inner).parameters)
+        except (TypeError, ValueError):
+            allowed = None
+    if allowed is not None:
+        kwargs = {key: value for key, value in kwargs.items() if key in allowed}
+    if seed is not None and (allowed is None or "seed" not in (allowed or set())):
+        _seed_voxcpm(int(seed))
+    return model.generate(**kwargs)
+
+
 def _ensure_edge_tts_endpoint() -> None:
     """Require the current Edge Read Aloud handshake.
 
@@ -265,7 +302,67 @@ class TTSEngine:
 
     @staticmethod
     def eleven_voices() -> List[Dict[str, Any]]:
-        return list(TTSEngine.ELEVEN_VOICES)
+        """Voices this ElevenLabs account can preview. Falls back to the built-in list."""
+        live = TTSEngine._account_eleven_voices()
+        return live or list(TTSEngine.ELEVEN_VOICES)
+
+    @staticmethod
+    def _account_eleven_voices() -> List[Dict[str, Any]]:
+        import json
+        import time
+        import urllib.request
+
+        from claynext.utils.paths import CACHE_DIR
+
+        cache = CACHE_DIR / "eleven_voices.json"
+        fresh = False
+        cached: list[dict] = []
+        try:
+            if cache.is_file():
+                cached = json.loads(cache.read_text(encoding="utf-8"))
+                fresh = time.time() - cache.stat().st_mtime < 12 * 3600
+                if fresh and isinstance(cached, list) and cached:
+                    return [row for row in cached if isinstance(row, dict) and row.get("id")]
+        except Exception:
+            cached = []
+        try:
+            from claynext.models.llm_keys import get_key_pool
+
+            secrets = get_key_pool().secrets("elevenlabs")
+            if not secrets:
+                return cached
+            req = urllib.request.Request(
+                "https://api.elevenlabs.io/v1/voices",
+                headers={"xi-api-key": secrets[0]},
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+        except Exception:
+            return cached
+        rows: list[dict] = []
+        for voice in payload.get("voices") or []:
+            vid = str(voice.get("voice_id") or "").strip()
+            if not vid:
+                continue
+            raw_name = str(voice.get("name") or "Voice")
+            short = raw_name.split(" - ", 1)[0].strip() or raw_name
+            gender = str((voice.get("labels") or {}).get("gender") or "").strip().title()
+            rows.append({
+                "id": f"eleven:{vid}",
+                "name": short,
+                "alias": short,
+                "lang": "All",
+                "tag": "ElevenLabs",
+                "gender": gender,
+            })
+        if not rows:
+            return cached
+        try:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            cache.write_text(json.dumps(rows), encoding="utf-8")
+        except Exception:
+            pass
+        return rows
 
     @staticmethod
     def voice_label(voice: dict[str, Any] | str) -> str:
@@ -305,7 +402,14 @@ class TTSEngine:
         if lang:
             want = "Chinese" if str(lang).startswith("Chinese") else str(lang)
         rows: list[dict[str, Any]] = []
-        for voice in TTSEngine.VOICE_PRESETS:
+        catalog = (
+            TTSEngine.CLONE_VOICES
+            + TTSEngine.KITTEN_VOICES
+            + TTSEngine.VOXCPM_VOICES
+            + TTSEngine.EDGE_VOICES
+            + TTSEngine.eleven_voices()
+        )
+        for voice in catalog:
             v_lang = str(voice.get("lang") or "")
             if want and v_lang not in {"All", "all", want}:
                 continue
@@ -578,7 +682,7 @@ class TTSEngine:
         if reference_wav and os.path.isfile(reference_wav):
             kwargs["reference_wav_path"] = reference_wav
 
-        wav = model.generate(**kwargs)
+        wav = _call_voxcpm(model, **kwargs)
         import soundfile as sf
 
         rate = int(getattr(getattr(model, "tts_model", None), "sample_rate", None) or 48000)
@@ -775,6 +879,11 @@ class TTSEngine:
                 detail = exc.read().decode("utf-8", errors="replace")[:300]
                 if exc.code == 429:
                     raise RateLimitError(detail or "ElevenLabs rate limit")
+                if exc.code == 402:
+                    raise RuntimeError(
+                        "This ElevenLabs voice needs a paid plan. "
+                        "Preview the voices on your account instead."
+                    )
                 if exc.code in {401, 403}:
                     raise RuntimeError(
                         "ElevenLabs rejected the API key. "

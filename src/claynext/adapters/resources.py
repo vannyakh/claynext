@@ -28,6 +28,16 @@ _ENCODE_LABELS = {
 }
 
 
+def _memory_gb() -> float:
+    """Installed RAM. Zero when the platform does not report it."""
+    try:
+        pages = os.sysconf("SC_PHYS_PAGES")
+        size = os.sysconf("SC_PAGE_SIZE")
+        return float(pages) * float(size) / (1024 ** 3)
+    except (AttributeError, OSError, ValueError):
+        return 0.0
+
+
 def _machine() -> dict[str, Any]:
     global _MACHINE
     if _MACHINE is not None:
@@ -129,6 +139,12 @@ def resource_plan(*, device: str | None = None, threads: int | None = None) -> d
     speech = "cuda" if choice in {"best", "cuda"} and machine["encode_kind"] == "cuda" else "cpu"
     dub_jobs = int(machine["dub_jobs"])
     tts_workers = int(machine["tts_workers"])
+    # A dub holds Whisper plus the translator. Below 24 GB, a second movie
+    # swaps the machine and the batch looks stuck.
+    ram = _memory_gb()
+    if 0 < ram < 24:
+        dub_jobs = 1
+        tts_workers = min(tts_workers, 2)
     if cap > 0:
         dub_jobs = max(1, min(dub_jobs, cap))
         tts_workers = max(1, min(tts_workers, worker_threads))

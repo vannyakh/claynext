@@ -203,7 +203,7 @@ def populate_track_menu(
             clip_menu, "Duplicate", handlers.duplicate_clip,
             icon_name="copy", enabled=not clip_locked, shortcut="Ctrl+D",
         )
-        if kind in _SOUND_KINDS:
+        if kind in {"voice", "audio"} and not clip.extra.get("no_audio") and not getattr(track, "silent", False):
             clip_menu.addSeparator()
             _act(
                 clip_menu, "Toggle Key", handlers.toggle_key,
@@ -273,7 +273,7 @@ def populate_track_menu(
         icon_name="eye" if track.hidden else "eye-off",
     )
 
-    if kind in _SOUND_KINDS:
+    if kind in _SOUND_KINDS and not getattr(track, "silent", False):
         track_menu.addSeparator()
         _act(
             track_menu,

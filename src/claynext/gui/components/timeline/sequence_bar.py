@@ -15,11 +15,52 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from claynext.gui.components.controls.spinner import Spinner
 from claynext.gui.icons import icon
 
 # Room for a 26px chip plus padding, so the row never crops the button.
 SEQUENCE_ROW_H = 42
 _CHIP_ROW_H = 26
+
+
+class SequenceChip(QPushButton):
+    """One sequence tab. A spinner sits on the right while that sequence is working."""
+
+    def __init__(self, name: str, parent=None):
+        super().__init__(name, parent)
+        self.setObjectName("sequence_chip")
+        self._spin = Spinner(self, size=12, color="#c084fc")
+        self._busy = False
+
+    def set_busy(self, busy: bool) -> None:
+        busy = bool(busy)
+        if busy == self._busy and self._spin.is_spinning() == busy:
+            self._place_spin()
+            return
+        self._busy = busy
+        self.setProperty("busy", "true" if busy else "false")
+        style = self.style()
+        if style is not None:
+            style.unpolish(self)
+            style.polish(self)
+        if busy:
+            self._spin.start()
+        else:
+            self._spin.stop()
+        self._place_spin()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._place_spin()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._place_spin()
+
+    def _place_spin(self) -> None:
+        spin = self._spin
+        spin.move(max(0, self.width() - spin.width() - 8), max(0, (self.height() - spin.height()) // 2))
+        spin.raise_()
 
 
 class SequenceBar(QFrame):
@@ -70,8 +111,11 @@ class SequenceBar(QFrame):
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(0)
         actions.addStretch(1)
+        self._header_spin = Spinner(self._header_actions, size=14, color="#c084fc")
+        self._header_spin.setToolTip("A sequence is still working")
+        actions.addWidget(self._header_spin, 0, Qt.AlignmentFlag.AlignVCenter)
         actions.addWidget(self._add, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self._chips: list[QPushButton] = []
+        self._chips: list[SequenceChip] = []
         self._names: list[str] = []
         self._index = -1
         self._vertical = False
@@ -85,6 +129,7 @@ class SequenceBar(QFrame):
         self._shown = False
         self._rebuilding = False
         self._fitting = False
+        self._busy: set[int] = set()
 
     def header_actions(self) -> QWidget:
         """Plus control for the dock title row, aligned to the right."""
@@ -250,8 +295,7 @@ class SequenceBar(QFrame):
 
         self._group.blockSignals(True)
         for i, name in enumerate(self._names):
-            chip = QPushButton(name or f"Dub {i + 1}")
-            chip.setObjectName("sequence_chip")
+            chip = SequenceChip(name or f"Dub {i + 1}")
             chip.setCheckable(True)
             chip.setChecked(i == self._index)
             chip.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -279,7 +323,23 @@ class SequenceBar(QFrame):
         self._group.blockSignals(False)
         self._fit_host()
         self._reveal(self._index)
+        self._apply_busy()
         self.updateGeometry()
+
+    def set_busy(self, indexes) -> None:
+        """Spinner on each sequence that has a running process, and in the title when any do."""
+        busy = {int(index) for index in (indexes or []) if isinstance(index, int) or str(index).lstrip("-").isdigit()}
+        busy = {index for index in busy if 0 <= index < len(self._names)}
+        self._busy = busy
+        self._apply_busy()
+
+    def _apply_busy(self) -> None:
+        for index, chip in enumerate(self._chips):
+            chip.set_busy(index in self._busy)
+        if self._busy:
+            self._header_spin.start()
+        else:
+            self._header_spin.stop()
 
     def _make_add(self) -> QPushButton:
         button = QPushButton()

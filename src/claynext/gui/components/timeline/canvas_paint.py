@@ -472,13 +472,14 @@ class CanvasPaint:
         p.restore()
 
     def _paint_filmstrip(self, p: QPainter, clip: TimelineClip, rect: QRectF, selected: bool):
-        wave_h = max(32, int(rect.height() * 0.42)) if rect.height() >= 52 else 0
+        track = self.track_by_id(clip.track_id)
+        picture = bool(clip.extra.get("no_audio")) or bool(getattr(track, "silent", False))
+        wave_h = 0 if picture else (max(32, int(rect.height() * 0.42)) if rect.height() >= 52 else 0)
         film = QRectF(rect.x(), rect.y(), rect.width(), max(8.0, rect.height() - wave_h))
         ch = max(8, int(film.height()))
         cw = max(36, int(ch * 16 / 9))
         n_cells = max(1, int(rect.width() / cw) + 1)
         n_frames = len(self._frames)
-        track = self.track_by_id(clip.track_id)
         muted = bool(track and track.muted)
         p.save()
         p.setClipRect(film)

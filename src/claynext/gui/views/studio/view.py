@@ -106,6 +106,7 @@ class StudioView(
         self._init_dub_settings()
         media_panel = self._build_media_panel()
         text_panel = self._build_text_panel()
+        watermark_panel = self._build_watermark_panel()
         voice_panel = self._build_voice_panel()
         tasks_panel = self._build_tasks_panel()
         properties_panel = self._build_properties_panel()
@@ -124,6 +125,7 @@ class StudioView(
         self.slider_fade_ms.valueChanged.connect(lambda value: setattr(self.timeline, "duck_fade_ms", value))
         self.timeline.media_dropped.connect(self._on_timeline_drop)
         self.timeline.clips_changed.connect(self._sync_preview_overlays)
+        self.timeline.clips_changed.connect(self._schedule_session_store)
         self.timeline.clip_selected.connect(self._on_timeline_clip)
         self.timeline.selection_changed.connect(self._on_timeline_selection)
         self.timeline.composition_changed.connect(self._on_composition_changed)
@@ -146,6 +148,7 @@ class StudioView(
         self.shelf.add_tab("characters", "mic", "Characters · create a cast and assign voices", character_panel)
         self.shelf.add_tab("voices", "volume", "Preview voices and favorites", voice_panel)
         self.shelf.add_tab("text", "type", "On-screen text", text_panel)
+        self.shelf.add_tab("watermark", "image", "Watermark templates for the whole movie", watermark_panel)
         self.shelf.add_tab("effects", "sparkles", "Video effects", self._build_fx_panel("effect"))
         self.shelf.add_tab("filters", "filter", "Colour filters", self._build_fx_panel("filter"))
         self.shelf.add_tab("transitions", "transition", "Built-in transitions", self._build_fx_panel("transition"))
@@ -170,16 +173,16 @@ class StudioView(
         stage.setCorner(Qt.Corner.BottomRightCorner, Qt.DockWidgetArea.RightDockWidgetArea)
         self.timeline_stage.add_panel(
             "sequences", "Sequences", self.timeline.sequences,
-            Qt.DockWidgetArea.TopDockWidgetArea, closable=False,
+            Qt.DockWidgetArea.RightDockWidgetArea, closable=False,
         )
         self.timeline_stage.set_header_widget("sequences", self.timeline.sequences.header_actions())
         self.timeline.sequences.presence_changed.connect(self._show_sequences)
         seq_dock = self.timeline_stage.dock("sequences")
         if seq_dock is not None:
-            seq_dock.setToolTip("Drag Sequences to the right edge to split it beside the timeline")
+            seq_dock.setToolTip("Sequences stay on the right. Drag the title to move the panel.")
             seq_dock.dockLocationChanged.connect(self._place_sequences)
             seq_dock.topLevelChanged.connect(self._float_sequences)
-        self._place_sequences(Qt.DockWidgetArea.TopDockWidgetArea)
+        self._place_sequences(Qt.DockWidgetArea.RightDockWidgetArea)
         self.timeline_stage.save_default_layout()
         self.timeline_stage.set_visible("sequences", False)
         self.timeline_stage.layout_changed.connect(self._on_layout_changed)

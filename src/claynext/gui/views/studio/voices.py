@@ -399,7 +399,10 @@ class VoiceTools:
         self._voice_mode = ""
         self._voice_active_id = ""
         self._apply_voice_controls()
-        self.voice_status.setText("Preview failed")
+        text = (message or "Preview failed").replace("\n", " ").strip()
+        if len(text) > 90:
+            text = text[:89] + "…"
+        self.voice_status.setText(text or "Preview failed")
         if hasattr(self, "log"):
             self.log.warn(f"Voice preview · {message}")
 

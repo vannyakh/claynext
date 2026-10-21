@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QElapsedTimer, QTimer
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QWidget
 
 from claynext.constants import STATUSBAR_HEIGHT
@@ -36,6 +36,15 @@ class CustomStatusBar(QWidget):
         self._spinner = Spinner(self, size=spin_size, color=COLOR_ACCENT_PURPLE)
         layout.addWidget(self._spinner, 0, Qt.AlignmentFlag.AlignVCenter)
 
+        self._elapsed = QElapsedTimer()
+        self._elapsed_tick = QTimer(self)
+        self._elapsed_tick.setInterval(1000)
+        self._elapsed_tick.timeout.connect(self._paint_elapsed)
+        self.lbl_elapsed = QLabel("")
+        self.lbl_elapsed.setObjectName("status_elapsed")
+        self.lbl_elapsed.hide()
+        layout.addWidget(self.lbl_elapsed, 0, Qt.AlignmentFlag.AlignVCenter)
+
         self.lbl_msg = QLabel("Ready")
         self.lbl_msg.setObjectName("status_message")
         layout.addWidget(self.lbl_msg, 1)
@@ -62,9 +71,11 @@ class CustomStatusBar(QWidget):
         if self.lbl_msg.text() != text:
             self.lbl_msg.setText(text)
         if progress is None:
+            self._stop_elapsed()
             self._spinner.stop()
             self.progress.hide()
             return
+        self._start_elapsed()
         pct = max(0, min(100, int(progress)))
         if self.progress.value() != pct:
             self.progress.setValue(pct)
@@ -75,3 +86,25 @@ class CustomStatusBar(QWidget):
 
     def set_active_tool_name(self, name: str):
         self.lbl_active_tool.setText(name or "")
+
+    def _start_elapsed(self) -> None:
+        """Count from the moment this process became busy. Later progress ticks keep the same clock."""
+        if self._elapsed_tick.isActive():
+            return
+        self._elapsed.start()
+        self._elapsed_tick.start()
+        self.lbl_elapsed.show()
+        self._paint_elapsed()
+
+    def _stop_elapsed(self) -> None:
+        self._elapsed_tick.stop()
+        self.lbl_elapsed.clear()
+        self.lbl_elapsed.hide()
+
+    def _paint_elapsed(self) -> None:
+        total = max(0, int(self._elapsed.elapsed() // 1000))
+        hours, rem = divmod(total, 3600)
+        minutes, seconds = divmod(rem, 60)
+        text = f"{hours:d}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes:02d}:{seconds:02d}"
+        if self.lbl_elapsed.text() != text:
+            self.lbl_elapsed.setText(text)

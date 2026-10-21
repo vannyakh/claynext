@@ -409,7 +409,7 @@ class TimelinePanel(QWidget):
 
     def _toggle_selected_track_mute(self):
         for t in self.canvas.tracks:
-            if t.selected and t.kind in {"video", "voice", "audio"}:
+            if t.selected and t.kind in {"voice", "audio"} and not getattr(t, "silent", False):
                 self._mute_track(t.id, not t.muted)
                 break
 
@@ -562,9 +562,16 @@ class TimelinePanel(QWidget):
         self.seek_requested.emit(ms)
         self.ruler.update()
 
-    def _rebuild_rail(self):
-        """Prune legacy Transition lanes, then refresh track headers."""
-        if self.canvas.prune_transition_tracks():
+    def _rebuild_rail(self, keep_empty: str = ""):
+        """Drop empty lanes, then refresh track headers. The top row is layer 1."""
+        changed = self.canvas.prune_transition_tracks()
+        if not getattr(self.canvas, "_suspend_prune", False):
+            if self.canvas.silence_picture():
+                changed = True
+            if self.canvas.unpack_voice_conflicts():
+                changed = True
+            changed = self.canvas.prune_empty_tracks(keep_empty) or changed
+        if changed:
             self.canvas._relayout(notify=False)
         self.rail.rebuild(self.canvas.tracks)
 
@@ -646,6 +653,65 @@ class TimelinePanel(QWidget):
             kind, label, duration_ms=dur, extra={"overlay": dict(style)}, start_ms=start,
         )
 
+    def apply_watermark(self, style: dict) -> TimelineClip | None:
+        """Replace the current watermark and cover the whole movie with `style`."""
+        if not style:
+            return None
+        self.canvas.push_history()
+        drop = {
+            clip.id
+            for clip in self.canvas.clips
+            if clip.extra.get("watermark")
+            or (
+                isinstance(clip.extra.get("overlay"), dict)
+                and clip.extra["overlay"].get("watermark")
+            )
+        }
+        if drop:
+            self.canvas.clips = [clip for clip in self.canvas.clips if clip.id not in drop]
+            self.canvas.selected_ids -= drop
+        mark = dict(style)
+        mark["watermark"] = True
+        clip = self.add_text_style(mark)
+        if clip is None:
+            if drop:
+                self.canvas.prune_empty_tracks()
+                self._on_clips_changed()
+            return None
+        clip.extra["watermark"] = True
+        overlay = clip.extra.get("overlay")
+        if isinstance(overlay, dict):
+            overlay["watermark"] = True
+            if mark.get("path"):
+                overlay["path"] = mark["path"]
+                clip.extra["path"] = mark["path"]
+        track = self.canvas.track_by_id(clip.track_id)
+        mates = [row for row in self.canvas.clips if row.track_id == clip.track_id]
+        if track is not None and mates and all(row.extra.get("watermark") for row in mates):
+            track.name = "Watermark"
+            self.rail.refresh_flags()
+        return clip
+
+    def update_watermark(self, clip_id: str, style: dict) -> TimelineClip | None:
+        """Write a style window result onto the watermark already on the timeline."""
+        clip = self.canvas.clip_by_id(clip_id)
+        if clip is None:
+            return self.apply_watermark(style)
+        self.canvas.push_history()
+        mark = dict(style)
+        mark["watermark"] = True
+        mark["id"] = clip.id
+        kind = str(mark.get("kind") or clip.kind or "text")
+        clip.kind = kind
+        clip.label = str(mark.get("text") or mark.get("name") or clip.label)
+        clip.extra["watermark"] = True
+        if mark.get("path"):
+            clip.extra["path"] = mark["path"]
+        clip.extra["overlay"] = mark
+        self.canvas.update()
+        self._on_clips_changed()
+        return clip
+
     def overlay_clips(self, ms: int | None = None) -> list[TimelineClip]:
         t = self.canvas.playhead_ms if ms is None else int(ms)
         span = self.canvas.master_span()
@@ -661,8 +727,9 @@ class TimelinePanel(QWidget):
     def export_fx(self, include_hidden: bool = False) -> list[dict]:
         """Effect and filter clips as {"kind", "effect" | "filter", "intensity", "start_ms", "end_ms"}, plus in-split transitions."""
         order = {t.id: i for i, t in enumerate(self.canvas.tracks)}
+        # Top lane (index 0) is the front layer, so it is applied last.
         rows = []
-        for clip in sorted(self.canvas.clips, key=lambda c: (order.get(c.track_id, 0), c.start_ms)):
+        for clip in sorted(self.canvas.clips, key=lambda c: (-order.get(c.track_id, 0), c.start_ms)):
             if clip.kind not in FX_KINDS or (not include_hidden and self._track_hidden(clip)):
                 continue
             rows.append({"kind": clip.kind, **clean_fx(clip.kind, clip.extra.get("fx")),
@@ -686,7 +753,7 @@ class TimelinePanel(QWidget):
                 })
         video_ids = {t.id for t in self.canvas.tracks if t.kind == "video"}
         primary_video = next((t.id for t in self.canvas.tracks if t.kind == "video"), "")
-        for clip in sorted(self.canvas.clips, key=lambda c: (order.get(c.track_id, 0), c.start_ms)):
+        for clip in sorted(self.canvas.clips, key=lambda c: (-order.get(c.track_id, 0), c.start_ms)):
             # Transitions only on the main Cover source track.
             if clip.track_id != primary_video or clip.track_id not in video_ids:
                 continue
@@ -763,8 +830,13 @@ class TimelinePanel(QWidget):
         from claynext.gui.components.inspector.google_fonts import register_google_fonts
 
         register_google_fonts()
+        order = {track.id: index for index, track in enumerate(self.canvas.tracks)}
         rows = []
-        for clip in self.canvas.clips:
+        overlay_clips = sorted(
+            (clip for clip in self.canvas.clips if clip.kind in OVERLAY_KINDS),
+            key=lambda clip: (-order.get(clip.track_id, 0), clip.start_ms),
+        )
+        for clip in overlay_clips:
             if clip.kind not in OVERLAY_KINDS:
                 continue
             if not include_hidden and self._track_hidden(clip):
@@ -777,6 +849,8 @@ class TimelinePanel(QWidget):
             ov.pop("duration_ms", None)
             if clip.extra.get("path"):
                 ov["path"] = clip.extra["path"]
+            if clip.extra.get("watermark"):
+                ov["watermark"] = True
             if clip.kind in {"text", "caption"}:
                 text = str(ov.get("text") or "")
                 if clip.kind == "caption" and aspect:
@@ -837,6 +911,8 @@ class TimelinePanel(QWidget):
             end = int(ov.get("end_ms") or 0)
             dur = end - start if end > start else (self.canvas.duration_ms or 5000)
             extra = {"overlay": dict(ov), "path": ov.get("path", "")}
+            if ov.get("watermark"):
+                extra["watermark"] = True
             self.canvas.add_clip(kind, label, duration_ms=dur, extra=extra, start_ms=start)
         if not int(getattr(self, "_sequence_load", 0)):
             self._rebuild_rail()
@@ -1283,7 +1359,7 @@ class TimelinePanel(QWidget):
                 clip = self.canvas.add_clip(kind, track.name, track_id=track.id)
         else:
             clip = None
-        self._rebuild_rail()
+        self._rebuild_rail(keep_empty="" if clip is not None else track.id)
         if clip is not None:
             self.selection_changed.emit(clip.id, clip.track_id)
         else:
@@ -1468,6 +1544,55 @@ class TimelinePanel(QWidget):
     def _on_composition(self, index: int):
         if index >= 0:
             self.composition_changed.emit(index)
+
+    def export_state(self) -> dict:
+        """Full timeline, so closing the tool can reopen the same lanes and clips."""
+        import json
+
+        state = self.canvas._snapshot()
+        state["duration_ms"] = int(self.canvas.duration_ms or 0)
+        state["media"] = self.canvas.media_path or ""
+        for row in state.get("tracks") or []:
+            track = self.canvas.track_by_id(str(row.get("id") or ""))
+            row["silent"] = bool(getattr(track, "silent", False))
+        return json.loads(json.dumps(state, default=str))
+
+    def apply_state(self, state: dict) -> None:
+        """Put a saved timeline back. Clips keep the lanes they were stored on."""
+        if not isinstance(state, dict) or not isinstance(state.get("clips"), list) or not state["clips"]:
+            return
+        self.begin_sequence()
+        try:
+            self.canvas._restore(state)
+            media = str(state.get("media") or "")
+            if media:
+                self.canvas.media_path = os.path.abspath(media) if os.path.isfile(media) else media
+                self.canvas.media_name = os.path.basename(media)
+            duration = int(state.get("duration_ms") or 0)
+            if duration > 0:
+                self.canvas.duration_ms = duration
+            for row in state.get("tracks") or []:
+                if not isinstance(row, dict) or not row.get("silent"):
+                    continue
+                track = self.canvas.track_by_id(str(row.get("id") or ""))
+                if track is not None:
+                    track.silent = True
+                    track.muted = True
+        finally:
+            self.end_sequence()
+        self._rebuild_rail()
+        self._refresh_meta()
+        self.ruler.update()
+        paths = [
+            str(clip.extra.get("path"))
+            for clip in self.canvas.clips
+            if clip.kind in {"voice", "audio"}
+            and clip.extra.get("path")
+            and os.path.isfile(str(clip.extra.get("path")))
+            and str(clip.extra.get("path")) not in self.canvas._waves
+        ]
+        if paths:
+            self._load_waves(paths)
 
     def export_tracks(self) -> list[dict]:
         rows = []
@@ -1819,9 +1944,12 @@ class TimelinePanel(QWidget):
             return
         known = int(duration_ms or 0)
         self.canvas.set_media(path, known)
+        master = self.canvas.master_clip() if path else None
+        file_ms = int(master.extra.get("file_ms") or 0) if master is not None else 0
+        # A missing probe leaves a one-second sliver. Read the real movie length next.
+        if path and master is not None and not master.extra.get("user_trim") and file_ms <= 1500:
+            self._probe_duration_later(path)
         if int(getattr(self, "_sequence_load", 0)):
-            if path and not known:
-                self._probe_duration_later(path)
             return
         self._rebuild_rail()
         self._refresh_meta()
@@ -1910,7 +2038,7 @@ class TimelinePanel(QWidget):
         effects = [
             canvas.track_by_id(clip.track_id)
             for clip in canvas.clips
-            if canvas.stem_role(clip) == "effects"
+            if canvas.stem_role(clip) in {"effects", "music"}
         ]
         effects = [track for track in effects if track is not None and not track.muted]
         if not effects:

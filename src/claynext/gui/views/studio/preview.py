@@ -299,8 +299,9 @@ class PreviewTools:
     def _apply_timeline_gains(self):
         source, voice, bed = self._timeline_gains
         if hasattr(self, "timeline") and self.timeline.canvas.effects_bed_active():
-            # The Effects track is the bed. The movie file still carries the original dialogue.
-            source, bed = 0.0, 0.0
+            # Effects and music tracks are the soundtrack. The movie file still has the original dialogue.
+            source = 0.0
+            bed = self.timeline.canvas.music_bus_gain()
         self.preview.set_source_gain(source)
         self.preview.set_voice_gain(voice)
         self.preview.set_bed_gain(bed)

@@ -31,7 +31,7 @@ from claynext.gui.components.timeline.helpers import (
     has_drop,
     paths_from_mime,
 )
-from claynext.gui.components.timeline.models import TimelineClip
+from claynext.gui.components.timeline.models import TimelineClip, new_track
 
 
 class CanvasInput:
@@ -249,6 +249,7 @@ class CanvasInput:
                 self._edit_before = self._undo[-1] if self._undo else None
                 self._drag_ids = [c.id for c in self.clips if c.id in self.selected_ids]
                 self._drag_origin_ms = {c.id: c.start_ms for c in self.clips if c.id in self._drag_ids}
+                self._drag_origin_track = {c.id: c.track_id for c in self.clips if c.id in self._drag_ids}
                 self._press_x = pos.x()
                 self.setCursor(Qt.CursorShape.ClosedHandCursor)
             self.clip_selected.emit(clip.id)
@@ -317,6 +318,7 @@ class CanvasInput:
                 clip = next((c for c in self.clips if c.id == cid), None)
                 if clip:
                     clip.start_ms = max(0, self._drag_origin_ms.get(cid, 0) + delta)
+            self._retarget_drag_layer(pos.y())
             self.update()
             return
         if self._marquee is not None:
@@ -441,20 +443,27 @@ class CanvasInput:
             if same:
                 self._discard_history_if_same(getattr(self, "_edit_before", None))
             else:
+                if clip is not None and (clip.extra.get("master") or clip.id == "footage"):
+                    clip.extra["user_trim"] = True
                 self._relayout()
             self._edit_before = None
             self.clip_selected.emit(cid)
         if self._drag_ids:
+            self._separate_voice_overlaps()
+            self._open_top_layer(event.position().y())
             changed = any(
-                (c.start_ms != self._drag_origin_ms.get(c.id, c.start_ms))
+                c.start_ms != self._drag_origin_ms.get(c.id, c.start_ms)
+                or c.track_id != self._drag_origin_track.get(c.id, c.track_id)
                 for c in self.clips if c.id in self._drag_ids
             )
             self._drag_ids = []
             self.setCursor(Qt.CursorShape.ArrowCursor)
+            if self.prune_empty_tracks():
+                changed = True
             if not changed:
                 self._discard_history_if_same(getattr(self, "_edit_before", None))
             else:
-                self.clips_changed.emit()
+                self._relayout()
             self._edit_before = None
         if self._marquee is not None:
             box = self._marquee.normalized()
@@ -465,6 +474,83 @@ class CanvasInput:
                 self.clip_selected.emit(next(iter(hit), ""))
             self._marquee = None
         self.update()
+
+    @staticmethod
+    def _shares_layer(left: str, right: str) -> bool:
+        if left == right:
+            return True
+        return {left, right} <= {"caption", "text"}
+
+    def _lane_free(self, track, clip) -> bool:
+        if track is None or track.locked:
+            return False
+        dragging = set(getattr(self, "_drag_ids", []) or [])
+        for other in self.clips:
+            if other.id == clip.id or other.id in dragging:
+                continue
+            if other.track_id != track.id:
+                continue
+            if other.start_ms < clip.end_ms and clip.start_ms < other.end_ms:
+                return False
+        return True
+
+    def _separate_voice_overlaps(self):
+        """A voice clip that lands on another voice opens a new lane instead of stacking."""
+        for cid in list(getattr(self, "_drag_ids", []) or []):
+            clip = self.clip_by_id(cid)
+            if clip is None or clip.kind != "voice" or clip.extra.get("master"):
+                continue
+            track = self.track_by_id(clip.track_id)
+            if self._lane_free(track, clip):
+                continue
+            clip.track_id = ""
+            fresh = self.free_track("voice", clip.start_ms, clip.end_ms)
+            clip.track_id = fresh.id
+
+    def _retarget_drag_layer(self, y: int):
+        """Move a dragged clip onto the lane under the pointer when that lane can take it."""
+        track = self.track_at_y(y)
+        if track is None:
+            return
+        for cid in self._drag_ids:
+            clip = self.clip_by_id(cid)
+            if clip is None or clip.extra.get("master") or clip.id == "footage":
+                continue
+            origin = self.track_by_id(self._drag_origin_track.get(cid, clip.track_id))
+            kind = origin.kind if origin is not None else clip.kind
+            if not self._shares_layer(kind, track.kind):
+                continue
+            if track.id != clip.track_id and not self._lane_free(track, clip):
+                continue
+            clip.track_id = track.id
+
+    def _open_top_layer(self, y: int):
+        """Dragging a clip above its lane, or onto a full lane, opens a layer at the top."""
+        y = int(y)
+        track = self.track_at_y(y) if y >= 0 else None
+        fresh = None
+        for cid in list(self._drag_ids):
+            clip = self.clip_by_id(cid)
+            if clip is None or clip.extra.get("master") or clip.id == "footage":
+                continue
+            origin = self.track_by_id(self._drag_origin_track.get(cid, clip.track_id))
+            kind = origin.kind if origin is not None else clip.kind
+            origin_top = self.track_top(origin.id) if origin is not None else 0
+            moved_up = y < origin_top
+            landed = track is not None and self._shares_layer(kind, track.kind) and self._lane_free(track, clip)
+            blocked = bool(
+                track is not None
+                and self._shares_layer(kind, track.kind)
+                and clip.track_id != track.id
+                and not self._lane_free(track, clip)
+            )
+            if landed or not (moved_up or blocked):
+                continue
+            if fresh is None or not self._lane_free(fresh, clip):
+                count = sum(1 for lane in self.tracks if lane.kind == kind) + 1
+                fresh = new_track(kind, count)
+                self.tracks.insert(0, fresh)
+            clip.track_id = fresh.id
 
     def mouseDoubleClickEvent(self, event):
         pos = event.position().toPoint()

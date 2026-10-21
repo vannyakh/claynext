@@ -20,12 +20,14 @@ PROVIDERS = (
     *((pid, CHAT_PROVIDERS[pid]["label"]) for pid in CHAT_ORDER),
     ("huggingface", "Hugging Face"),
     ("elevenlabs", "ElevenLabs"),
+    ("typesafe", "TypeSafe Jev"),
 )
 
 _ENV_KEYS = {
     "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
     "huggingface": ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"),
     "elevenlabs": ("ELEVENLABS_API_KEY",),
+    "typesafe": ("TYPESAFE_API_KEY",),
     **{pid: spec["env"] for pid, spec in CHAT_PROVIDERS.items()},
 }
 
@@ -34,6 +36,7 @@ PROVIDER_LIMITS = {
     "gemini": {"rpm": 15, "rpd": 1500, "model": "gemini-3.8-flash"},
     "huggingface": {"rpm": 30, "rpd": 1000, "model": ""},
     "elevenlabs": {"rpm": 20, "rpd": 10000, "model": "eleven_multilingual_v2"},
+    "typesafe": {"rpm": 60, "rpd": 10000, "model": "jev-latest"},
     **{
         pid: {"rpm": spec["rpm"], "rpd": spec["rpd"], "model": spec["model"]}
         for pid, spec in CHAT_PROVIDERS.items()

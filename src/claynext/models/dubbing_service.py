@@ -160,9 +160,14 @@ def analyze_movie_characters(
 
             gap = start_sec - prev_end if i > 0 else 0.0
             prev_text = str(segments[i - 1].get("text", "")).strip() if i > 0 else ""
-            is_question = bool(i > 0 and any(prev_text.endswith(q) for q in ("?", "？", "吗", "呢", "吧", "呀", "？")))
+            prev_intent = ""
+            if prev_text:
+                from claynext.models.gender_voices import detect_line_intent
 
-            if i > 0 and (gap >= 0.85 or (gap >= 0.35 and is_question)):
+                prev_intent = detect_line_intent(prev_text)
+            turn = prev_intent in {"question", "command", "plea"}
+
+            if i > 0 and (gap >= 0.85 or (gap >= 0.28 and turn)):
                 current_char_idx = 2 if current_char_idx == 1 else 1
 
             s["speaker"] = f"Character {current_char_idx}"
@@ -206,6 +211,12 @@ def analyze_movie_characters(
     elif progress_callback:
         progress_callback(37, "Fast cast · lead & co-star only…")
     apply_character_cast(segments)
+    try:
+        from claynext.models.jev_decisions import refine_cast
+
+        refine_cast(segments, progress_callback=progress_callback)
+    except Exception:
+        pass
 
     return assign_gender_and_voices(
         segments,
@@ -216,25 +227,29 @@ def analyze_movie_characters(
     )
 
 
-def _try_demucs(wav_path: str, out_dir: Path, ping: Callable) -> tuple[str | None, str | None]:
-    """Return (bgm_path, vocals_path) via demucs-mlx or demucs when settings allow."""
+def _try_demucs(wav_path: str, out_dir: Path, ping: Callable) -> dict[str, str]:
+    """Isolate vocals, music, and effects when a stem model is available."""
+    empty = {"bed": "", "vocals": "", "effects": "", "music": ""}
     try:
         from claynext.models.features import demucs_model_name, prefer_demucs_bed
         from claynext.models.stem_separation import separate_movie_stems
 
         if not prefer_demucs_bed():
-            return None, None
+            return empty
         result = separate_movie_stems(
             wav_path,
             out_dir=out_dir / "stems",
             model=demucs_model_name(),
             progress_callback=ping,
         )
-        bed = result.get("bed")
-        vocals = result.get("vocals")
-        return (bed if bed else None), (vocals if vocals else None)
+        return {
+            "bed": str(result.get("bed") or ""),
+            "vocals": str(result.get("vocals") or ""),
+            "effects": str(result.get("effects") or ""),
+            "music": str(result.get("music") or ""),
+        }
     except Exception:
-        return None, None
+        return empty
 
 
 def _soundtrack_turns(path: str) -> list[dict]:
@@ -429,7 +444,12 @@ def _speak_lines(
         from claynext.models.gender_voices import expression_tag
         from claynext.models.tts_expression import has_expression_tags
 
-        tag = expression_tag(str(item.get("expression") or ""))
+        expr = str(item.get("expression") or "")
+        if not expr:
+            from claynext.models.gender_voices import delivery_for_intent, detect_line_intent
+
+            expr = delivery_for_intent(item.get("intent") or detect_line_intent(text_to_speak))
+        tag = expression_tag(expr)
         if tag and text_to_speak and not has_expression_tags(text_to_speak):
             text_to_speak = f"{tag} {text_to_speak}"
         raw_mp3 = str(job / f"seg_{idx + 1:04d}.mp3")
@@ -490,6 +510,13 @@ def _speak_lines(
                 min_t, max_t = 0.85, 2.00
             else:
                 min_t, max_t = 0.65, 2.80
+            intent = str(item.get("intent") or "")
+            if intent == "narration":
+                min_t, max_t = max(min_t, 0.90), min(max_t, 1.22)
+            elif intent == "command":
+                min_t, max_t = max(min_t, 0.95), min(max_t, 1.40)
+            elif intent in {"plea", "aside"}:
+                min_t, max_t = min_t, min(max_t, 1.25)
             try:
                 fit_duration(raw_mp3, fitted, slot, min_tempo=min_t, max_tempo=max_t, pad_or_trim=False, never_trim=True)
             except Exception:
@@ -611,13 +638,18 @@ class DubbingEngine:
         except Exception:
             want_stems = True
         bgm_separated, vocals_path = None, None
+        effects_path, music_path = "", ""
         if want_stems:
-            ping(9, "Separating music / vocals (when available)…")
-            bgm_separated, vocals_path = _try_demucs(
+            ping(9, "Isolating vocals, music, and effects…")
+            stems = _try_demucs(
                 full_wav,
                 job,
                 lambda p, m: ping(9 + int(max(0, min(100, int(p))) * 0.06), m),
             )
+            bgm_separated = stems.get("bed") or None
+            vocals_path = stems.get("vocals") or None
+            effects_path = stems.get("effects") or ""
+            music_path = stems.get("music") or ""
             ping(15, "Vocal stem ready…" if vocals_path else "Using full mix for ASR…")
         else:
             ping(9, "Fast path · skipping stem separation…")
@@ -790,6 +822,8 @@ class DubbingEngine:
                 "bed_path": bed or "",
                 "clean_audio": clean_audio if os.path.isfile(clean_audio) else "",
                 "vocals_path": vocals_path if vocals_path and os.path.isfile(vocals_path) else "",
+                "effects_path": effects_path if effects_path and os.path.isfile(effects_path) else "",
+                "music_path": music_path if music_path and os.path.isfile(music_path) else "",
             }
 
         # Step 5: Fast Timeline Composition & Broadcast Voiceover Mastering
@@ -884,5 +918,7 @@ class DubbingEngine:
             "dialogue_path": dialogue if os.path.isfile(dialogue) else "",
             "clean_audio": clean_audio if os.path.isfile(clean_audio) else "",
             "vocals_path": vocals_path if vocals_path and os.path.isfile(vocals_path) else "",
+            "effects_path": effects_path if effects_path and os.path.isfile(effects_path) else "",
+            "music_path": music_path if music_path and os.path.isfile(music_path) else "",
         }
 

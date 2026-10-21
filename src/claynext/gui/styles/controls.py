@@ -62,6 +62,14 @@ def controls_qss(accent: str, wash: str) -> str:
     background-color: {COLOR_BG_STATUSBAR};
     border-top: 1px solid {COLOR_BORDER};
 }}
+#status_elapsed {{
+    color: {COLOR_TEXT_MAIN};
+    font-size: 11px;
+    font-weight: 600;
+    font-family: "Menlo", "SF Mono", monospace;
+    background: transparent;
+    padding-right: 4px;
+}}
 #status_message {{
     color: {COLOR_TEXT_SUB};
     font-size: 11px;

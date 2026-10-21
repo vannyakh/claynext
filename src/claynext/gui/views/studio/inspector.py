@@ -31,6 +31,46 @@ class InspectorTools:
         self.text_styles.add_requested.connect(self._add_text_style)
         return self.text_styles
 
+    def _build_watermark_panel(self) -> QWidget:
+        from claynext.gui.components.inspector.watermark import WatermarkPanel
+
+        self.watermark_panel = WatermarkPanel()
+        self.watermark_panel.apply_requested.connect(self._apply_watermark)
+        return self.watermark_panel
+
+    def _apply_watermark(self, style: dict):
+        self._watermark_quiet = True
+        try:
+            clip = self.timeline.apply_watermark(style)
+            if clip:
+                self.log.info(f"Watermark · {clip.label}")
+            self._sync_preview_overlays(force=True)
+        finally:
+            self._watermark_quiet = False
+
+    def _is_watermark_clip(self, clip) -> bool:
+        if clip is None:
+            return False
+        if clip.extra.get("watermark"):
+            return True
+        overlay = clip.extra.get("overlay")
+        return isinstance(overlay, dict) and bool(overlay.get("watermark"))
+
+    def _edit_watermark_clip(self, clip):
+        from claynext.gui.components.inspector.watermark import edit_watermark_style
+
+        overlay = dict(clip.extra.get("overlay") or {})
+        overlay["watermark"] = True
+        overlay.setdefault("text", clip.label)
+        overlay.setdefault("kind", clip.kind)
+        edited = edit_watermark_style(self, overlay)
+        if not edited:
+            return
+        self.timeline.update_watermark(clip.id, edited)
+        self._sync_preview_overlays(force=True)
+        if hasattr(self, "log"):
+            self.log.info(f"Watermark · {edited.get('text') or clip.label}")
+
     def _build_fx_panel(self, kind: str) -> QWidget:
         panel = FxShelfPanel(kind)
         panel.add_requested.connect(self._add_text_style)
@@ -436,6 +476,17 @@ class InspectorTools:
         track = canvas.track_by_id(track_id) if track_id else None
         if clip and not track:
             track = canvas.track_by_id(clip.track_id)
+        if self._is_watermark_clip(clip):
+            # The watermark has its own style window. Leave the text inspector alone.
+            if (
+                hasattr(self, "prop_stack")
+                and self.prop_stack.currentIndex() == _PROPS_PAGE
+            ):
+                self.prop_stack.setCurrentIndex(_PROJECT_PAGE)
+                self._sync_props_header()
+            if not getattr(self, "_watermark_quiet", False):
+                self._edit_watermark_clip(clip)
+            return
         # Captions are text — their settings live in the track inspector.
         if track:
             source = ""

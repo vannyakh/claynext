@@ -53,7 +53,8 @@ class CanvasLayout:
             return found[0]
         n = sum(1 for t in self.tracks if t.kind == kind) + 1
         track = new_track(kind, n)
-        self.tracks.append(track)
+        # The top row is layer 1. A new lane opens there.
+        self.tracks.insert(0, track)
         return track
 
     def free_track(self, kind: str, start_ms: int, end_ms: int) -> TimelineTrack:
@@ -69,8 +70,7 @@ class CanvasLayout:
             if not track.locked and not busy:
                 return track
         track = new_track(kind, len(same) + 1)
-        index = self.tracks.index(same[-1]) + 1 if same else len(self.tracks)
-        self.tracks.insert(index, track)
+        self.tracks.insert(0, track)
         return track
 
     def track_top(self, tid: str) -> int:
@@ -130,10 +130,18 @@ class CanvasLayout:
             self.clips_changed.emit()
 
     def reorder_track(self, from_idx: int, to_idx: int):
-        if 0 <= from_idx < len(self.tracks) and 0 <= to_idx < len(self.tracks) and from_idx != to_idx:
-            track = self.tracks.pop(from_idx)
-            self.tracks.insert(to_idx, track)
-            self._relayout()
+        """Move a lane. `to_idx` is the insert slot in the list before the move (top is 0)."""
+        count = len(self.tracks)
+        if not (0 <= from_idx < count):
+            return
+        to_idx = max(0, min(count, int(to_idx)))
+        if from_idx == to_idx or from_idx + 1 == to_idx:
+            return
+        track = self.tracks.pop(from_idx)
+        if to_idx > from_idx:
+            to_idx -= 1
+        self.tracks.insert(to_idx, track)
+        self._relayout()
 
     def fit_to_height(self, h: int):
         self._fill_h = max(48, int(h))
@@ -161,11 +169,20 @@ class CanvasLayout:
         ms = max(0, int(ms))
         for clip in self.clips:
             if clip.kind == "video" and clip.extra.get("master"):
-                clip.extra["file_ms"] = ms
-                if self.duration_ms <= 0 or clip.duration_ms >= self.duration_ms - 50:
+                file_ms = int(clip.extra.get("file_ms") or 0)
+                inn = int(clip.extra.get("in_ms") or 0)
+                untrimmed = (
+                    not clip.extra.get("user_trim")
+                    and clip.start_ms == 0
+                    and inn == 0
+                )
+                clip.extra["file_ms"] = max(file_ms, ms)
+                if untrimmed and ms > clip.duration_ms:
                     clip.duration_ms = max(ms, 1000)
-                    clip.label = self.media_name or "Footage"
+                    clip.label = self.media_name or clip.label or "Footage"
         self.duration_ms = max(self.duration_ms, ms)
+        if hasattr(self, "fit_source_to_timeline"):
+            self.fit_source_to_timeline()
         self._relayout()
 
     def set_playhead_ms(self, ms: int):

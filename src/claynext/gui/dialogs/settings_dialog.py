@@ -632,7 +632,7 @@ class SettingsDialog(QDialog):
             btn = QPushButton("Install")
             btn.setObjectName("settings_copy_btn")
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setToolTip(f"uv sync --extra {extra}")
+            btn.setToolTip("Installs once and keeps the tools already on this machine.")
             btn.clicked.connect(
                 lambda _=False, i=fid, e=extra, n=item["label"]: self._install_feature(i, e, n)
             )

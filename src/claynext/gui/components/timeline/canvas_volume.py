@@ -167,10 +167,12 @@ class CanvasVolume:
 
     def _volume_clip_at(self, pos: QPoint) -> TimelineClip | None:
         track = self.track_at_y(pos.y())
-        if not track or track.kind not in {"video", "voice", "audio"}:
+        if not track or track.kind not in {"voice", "audio"}:
+            return None
+        if getattr(track, "silent", False):
             return None
         clip = self.clip_at(pos)
-        if not clip or clip.kind not in {"video", "voice", "audio"}:
+        if not clip or clip.kind not in {"voice", "audio"} or clip.extra.get("no_audio"):
             return None
         if self._key_at(clip, pos) >= 0:
             return clip
@@ -180,7 +182,9 @@ class CanvasVolume:
 
     def _paint_volume_line(self, p: QPainter, clip: TimelineClip):
         track = self.track_by_id(clip.track_id)
-        if not track or clip.kind not in {"video", "voice", "audio"}:
+        if not track or clip.kind not in {"voice", "audio"} or clip.extra.get("no_audio"):
+            return
+        if getattr(track, "silent", False):
             return
         rect = self.clip_rect(clip)
         left, right = rect.left() + 2, rect.right() - 2
@@ -270,10 +274,15 @@ class CanvasVolume:
     ) -> int:
         spans = self.voice_spans() if include_voice else []
         spans = sorted(spans + [(int(a), int(b)) for a, b in (extra_spans or []) if b > a])
-        footage = self.footage_clips()
-        if not footage:
+        targets = self.mix_audio_clips() if hasattr(self, "mix_audio_clips") else []
+        if not targets:
+            targets = self.footage_clips()
+        if not targets:
             return 0
         self.push_history()
+        if targets[0].kind == "audio":
+            for clip in self.footage_clips():
+                clip.extra.pop("keys", None)
         fade = max(20, int(fade_ms))
         level = max(0.0, min(1.0, float(level)))
         if level <= 0.02:
@@ -284,7 +293,7 @@ class CanvasVolume:
                 merged[-1][1] = max(merged[-1][1], end)
             else:
                 merged.append([start, end])
-        for clip in footage:
+        for clip in targets:
             keys: list[list[float]] = []
             for start, end in merged:
                 if end <= clip.start_ms or start >= clip.end_ms:

@@ -355,7 +355,12 @@ class WorkspaceTools:
                 stage.restore_state(data)
             dock = stage.dock("sequences")
             if dock is not None:
-                self._place_sequences(stage.host.dockWidgetArea(dock))
+                area = stage.host.dockWidgetArea(dock)
+                # The old default was a strip above the timeline. Keep the column on the right.
+                if area == Qt.DockWidgetArea.TopDockWidgetArea:
+                    stage.host.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+                    area = Qt.DockWidgetArea.RightDockWidgetArea
+                self._place_sequences(area)
             self._show_sequences(bool(getattr(self.timeline.sequences, "_names", None)))
         self._sync_panel_actions()
         self._layout_ready = True
@@ -407,7 +412,7 @@ class WorkspaceTools:
         stage = getattr(self, "timeline_stage", None)
         if stage is not None:
             stage.reset_layout()
-            self._place_sequences(Qt.DockWidgetArea.TopDockWidgetArea)
+            self._place_sequences(Qt.DockWidgetArea.RightDockWidgetArea)
             self._show_sequences(bool(getattr(self.timeline.sequences, "_names", None)))
         self._sync_panel_actions()
         self._layout_ready = True

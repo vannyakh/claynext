@@ -110,6 +110,25 @@ class CanvasEdit:
         self.tracks = keep
         return changed
 
+    def prune_empty_tracks(self, keep: str = "") -> bool:
+        """Drop lanes with no clips. The master film lane stays."""
+        used = {clip.track_id for clip in self.clips}
+        source = self.source_track() if hasattr(self, "source_track") else None
+        keep_ids = {keep} if keep else set()
+        if source is not None:
+            keep_ids.add(source.id)
+        else:
+            video = next((track for track in self.tracks if track.kind == "video"), None)
+            if video is not None:
+                keep_ids.add(video.id)
+        kept = [track for track in self.tracks if track.id in used or track.id in keep_ids]
+        if not kept:
+            kept = [new_track("video")]
+        if [track.id for track in kept] == [track.id for track in self.tracks]:
+            return False
+        self.tracks = kept
+        return True
+
     def _split_seam_at(self, pos: QPoint) -> tuple[dict, str] | None:
         """Hit test for split seam buttons or applied transition blocks."""
         for seam in self.find_split_seams():
@@ -424,8 +443,12 @@ class CanvasEdit:
         self.push_history()
         n = sum(1 for t in self.tracks if t.kind == kind) + 1
         track = new_track(kind, n)
-        self.tracks.append(track)
-        self._relayout()
+        self.tracks.insert(0, track)
+        self._suspend_prune = True
+        try:
+            self._relayout()
+        finally:
+            self._suspend_prune = False
         return track
 
     def delete_track(self, tid: str) -> bool:
@@ -544,4 +567,5 @@ class CanvasEdit:
             return
         self.clips = keep
         self.selected_ids.clear()
+        self.prune_empty_tracks()
         self._relayout()

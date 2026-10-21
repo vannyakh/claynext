@@ -131,10 +131,19 @@ ANIM_LOOP: list[tuple[str, str]] = [
     ("none", "None"), ("pulse", "Pulse"), ("blink", "Blink"), ("float", "Float"), ("wiggle", "Wiggle"),
     ("highlight", "Highlight pulse"),
 ]
+# Watermark travel. Kept off the text inspector; the style window offers these.
+WATERMARK_LOOPS: list[tuple[str, str]] = [
+    ("slide_bottom", "Slide from bottom"),
+    ("slide_top", "Slide from top"),
+    ("slide_left", "Slide from left"),
+    ("slide_right", "Slide from right"),
+    ("curve", "Curve bound"),
+]
+_BOUND_LOOPS = {key for key, _ in WATERMARK_LOOPS}
 _ANIM_KEYS = {
     "anim_in": {key for key, _ in ANIM_IN},
     "anim_out": {key for key, _ in ANIM_OUT},
-    "anim_loop": {key for key, _ in ANIM_LOOP},
+    "anim_loop": {key for key, _ in ANIM_LOOP} | _BOUND_LOOPS,
 }
 
 
@@ -292,6 +301,62 @@ def _shape(frame: dict, kind: str, presence: float, leaving: bool):
         frame[key] = away + (base - away) * p
 
 
+def _bound_point(loop: str, u: float) -> tuple[float, float]:
+    """A point on the frame edge, in canvas-height units from the centre."""
+    aspect = 16 / 9
+    inset_x, inset_y = 0.12, 0.14
+    left, right = inset_x, 1.0 - inset_x
+    top, bottom = inset_y, 1.0 - inset_y
+    t = u % 1.0
+    if loop == "slide_bottom":
+        nx, ny = left + (right - left) * t, bottom
+    elif loop == "slide_top":
+        nx, ny = left + (right - left) * t, top
+    elif loop == "slide_left":
+        nx, ny = left, bottom + (top - bottom) * t
+    elif loop == "slide_right":
+        nx, ny = right, top + (bottom - top) * t
+    else:
+        nx, ny = _curve_norm(t, left, right, top, bottom)
+    return (nx - 0.5) * aspect, ny - 0.5
+
+
+def _curve_norm(u: float, left: float, right: float, top: float, bottom: float) -> tuple[float, float]:
+    """Rounded rectangle around the frame, starting at the bottom and running clockwise on screen."""
+    aspect = 16 / 9
+    hw = (0.5 - left) * aspect
+    hh = bottom - 0.5
+    rad = min(0.10, hw * 0.45, hh * 0.45)
+    horiz = max(0.04, 2 * (hw - rad))
+    vert = max(0.04, 2 * (hh - rad))
+    arc = math.pi * rad / 2
+    lengths = (horiz, arc, vert, arc, horiz, arc, vert, arc)
+    total = sum(lengths)
+    dist = (u % 1.0) * total
+    # Bottom straight, left to right, then the bottom-right curve, and so on.
+    samples = (
+        lambda f: (-hw + rad + horiz * f, hh),
+        lambda f: _arc(hw - rad, hh - rad, rad, math.pi / 2, 0.0, f),
+        lambda f: (hw, hh - rad - vert * f),
+        lambda f: _arc(hw - rad, -hh + rad, rad, 0.0, -math.pi / 2, f),
+        lambda f: (hw - rad - horiz * f, -hh),
+        lambda f: _arc(-hw + rad, -hh + rad, rad, -math.pi / 2, -math.pi, f),
+        lambda f: (-hw, -hh + rad + vert * f),
+        lambda f: _arc(-hw + rad, hh - rad, rad, math.pi, math.pi / 2, f),
+    )
+    for index, (length, sample) in enumerate(zip(lengths, samples)):
+        if dist <= length or index == len(samples) - 1:
+            x, y = sample(0.0 if length <= 0 else _clamp(dist / length, 0.0, 1.0))
+            return 0.5 + x / aspect, 0.5 + y
+        dist -= length
+    return 0.5, bottom
+
+
+def _arc(cx: float, cy: float, rad: float, a0: float, a1: float, f: float) -> tuple[float, float]:
+    ang = a0 + (a1 - a0) * f
+    return cx + rad * math.cos(ang), cy + rad * math.sin(ang)
+
+
 def anim_frame(style: dict, t_ms: float, dur_ms: float) -> dict:
     """Animated offsets at `t_ms` into a clip of `dur_ms`: alpha, dx/dy (canvas heights), scale, rot, reveal."""
     frame = _identity()
@@ -302,6 +367,13 @@ def anim_frame(style: dict, t_ms: float, dur_ms: float) -> dict:
     if loop != "none":
         period = max(100, int(style.get("anim_loop_ms") or 1200))
         u = (t % period) / period
+        if loop in _BOUND_LOOPS:
+            home_x = float(style.get("x", 0.5) or 0.5)
+            home_y = float(style.get("y", 0.5) or 0.5)
+            px, py = _bound_point(loop, u)
+            frame["dx"] = px - (home_x - 0.5) * (16 / 9)
+            frame["dy"] = py - (home_y - 0.5)
+            return frame
         wave = math.sin(2 * math.pi * u)
         if loop == "pulse":
             frame["scale"] = 1.0 + 0.08 * wave
@@ -407,6 +479,8 @@ def _rounded_box(w: float, h: float, r: float) -> str:
 def ass_events(item: dict, text: str, start_s: float, end_s: float, width: int, height: int) -> list[str]:
     """Dialogue lines (background box + text) that burn one styled, animated text item into the video."""
     style = clean_text_style(item)
+    style["x"] = float(item.get("x", 0.5) or 0.5)
+    style["y"] = float(item.get("y", 0.5) or 0.5)
     text = apply_case(str(text or ""), style["case"])
     if not text.strip() or end_s <= start_s:
         return []

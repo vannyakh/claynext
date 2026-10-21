@@ -20,7 +20,7 @@ from claynext.constants.theme_constants import (
     COLOR_TEXT_MAIN, COLOR_PRIMARY, COLOR_BORDER, COLOR_BG_CARD, COLOR_BG_SIDEBAR,
 )
 from claynext.gui.icons import icon
-from claynext.models.thumbnails import VIDEO_EXTS, IMAGE_EXTS, icon_for, pixmap_for, thumb_path_for
+from claynext.models.thumbnails import VIDEO_EXTS, IMAGE_EXTS, icon_for, pixmap_for
 from claynext.gui.worker import Worker
 
 from claynext.gui.components.shell.shelf_header import make_shelf_button, make_shelf_header
@@ -841,7 +841,6 @@ class TaskTools:
             "comp": comp,
         }
         self._tasks.append(task)
-        self._request_task_thumb(source)
         if refresh:
             self._refresh_tasks()
         return task
@@ -868,7 +867,10 @@ class TaskTools:
         task["message"] = "Starting…"
         task["live"] = []
         self._active_task = task["id"]
-        self._refresh_tasks()
+        if not self._patch_status_progress(task):
+            self._refresh_tasks()
+        else:
+            self._sync_task_hint()
         return task
 
     def _task_progress(self, value: int, message: str, task_id: int | None = None):
@@ -1132,14 +1134,28 @@ class TaskTools:
             return None
         if path in self._task_thumbs:
             return self._task_thumbs[path]
-        # Fast synchronous lookup from disk thumbnail cache
-        t_file = thumb_path_for(path, 160)
-        if t_file.is_file() and t_file.stat().st_size > 0:
-            pix = QPixmap(str(t_file))
-            if not pix.isNull():
-                self._task_thumbs[path] = pix
-                return pix
         return None
+
+    def _request_visible_thumbs(self) -> None:
+        """Decode posters for the rows on screen. The rest wait until they scroll in."""
+        table = getattr(self, "task_table", None)
+        if table is None:
+            return
+        visible = self._visible_tasks()
+        if not visible:
+            return
+        height = max(1, table.viewport().height())
+        top = table.rowAt(0)
+        bottom = table.rowAt(height - 1)
+        if top < 0:
+            top = 0
+        if bottom < 0:
+            bottom = min(len(visible) - 1, top + 24)
+        bottom = min(len(visible) - 1, bottom + 4)
+        for row in range(top, bottom + 1):
+            src = str(visible[row].get("source") or "")
+            if src and src not in self._task_thumbs:
+                self._request_task_thumb(src)
 
     def _request_task_thumb(self, path: str):
         path = str(path or "")
@@ -1695,56 +1711,61 @@ class TaskTools:
         # Drop checks for tasks that no longer exist.
         live_ids = {t["id"] for t in self._tasks}
         # Clean up existing cell widgets to prevent orphans lingering in viewport
-        for r in range(table.rowCount()):
-            old_w = table.cellWidget(r, _CHECK_COL)
-            if old_w is not None:
-                table.removeCellWidget(r, _CHECK_COL)
-                old_w.hide()
-                old_w.deleteLater()
-
+        table.setUpdatesEnabled(False)
         table.blockSignals(True)
-        table.setRowCount(len(visible))
+        try:
+            for r in range(table.rowCount()):
+                old_w = table.cellWidget(r, _CHECK_COL)
+                if old_w is not None:
+                    table.removeCellWidget(r, _CHECK_COL)
+                    old_w.hide()
+                    old_w.deleteLater()
 
-        current = -1
-        for row, task in enumerate(visible):
-            src = str(task.get("source") or "")
-            pix = self._task_thumb_pixmap(src)
-            if pix is None and src:
-                self._request_task_thumb(src)
+            table.setRowCount(len(visible))
 
-            # Centered checkbox cell widget
-            check_item = QTableWidgetItem()
-            check_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-            check_item.setData(Qt.ItemDataRole.UserRole, task["id"])
-            table.setItem(row, _CHECK_COL, check_item)
-            table.setCellWidget(row, _CHECK_COL, self._make_row_check(task["id"]))
+            current = -1
+            for row, task in enumerate(visible):
+                src = str(task.get("source") or "")
+                pix = self._task_thumbs.get(src) if src else None
 
-            index = QTableWidgetItem(str(row + 1))
-            index.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            index.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-            index.setForeground(QColor(COLOR_TEXT_MUTED))
-            table.setItem(row, _INDEX_COL, index)
+                check_item = QTableWidgetItem()
+                check_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                check_item.setData(Qt.ItemDataRole.UserRole, task["id"])
+                table.setItem(row, _CHECK_COL, check_item)
+                table.setCellWidget(row, _CHECK_COL, self._make_row_check(task["id"]))
 
-            name = QTableWidgetItem(task["name"])
-            name.setIcon(self._task_icon(task))
-            if pix is not None and not pix.isNull():
-                name.setData(Qt.ItemDataRole.UserRole + 4, pix)
-            name.setToolTip(self._format_task_tooltip(task))
-            name.setData(Qt.ItemDataRole.UserRole, task["id"])
-            name.setData(Qt.ItemDataRole.UserRole + 3, self._format_task_subtitle(task))
-            table.setItem(row, _NAME_COL, name)
-            table.setRowHeight(row, _ROW_H)
-            self._sync_status_cell(row, task)
-            if task["id"] == self._task_selected_id:
-                current = row
+                index = QTableWidgetItem(str(row + 1))
+                index.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                index.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                index.setForeground(QColor(COLOR_TEXT_MUTED))
+                table.setItem(row, _INDEX_COL, index)
 
-        for task_id in [tid for tid in self._task_cells if tid not in live_ids]:
-            self._task_cells.pop(task_id, None)
-        if current >= 0:
-            table.selectRow(current)
-        else:
-            table.clearSelection()
-        table.blockSignals(False)
+                name = QTableWidgetItem(task["name"])
+                name.setIcon(self._task_icon(task))
+                if pix is not None and not pix.isNull():
+                    name.setData(Qt.ItemDataRole.UserRole + 4, pix)
+                name.setToolTip(self._format_task_tooltip(task))
+                name.setData(Qt.ItemDataRole.UserRole, task["id"])
+                name.setData(Qt.ItemDataRole.UserRole + 3, self._format_task_subtitle(task))
+                table.setItem(row, _NAME_COL, name)
+                table.setRowHeight(row, _ROW_H)
+                self._sync_status_cell(row, task)
+                if task["id"] == self._task_selected_id:
+                    current = row
+
+            for task_id in [tid for tid in self._task_cells if tid not in live_ids]:
+                self._task_cells.pop(task_id, None)
+            if current >= 0:
+                table.selectRow(current)
+            else:
+                table.clearSelection()
+        finally:
+            table.blockSignals(False)
+            table.setUpdatesEnabled(True)
+        if not getattr(self, "_thumb_scroll_hooked", False):
+            table.verticalScrollBar().valueChanged.connect(lambda _v: self._request_visible_thumbs())
+            self._thumb_scroll_hooked = True
+        self._request_visible_thumbs()
 
         self._sync_header_check()
         self._sync_export_enabled()
@@ -1753,6 +1774,8 @@ class TaskTools:
         self._sync_task_hint()
         self._sync_timeline_button()
         self._place_header_check()
+        if hasattr(self, "_sync_sequence_activity"):
+            self._sync_sequence_activity()
         # Animate STATUS spinner while any visible task is running/paused
         delegate = self.task_table.itemDelegateForColumn(_STATUS_COL)
         if isinstance(delegate, StatusBadgeDelegate):

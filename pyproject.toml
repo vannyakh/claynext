@@ -18,6 +18,7 @@ dependencies = [
     "qt-pyqt-pyside-custom-widgets",
     "sentencepiece>=0.2.2",
     "transformers>=4.57.6",
+    "typesafe-sdk>=0.7.5",
 ]
 
 [project.optional-dependencies]

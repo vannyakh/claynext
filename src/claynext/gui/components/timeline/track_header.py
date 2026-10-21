@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal, QPoint
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QToolButton,
     QSlider, QSizePolicy,
@@ -30,7 +30,8 @@ class TrackHeader(QWidget):
     duplicate_requested = Signal(str)
     selected = Signal(str, bool)
     height_changed = Signal(str, int)
-    reorder_dragged = Signal(str, int)
+    reorder_moved = Signal(str, int)
+    reorder_finished = Signal(str, int)
     renamed = Signal(str, str)
     context_menu_requested = Signal(str, QPoint)
 
@@ -45,6 +46,9 @@ class TrackHeader(QWidget):
         self._press_y = 0
         self._press_h = track.height
         self._dragging_track = False
+        self._drag_moved = False
+        self._drop_hint = False
+        self._press_multi = False
         self._drag_start_y = 0
         self._compact = False
         self._can_delete = True
@@ -65,7 +69,7 @@ class TrackHeader(QWidget):
         self.grip.setObjectName("timeline_track_grip")
         self.grip.setFixedSize(10, 14)
         self.grip.setPixmap(icon("grab", color="#4b5563", size=9).pixmap(10, 14))
-        self.grip.setToolTip("Drag to reorder track")
+        self.grip.setToolTip("Drag to change layer")
         self.grip.setCursor(Qt.CursorShape.SizeAllCursor)
 
         self.ico = QLabel()
@@ -134,7 +138,7 @@ class TrackHeader(QWidget):
         # ─── Sound / Visibility Controls ───
         self.btn_mute = None
         self.btn_solo = None
-        if self.track.kind in _SOUND_KINDS:
+        if self.track.kind in _SOUND_KINDS and not getattr(self.track, "silent", False):
             self.btn_mute = QToolButton()
             self.btn_mute.setObjectName("timeline_btn_mute")
             self.btn_mute.setCheckable(True)
@@ -354,6 +358,20 @@ class TrackHeader(QWidget):
     def _near_resize(self, y: float) -> bool:
         return y >= self.height() - 5
 
+    def set_drop_hint(self, edge: str):
+        self._drop_hint = edge if edge in {"top", "bottom"} else ""
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        edge = getattr(self, "_drop_hint", "")
+        if edge not in {"top", "bottom"}:
+            return
+        painter = QPainter(self)
+        painter.setPen(QPen(QColor(COLOR_PRIMARY), 2))
+        y = 1 if edge == "top" else max(1, self.height() - 2)
+        painter.drawLine(0, y, self.width(), y)
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self._near_resize(event.position().y()):
             self._resize = True
@@ -363,15 +381,16 @@ class TrackHeader(QWidget):
             event.accept()
             return
         if event.button() == Qt.MouseButton.LeftButton:
-            multi = bool(event.modifiers() & (
+            self._dragging_track = True
+            self._drag_moved = False
+            self._drag_start_y = int(event.globalPosition().y())
+            self._press_multi = bool(event.modifiers() & (
                 Qt.KeyboardModifier.ControlModifier
                 | Qt.KeyboardModifier.MetaModifier
                 | Qt.KeyboardModifier.ShiftModifier
             ))
-            self.selected.emit(self.track.id, multi)
-            self._dragging_track = True
-            self._drag_start_y = int(event.globalPosition().y())
-            self.setCursor(Qt.CursorShape.SizeAllCursor)
+            event.accept()
+            return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -382,9 +401,10 @@ class TrackHeader(QWidget):
             return
         if getattr(self, "_dragging_track", False):
             delta_y = int(event.globalPosition().y()) - self._drag_start_y
-            if abs(delta_y) > 16:
-                self.reorder_dragged.emit(self.track.id, delta_y)
-                self._drag_start_y = int(event.globalPosition().y())
+            if abs(delta_y) > 6:
+                self._drag_moved = True
+                self.setCursor(Qt.CursorShape.SizeAllCursor)
+                self.reorder_moved.emit(self.track.id, int(event.globalPosition().y()))
             return
         self.setCursor(
             Qt.CursorShape.SizeVerCursor if self._near_resize(event.position().y())
@@ -395,11 +415,23 @@ class TrackHeader(QWidget):
     def mouseReleaseEvent(self, event):
         self._resize = False
         if getattr(self, "_dragging_track", False):
+            moved = bool(self._drag_moved)
             self._dragging_track = False
+            self._drag_moved = False
             self.unsetCursor()
+            if moved:
+                self.reorder_finished.emit(self.track.id, int(event.globalPosition().y()))
+            else:
+                self.selected.emit(self.track.id, bool(self._press_multi))
+            event.accept()
+            return
         super().mouseReleaseEvent(event)
 
     def refresh_flags(self):
+        silent = bool(getattr(self.track, "silent", False))
+        if self.btn_mute is not None:
+            self.btn_mute.setVisible(not silent)
+            self.btn_mute.setEnabled(not silent)
         if self.btn_mute is not None:
             self.btn_mute.blockSignals(True)
             self.btn_mute.setChecked(self.track.muted)

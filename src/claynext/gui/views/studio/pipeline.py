@@ -103,8 +103,13 @@ class PipelineTools:
             self._measure_merge_sources(sources)
             return
         if len(sources) > 1:
-            self.log.info(f"Dedicated · {len(sources)} sequences · one job each")
-        self._launch_next_or_finish()
+            self.log.info(
+                f"Dedicated · {len(sources)} sequences · "
+                f"{self._batch_width()} at a time"
+            )
+        # Paint the queue first. The movie job starts on the next turn.
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._launch_next_or_finish)
 
     def _start_dub_defaults(self) -> dict:
         try:
@@ -767,6 +772,8 @@ class PipelineTools:
                 dialogue=str(res.get("dialogue_path") or ""),
                 clean_audio=str(res.get("clean_audio") or ""),
                 vocals=str(res.get("vocals_path") or ""),
+                effects=str(res.get("effects_path") or ""),
+                music=str(res.get("music_path") or ""),
                 duck=True,
                 apply=False,
                 stash=False,
@@ -787,6 +794,8 @@ class PipelineTools:
                 dialogue=str(res.get("dialogue_path") or ""),
                 clean_audio=str(res.get("clean_audio") or ""),
                 vocals=str(res.get("vocals_path") or ""),
+                effects=str(res.get("effects_path") or ""),
+                music=str(res.get("music_path") or ""),
                 duck=True,
                 apply=apply_now,
             )
@@ -853,6 +862,8 @@ class PipelineTools:
                     self.combo_voice.currentText(),
                     bed=str(res.get("bed_path") or ""),
                     dialogue=str(res.get("dialogue_path") or ""),
+                    effects=str(res.get("effects_path") or ""),
+                    music=str(res.get("music_path") or ""),
                     duck=False,
                     apply=False,
                 )
@@ -1083,6 +1094,8 @@ class PipelineTools:
             clip for clip in canvas.clips
             if not (isinstance(clip.extra, dict) and clip.extra.get("auto_picture"))
         ]
+        if hasattr(canvas, "fit_source_to_timeline"):
+            canvas.fit_source_to_timeline()
         span = canvas.master_span()
         start, dur = span if span else (0, max(int(canvas.duration_ms or 0), 1000))
         from claynext.models.fx import DEFAULT_INTENSITY, EFFECT_LABELS, FILTER_LOOKS
@@ -1141,6 +1154,7 @@ class PipelineTools:
         self, output: str, segments: list, source: str, language: str, voice: str,
         bed: str = "", dialogue: str = "", duck: bool = False, footage: list | None = None,
         clean_audio: str = "", vocals: str = "",
+        effects: str = "", music: str = "",
         apply: bool = True,
         stash: bool = True,
         select: bool = True,
@@ -1161,6 +1175,8 @@ class PipelineTools:
             "dialogue": dialogue,
             "clean_audio": clean_audio,
             "vocals": vocals,
+            "effects": effects,
+            "music": music,
             "duck": duck,
             "footage": list(footage or []),
         })
@@ -1221,6 +1237,14 @@ class PipelineTools:
     def _on_composition_changed(self, index: int):
         if index == int(getattr(self, "_composition_index", -1)):
             return
+        self._sequence_loading = index
+        self._sync_sequence_activity()
+        QTimer.singleShot(0, lambda i=index: self._load_sequence_tab(i))
+
+    def _load_sequence_tab(self, index: int) -> None:
+        """Open the tab the user picked. The spinner stays while that sequence is the active job."""
+        if getattr(self, "_sequence_loading", -1) != index:
+            return
         self._stash_composition()
         self._sequence_switching = True
         try:
@@ -1231,8 +1255,38 @@ class PipelineTools:
                 self.timeline.end_sequence()
         finally:
             self._sequence_switching = False
-        # Let the new clips paint, then open the picture once.
+            self._sequence_loading = -1
+            self._sync_sequence_activity()
         QTimer.singleShot(0, self.show_timeline_player)
+
+    def _sync_sequence_activity(self) -> None:
+        """Spinner on the sequence that is working, and in the panel while any job is in flight."""
+        bar = getattr(getattr(self, "timeline", None), "sequences", None)
+        if bar is None or not hasattr(bar, "set_busy"):
+            return
+        busy: set[int] = set()
+        for task in getattr(self, "_tasks", None) or []:
+            if task.get("status") not in {"running", "paused", "queued"}:
+                continue
+            comp = task.get("comp", -1)
+            if isinstance(comp, int) and comp >= 0:
+                busy.add(comp)
+        if getattr(self, "_dub_busy", False) and not busy:
+            active = int(getattr(self, "_active_task", -1))
+            for task in getattr(self, "_tasks", None) or []:
+                if task.get("id") == active:
+                    comp = task.get("comp", -1)
+                    if isinstance(comp, int) and comp >= 0:
+                        busy.add(comp)
+                    break
+            else:
+                current = int(getattr(self, "_composition_index", -1))
+                if current >= 0:
+                    busy.add(current)
+        loading = getattr(self, "_sequence_loading", -1)
+        if isinstance(loading, int) and loading >= 0:
+            busy.add(loading)
+        bar.set_busy(busy)
 
     def _sequence_names(self) -> list[str]:
         return [str(comp.get("name") or "") for comp in self._compositions]
@@ -1350,16 +1404,26 @@ class PipelineTools:
         bed = str(comp.get("bed") or "")
         clean = str(comp.get("clean_audio") or "")
         vocals = str(comp.get("vocals") or "")
+        effects = str(comp.get("effects") or "")
+        music = str(comp.get("music") or "")
         stems: list[dict] = []
-        if bed and os.path.isfile(bed):
+        split = False
+        if effects and os.path.isfile(effects):
+            stems.append({"label": "Effects", "path": effects, "mute": False})
+            split = True
+        if music and os.path.isfile(music):
+            stems.append({"label": "Music", "path": music, "mute": False})
+            split = True
+        if not split and bed and os.path.isfile(bed):
             stems.append({"label": "Effects", "path": bed, "mute": False})
         if vocals and os.path.isfile(vocals):
             stems.append({"label": "Vocals", "path": vocals, "mute": True})
+        isolated = split or bool(bed and os.path.isfile(bed))
         if clean and os.path.isfile(clean):
             stems.append({
                 "label": "Source audio",
                 "path": clean,
-                "mute": bool(bed and os.path.isfile(bed)),
+                "mute": isolated,
             })
         if stems:
             self.timeline.lay_sync_stems(stems)
@@ -1373,6 +1437,8 @@ class PipelineTools:
             comp["overlays"] = self.timeline.export_overlays(include_hidden=True)
             comp["fx"] = self.timeline.export_fx(include_hidden=True)
             comp["tracks"] = self.timeline.export_tracks()
+            if hasattr(self.timeline, "export_state"):
+                comp["timeline"] = self.timeline.export_state()
             if self._segments:
                 comp["segments"] = [dict(seg) for seg in self._segments]
             comp["duration_ms"] = int(getattr(self.timeline.canvas, "duration_ms", 0) or 0)
@@ -1396,6 +1462,22 @@ class PipelineTools:
         self._output_path = comp.get("output") or ""
         if self.act_open_out:
             self.act_open_out.setEnabled(bool(self._output_path and os.path.isfile(self._output_path)))
+        saved = comp.get("timeline") if isinstance(comp.get("timeline"), dict) else None
+        if saved and saved.get("clips"):
+            self._open_saved_timeline(saved, comp.get("segments") or [])
+            bed = str(comp.get("bed") or "")
+            self.timeline.set_speech_bed(bed if bed and os.path.isfile(bed) else "")
+            clean_source = str(comp.get("source") or "") if not comp.get("output") else ""
+            self.timeline.speech_source = clean_source if clean_source and os.path.isfile(clean_source) else ""
+            self.timeline.set_voice_audio(str(comp.get("dialogue") or ""))
+            if preview:
+                if self._player_mode == "timeline":
+                    self.show_timeline_player()
+                else:
+                    self._sync_player_header()
+            self._sync_timeline_visibility()
+            self._refresh_tasks()
+            return
         masters = comp.get("masters") if comp.get("merged") else None
         if isinstance(masters, list) and masters and hasattr(self.timeline, "replace_masters"):
             self.timeline.replace_masters(masters)
@@ -1450,6 +1532,15 @@ class PipelineTools:
         self._sync_timeline_visibility()
         self._refresh_tasks()
 
+    def _open_saved_timeline(self, state: dict, segments: list) -> None:
+        """Reopen the stored lanes. Do not rebuild them from the dub recipe."""
+        self._skip_dialogue_sync = True
+        try:
+            self._fill_table(list(segments or []))
+        finally:
+            self._skip_dialogue_sync = False
+        self.timeline.apply_state(state)
+
     def _restore_composition_graphics(self, comp: dict, legacy_overlays=None, legacy_fx=None, legacy_tracks=None):
         """Tracks, captions/text, and fx for this dub — migrate old top-level session data once."""
         tracks = comp.get("tracks") if isinstance(comp.get("tracks"), list) else None
@@ -1495,15 +1586,25 @@ class PipelineTools:
 
     def _build_speech_bed(self, index: int, source: str):
         def _job(media: str, progress_callback=None):
-            from claynext.models.features import prefer_demucs_bed, stem_backend
-            from claynext.models.stem_separation import ensure_demucs_speech_bed
+            from claynext.models.features import demucs_model_name, prefer_demucs_bed, stem_backend
+            from claynext.models.stem_separation import separate_movie_stems
             from claynext.adapters.ffmpeg_service import ensure_speech_bed
 
             backend = stem_backend()
             if prefer_demucs_bed() and backend:
-                bed, vocals = ensure_demucs_speech_bed(media, progress_callback=progress_callback)
-                if bed:
-                    return {"bed": bed, "vocals": vocals or "", "backend": backend}
+                split = separate_movie_stems(
+                    media,
+                    model=demucs_model_name(),
+                    progress_callback=progress_callback,
+                )
+                if split.get("bed"):
+                    return {
+                        "bed": split.get("bed") or "",
+                        "vocals": split.get("vocals") or "",
+                        "effects": split.get("effects") or "",
+                        "music": split.get("music") or "",
+                        "backend": backend,
+                    }
             bed = ensure_speech_bed(media, progress_callback=progress_callback, use_demucs=False)
             return {"bed": bed or "", "vocals": "", "backend": None}
 
@@ -1524,10 +1625,16 @@ class PipelineTools:
             backend = result.get("backend")
         if not path:
             return
-        self._compositions[index]["bed"] = path
+        comp = self._compositions[index]
+        comp["bed"] = path
         if vocals:
-            self._compositions[index]["vocals_stem"] = vocals
+            comp["vocals"] = vocals
+            comp["vocals_stem"] = vocals
+        if isinstance(result, dict):
+            comp["effects"] = str(result.get("effects") or "")
+            comp["music"] = str(result.get("music") or "")
         if index == self._composition_index:
+            self._lay_source_stems(comp)
             if self._player_mode == "timeline":
                 dialogue = str(self._compositions[index].get("dialogue") or vocals or "")
                 self.preview.set_stems(path, dialogue)
@@ -1615,6 +1722,7 @@ class PipelineTools:
             )
         if not busy:
             self._update_script_meta()
+        self._sync_sequence_activity()
 
     def _set_footer_progress(self, busy: bool, pct: int = 0, message: str = ""):
         footer = getattr(getattr(self, "media_lib", None), "footer", None)

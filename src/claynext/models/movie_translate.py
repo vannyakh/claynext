@@ -42,7 +42,9 @@ _CAST_KEYS = (
     "gender",
     "gender_manual",
     "expression",
+    "intent",
     "character",
+    "character_role",
     "tts_voice_hint",
     "voice_id",
     "start_sec",
@@ -302,12 +304,18 @@ def translate_movie_dialogue(
         raise RuntimeError("No translation engines available.")
 
     last_err = "Movie translation failed"
+    accepted: dict[str, dict[str, Any]] = {}
+    order = [str(seg.get("id")) for seg in segments]
+    pending = list(segments)
+    repairs = 0
     for i, (label, backend, model) in enumerate(chain):
-        ping(4, f"Movie translate · {len(segments)} line(s) → {native} ({label})…")
+        if not pending:
+            break
+        ping(4, f"Movie translate · {len(pending)} line(s) → {native} ({label})…")
         try:
             if backend == "gemini" or backend in CHAT_PROVIDERS:
                 rows = TranslateEngine._translate_llm(
-                    segments,
+                    pending,
                     target_lang,
                     backend,
                     "",
@@ -317,7 +325,7 @@ def translate_movie_dialogue(
                 )
             elif backend == "ollama":
                 rows = TranslateEngine._translate_llm(
-                    segments,
+                    pending,
                     target_lang,
                     "ollama",
                     model,
@@ -327,22 +335,46 @@ def translate_movie_dialogue(
                 )
             elif backend == "nllb":
                 rows = TranslateEngine._translate_nllb(
-                    segments, target_lang, ping, source_lang=source_lang
+                    pending, target_lang, ping, source_lang=source_lang
                 )
             else:
                 rows = TranslateEngine._translate_google_batched(
-                    segments, target_lang, ping, source_lang=source_lang
+                    pending, target_lang, ping, source_lang=source_lang
                 )
-            merged = _merge_cast(segments, rows)
+            merged = _merge_cast(pending, rows)
             merged = _fill_untranslated(
-                segments, merged, target_lang, source_lang, ping,
+                pending, merged, target_lang, source_lang, ping,
             )
-            ping(100, f"Movie translate ready · {len(merged)} line(s) via {label}")
-            return merged
+            for row in merged:
+                accepted[str(row.get("id"))] = row
+            if repairs >= 1 or i + 1 >= len(chain):
+                break
+            from claynext.models.jev_decisions import weak_translation_ids
+
+            weak = weak_translation_ids(
+                merged,
+                target_lang=target_lang,
+                source_lang=source_lang,
+                progress_callback=ping,
+            )
+            if not weak:
+                break
+            pending = [seg for seg in segments if str(seg.get("id")) in weak]
+            repairs += 1
+            ping(8, f"Jev held back {len(pending)} line(s) · trying the next translator…")
         except Exception as exc:
             last_err = str(exc)
             if i + 1 < len(chain):
                 ping(6, f"{label} unavailable ({exc}); trying next engine…")
                 continue
+            if accepted:
+                break
             raise RuntimeError(last_err) from exc
-    raise RuntimeError(last_err)
+    if not accepted:
+        raise RuntimeError(last_err)
+    ready = [accepted[key] for key in order if key in accepted]
+    for row in accepted.values():
+        if row not in ready:
+            ready.append(row)
+    ping(100, f"Movie translate ready · {len(ready)} line(s)")
+    return ready

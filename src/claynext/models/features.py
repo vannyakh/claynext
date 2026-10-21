@@ -6,6 +6,7 @@ Settings live under Store tool ``studio``.
 """
 from __future__ import annotations
 
+import importlib.util
 import platform
 import threading
 from typing import Any
@@ -30,44 +31,33 @@ DEMUCS_MODELS = (
 )
 
 
-def _detect_demucs_mlx() -> bool:
+def _package_present(name: str) -> bool:
+    """True when the tool is already in this environment. Does not import it."""
     try:
-        import demucs_mlx  # noqa: F401
-        return True
+        return importlib.util.find_spec(name) is not None
     except Exception:
         return False
+
+
+def _detect_demucs_mlx() -> bool:
+    return _package_present("demucs_mlx")
 
 
 def _detect_demucs() -> bool:
-    try:
-        import demucs.api  # noqa: F401
-        return True
-    except Exception:
-        return False
+    return _package_present("demucs")
 
 
 def _detect_voxcpm() -> bool:
-    try:
-        from claynext.models.tts_service import TTSEngine
-        return TTSEngine.voxcpm_available()
-    except Exception:
-        return False
+    return _package_present("voxcpm")
 
 
 def _detect_whisperx() -> bool:
-    try:
-        from claynext.models.dubbing_plan import whisperx_available
-        return whisperx_available()
-    except Exception:
-        return False
+    return _package_present("whisperx")
 
 
 def _detect_gender_audio() -> bool:
-    try:
-        from claynext.models.gender_audio import gender_model_available
-        return gender_model_available()
-    except Exception:
-        return False
+    # The gender extra is torch. Transformers is already part of Studio.
+    return _package_present("torch") and _package_present("transformers")
 
 
 def _mlx_platform_ok() -> bool:
@@ -90,11 +80,35 @@ def _detect_audio_separator() -> bool:
         return False
 
 
+def declared_extras() -> set[str]:
+    """Optional groups this project can actually install."""
+    try:
+        import tomllib
+
+        from claynext.utils.paths import BASE_DIR
+
+        with open(BASE_DIR / "pyproject.toml", "rb") as handle:
+            data = tomllib.load(handle)
+        groups = (data.get("project") or {}).get("optional-dependencies") or {}
+        return {str(name) for name in groups}
+    except Exception:
+        return {str(item["extra"]) for item in FEATURE_REGISTRY}
+
+
+def _extra_installable(extra: str) -> bool:
+    return extra in declared_extras()
+
+
+def _audio_separator_supported() -> bool:
+    """UVR is not a compatible extra beside the Demucs torch pin."""
+    return torch_wheels_available() and _extra_installable("audio-separator")
+
+
 def _unsupported_reason(feature_id: str) -> str:
     if feature_id == "demucs_mlx":
-        return "Apple Silicon only. This Mac cannot run Demucs MLX."
+        return "Apple Silicon only. Demucs (PyTorch) is the cross-platform stem tool."
     if feature_id == "audio_separator":
-        return "Audio Separator needs PyTorch, which has no Intel macOS build."
+        return "Use Demucs. It is the compatible stem tool on macOS, Windows, and Linux."
     if not torch_wheels_available():
         return "PyTorch has no Intel macOS build, so this feature cannot be installed here."
     return "This platform cannot install this feature."
@@ -115,7 +129,7 @@ FEATURE_REGISTRY: list[dict[str, Any]] = [
         "label": "Demucs (PyTorch)",
         "category": "audio",
         "extra": "demucs",
-        "hint": "Meta htdemucs stem separation. uv sync --extra demucs",
+        "hint": "Cross-platform stem tool for macOS, Windows, and Linux. Installs once.",
         "detect": _detect_demucs,
         "supported": torch_wheels_available,
     },
@@ -124,9 +138,9 @@ FEATURE_REGISTRY: list[dict[str, Any]] = [
         "label": "Audio Separator (UVR)",
         "category": "audio",
         "extra": "audio-separator",
-        "hint": "Vocal / effects split for dub transcripts. Not installable on Intel macOS (no PyTorch wheel), and it needs torch>=2.13 beside the Demucs pin.",
+        "hint": "Use Demucs. It is the compatible stem tool on macOS, Windows, and Linux.",
         "detect": _detect_audio_separator,
-        "supported": torch_wheels_available,
+        "supported": _audio_separator_supported,
     },
     {
         "id": "voxcpm",
@@ -289,11 +303,47 @@ def save_feature_defaults() -> None:
 _UV_SYNC = threading.Lock()
 
 
+def retained_extras(include: str = "") -> list[str]:
+    """Extras to keep. A new install must not remove tools that are already ready."""
+    names: set[str] = set()
+    saved = get_feature_setting("installed_extras", "")
+    for part in str(saved or "").split(","):
+        part = part.strip()
+        if part:
+            names.add(part)
+    for item in FEATURE_REGISTRY:
+        if not bool(item["supported"]()):
+            continue
+        try:
+            if item["detect"]():
+                names.add(str(item["extra"]))
+        except Exception:
+            pass
+    if include:
+        names.add(include.strip())
+    declared = declared_extras()
+    ordered: list[str] = []
+    for item in FEATURE_REGISTRY:
+        extra_name = str(item["extra"])
+        if extra_name in names and extra_name in declared and extra_name not in ordered:
+            ordered.append(extra_name)
+    if include and include not in ordered and include in declared:
+        ordered.append(include)
+    return ordered
+
+
+def remember_extras(extras: list[str]) -> None:
+    declared = declared_extras()
+    names = [name for name in extras if name in declared]
+    set_feature_setting("installed_extras", ",".join(names))
+
+
 def install_uv_extra(extra: str, progress_callback=None) -> dict[str, Any]:
     """
-    Run ``uv sync --extra <extra>`` from the project root (background-safe).
+    Install one extra and keep every tool that is already installed.
 
-    ``progress_callback(percent: int, message: str)`` is optional.
+    ``uv sync --extra`` alone removes the other extras, so each Install click
+    undoes the last one. ``--inexact`` plus the saved extra list installs once.
     """
     import os
     import re
@@ -323,8 +373,11 @@ def install_uv_extra(extra: str, progress_callback=None) -> dict[str, Any]:
 
     _progress(2, f"Waiting to install {extra}…")
     with _UV_SYNC:
+        keep = retained_extras(extra)
         _progress(4, f"Starting {extra}…")
-        cmd = [uv, "sync", "--extra", extra]
+        cmd = [uv, "sync", "--inexact"]
+        for name in keep:
+            cmd.extend(["--extra", name])
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         proc = subprocess.Popen(
             cmd,
@@ -356,6 +409,7 @@ def install_uv_extra(extra: str, progress_callback=None) -> dict[str, Any]:
         code = proc.wait()
         if code != 0:
             raise RuntimeError(f"uv sync --extra {extra} failed (exit {code}): {last_msg}")
+        remember_extras(keep)
     _progress(100, "Installed")
-    return {"extra": extra, "ok": True}
+    return {"extra": extra, "ok": True, "kept": keep}
 

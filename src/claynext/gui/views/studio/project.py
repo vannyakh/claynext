@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QFileDialog, QInputDialog
 
 from claynext.models.dub_project import load_json, save_preset, save_project, write_project
@@ -59,6 +60,7 @@ class ProjectTools:
             "overlays": self.timeline.export_overlays(include_hidden=True),
             "fx": self.timeline.export_fx(include_hidden=True),
             "tracks": self.timeline.export_tracks(),
+            "timeline": self.timeline.export_state() if hasattr(self.timeline, "export_state") else {},
             "segments": list(self._segments),
             "characters": [dict(row) for row in getattr(self, "_cast_extra", []) or []],
             "output": self._output_path,
@@ -72,7 +74,9 @@ class ProjectTools:
         comps = getattr(self, "_compositions", [])
         index = getattr(self, "_composition_index", -1)
         if 0 <= index < len(comps):
-            return {"bed": comps[index].get("bed", ""), "dialogue": comps[index].get("dialogue", "")}
+            music = str(comps[index].get("music") or "")
+            bed = music if music and os.path.isfile(music) else ""
+            return {"bed": bed, "dialogue": comps[index].get("dialogue", "")}
         return {}
 
     def _library_from_payload(self, data: dict) -> list[str]:
@@ -129,11 +133,20 @@ class ProjectTools:
             if isinstance(data.get("project"), dict):
                 self._project.update(data["project"])
             media = str(data.get("media") or "")
+            timeline_state = data.get("timeline") if isinstance(data.get("timeline"), dict) else None
+            comps_state = data.get("compositions") if isinstance(data.get("compositions"), list) else []
+            has_saved_timeline = bool(timeline_state and timeline_state.get("clips")) or any(
+                isinstance(comp, dict)
+                and isinstance(comp.get("timeline"), dict)
+                and comp["timeline"].get("clips")
+                for comp in comps_state
+            )
             if media and os.path.isfile(media):
                 if media != self.selected_file:
                     self.set_dub_source(media)
-                self.timeline.set_media(media)
-                self.show_timeline_player()
+                if not has_saved_timeline:
+                    self.timeline.set_media(media)
+                    self.show_timeline_player()
             else:
                 self.selected_file = ""
                 self._source_preview_path = ""
@@ -150,7 +163,13 @@ class ProjectTools:
                 self._cast_signature = None
             segments = data.get("segments")
             if isinstance(segments, list) and segments:
-                self._fill_table(segments)
+                if has_saved_timeline:
+                    self._skip_dialogue_sync = True
+                try:
+                    self._fill_table(segments)
+                finally:
+                    if has_saved_timeline:
+                        self._skip_dialogue_sync = False
             elif hasattr(self, "_refresh_character_list"):
                 self._refresh_character_list()
             if isinstance(data.get("takes"), list):
@@ -163,6 +182,15 @@ class ProjectTools:
                 self._restore_compositions(
                     comps, data.get("composition_index"), data.get("tasks"),
                     legacy_overlays=legacy_overlays, legacy_fx=legacy_fx, legacy_tracks=legacy_tracks,
+                )
+                if self._compositions:
+                    self._refresh_project_info()
+                    self._sync_preview_overlays(force=True)
+                    return
+            saved_timeline = data.get("timeline") if isinstance(data.get("timeline"), dict) else None
+            if saved_timeline and saved_timeline.get("clips"):
+                self._open_saved_timeline(
+                    saved_timeline, segments if isinstance(segments, list) else [],
                 )
                 self._refresh_project_info()
                 self._sync_preview_overlays(force=True)
@@ -196,6 +224,10 @@ class ProjectTools:
                 if legacy_fx:
                     self.timeline.apply_fx(legacy_fx)
                 self._stash_composition()
+            elif legacy_tracks or legacy_overlays or legacy_fx:
+                self._compositions = []
+                self._composition_index = -1
+                self._sync_timeline_visibility()
             else:
                 self._compositions = []
                 self._composition_index = -1
@@ -223,6 +255,14 @@ class ProjectTools:
 
     @staticmethod
     def _composition_usable(comp: dict) -> bool:
+        timeline = comp.get("timeline")
+        if isinstance(timeline, dict) and timeline.get("clips"):
+            return True
+        source = str(comp.get("source") or "")
+        if source and os.path.isfile(source):
+            return True
+        if isinstance(comp.get("overlays"), list) and comp["overlays"]:
+            return True
         output = str(comp.get("output") or "")
         if output and os.path.isfile(output):
             return True
@@ -313,7 +353,24 @@ class ProjectTools:
         if slider.value() != number:
             slider.setValue(number)
 
+    def _schedule_session_store(self, *_args) -> None:
+        """Write the open tool soon after an edit, and again when it closes."""
+        if getattr(self, "_restoring_project", False) or getattr(self, "_sequence_switching", False):
+            return
+        if not hasattr(self, "combo_lang"):
+            return
+        timer = getattr(self, "_session_timer", None)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._store_project_session)
+            self._session_timer = timer
+        timer.start(500)
+
     def _store_project_session(self):
+        timer = getattr(self, "_session_timer", None)
+        if timer is not None and timer.isActive():
+            timer.stop()
         if getattr(self, "_restoring_project", False) or not hasattr(self, "combo_lang"):
             return
         payload = self._tools_payload()

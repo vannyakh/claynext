@@ -105,7 +105,9 @@ class CanvasPaint:
                     selected = item
                 continue
             if item.kind in MEDIA_KINDS:
-                center, box, _style, _shown = self._text_geom(item)
+                center, box, style, _shown = self._text_geom(item)
+                motion = self._frame_for(item, style)
+                center = QPointF(center.x() + motion["dx"] * fh, center.y() + motion["dy"] * fh)
                 if not item.hidden:
                     p.save()
                     p.translate(center)
