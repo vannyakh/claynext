@@ -63,6 +63,14 @@ class SequenceBar(QFrame):
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
         self._group.idClicked.connect(self._on_picked)
+        self._add = self._make_add()
+        self._header_actions = QWidget()
+        self._header_actions.setObjectName("sequence_header_actions")
+        actions = QHBoxLayout(self._header_actions)
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(0)
+        actions.addStretch(1)
+        actions.addWidget(self._add, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self._chips: list[QPushButton] = []
         self._names: list[str] = []
         self._index = -1
@@ -77,6 +85,10 @@ class SequenceBar(QFrame):
         self._shown = False
         self._rebuilding = False
         self._fitting = False
+
+    def header_actions(self) -> QWidget:
+        """Plus control for the dock title row, aligned to the right."""
+        return self._header_actions
 
     def set_follow_size(self, follow: bool) -> None:
         """While floating, the panel shape picks the row or the column."""
@@ -230,13 +242,8 @@ class SequenceBar(QFrame):
             self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             self.setFixedHeight(SEQUENCE_ROW_H)
         self._row = layout
-        add = self._make_add()
-        if self._vertical:
-            layout.addWidget(add, 0, Qt.AlignmentFlag.AlignLeft)
 
         if not self._names:
-            if not self._vertical:
-                layout.addWidget(add, 0, Qt.AlignmentFlag.AlignVCenter)
             layout.addStretch(1)
             self._fit_host()
             return
@@ -263,8 +270,6 @@ class SequenceBar(QFrame):
             else:
                 layout.addWidget(chip, 0, Qt.AlignmentFlag.AlignVCenter)
             self._chips.append(chip)
-        if not self._vertical:
-            layout.addWidget(add, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addStretch(1)
         if self._index < 0:
             self._group.setExclusive(False)
@@ -279,10 +284,9 @@ class SequenceBar(QFrame):
     def _make_add(self) -> QPushButton:
         button = QPushButton()
         button.setObjectName("sequence_add")
-        size = 32 if self._vertical else 26
         button.setIcon(icon("plus", size=14))
         button.setIconSize(QSize(14, 14))
-        button.setFixedSize(size, size)
+        button.setFixedSize(24, 24)
         button.setCursor(Qt.CursorShape.PointingHandCursor)
         button.setToolTip("New sequence")
         button.clicked.connect(self.add_requested.emit)

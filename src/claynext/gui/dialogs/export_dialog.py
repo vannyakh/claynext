@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 
 from PySide6.QtCore import Qt, QPoint, QRectF, QSize, QThreadPool
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
@@ -29,6 +30,26 @@ _MOVIE = {"movie", "source"}
 _SCRIPT = {"srt", "vtt", "json"}
 _CARD_MAX = QSize(132, 176)
 _CARD_RADIUS = 8
+_COPY_SUFFIX = re.compile(r"^(.+)_(\d+)$")
+
+
+def unused_export_path(path: str) -> str:
+    """A path that does not replace a file already sitting in the export folder."""
+    candidate = os.path.abspath(path)
+    if not os.path.exists(candidate):
+        return candidate
+    folder, filename = os.path.split(candidate)
+    stem, ext = os.path.splitext(filename)
+    base, number = stem, 2
+    match = _COPY_SUFFIX.fullmatch(stem)
+    if match and int(match.group(2)) >= 2:
+        base, number = match.group(1), int(match.group(2))
+    while number < 10000:
+        nxt = os.path.join(folder, f"{base}_{number}{ext}")
+        if not os.path.exists(nxt):
+            return nxt
+        number += 1
+    return os.path.join(folder, f"{base}_{number}{ext}")
 
 
 def rounded_still(
@@ -69,9 +90,9 @@ class ExportTitleBar(QWidget):
         self._window = window
         self._origin: QPoint | None = None
         self.setObjectName("export_title_bar")
-        self.setFixedHeight(42)
+        self.setFixedHeight(44)
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(16, 0, 8, 0)
+        lay.setContentsMargins(18, 8, 10, 0)
         lay.setSpacing(8)
         label = QLabel(title)
         label.setObjectName("export_title")
@@ -105,7 +126,7 @@ class ExportTitleBar(QWidget):
         super().mouseReleaseEvent(event)
 
 
-def frameless_shell(dialog: QDialog) -> tuple[QVBoxLayout, QFrame]:
+def frameless_shell(dialog: QDialog) -> QVBoxLayout:
     """Replace the system title bar with a rounded studio frame."""
     dialog.setWindowFlags(
         Qt.WindowType.Dialog
@@ -124,13 +145,9 @@ def frameless_shell(dialog: QDialog) -> tuple[QVBoxLayout, QFrame]:
     shell.setGraphicsEffect(shadow)
     outer.addWidget(shell)
     body = QVBoxLayout(shell)
-    body.setContentsMargins(0, 0, 0, 14)
+    body.setContentsMargins(0, 0, 0, 16)
     body.setSpacing(0)
-    rule = QFrame()
-    rule.setObjectName("export_title_rule")
-    rule.setFrameShape(QFrame.Shape.NoFrame)
-    rule.setFixedHeight(1)
-    return body, rule
+    return body
 
 
 def place_export_dialog(dialog: QDialog) -> None:
@@ -162,6 +179,7 @@ class ExportDialog(QDialog):
         self.setObjectName("exportDialog")
         self.setModal(True)
         self._placed = False
+        self._auto_name = True
         self._stem = stem or "export"
         self._script_only = bool(script_only)
         self._source = source or ""
@@ -171,20 +189,19 @@ class ExportDialog(QDialog):
             from claynext.utils.paths import OUTPUTS_DIR
             folder = str(OUTPUTS_DIR)
 
-        body, rule = frameless_shell(self)
+        body = frameless_shell(self)
         body.addWidget(ExportTitleBar(self, "Export script" if script_only else "Export"))
-        body.addWidget(rule)
 
         content = QHBoxLayout()
-        content.setContentsMargins(16, 4, 16, 8)
-        content.setSpacing(16)
+        content.setContentsMargins(18, 10, 18, 14)
+        content.setSpacing(18)
 
         box = QFrame()
         box.setObjectName("dub_config_section")
         grid = QGridLayout(box)
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(8)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(10)
 
         self.combo_kind = QComboBox()
         kinds = [row for row in EXPORT_KINDS if row[0] in _SCRIPT] if script_only else list(EXPORT_KINDS)
@@ -257,7 +274,8 @@ class ExportDialog(QDialog):
         body.addLayout(content)
 
         actions = QHBoxLayout()
-        actions.setContentsMargins(16, 4, 16, 0)
+        actions.setContentsMargins(18, 0, 18, 0)
+        actions.setSpacing(8)
         actions.addStretch(1)
         cancel = QPushButton("Cancel")
         cancel.setObjectName("api_keys_btn")
@@ -270,8 +288,9 @@ class ExportDialog(QDialog):
         actions.addWidget(self.btn_export)
         body.addLayout(actions)
 
+        self.edit_name.textEdited.connect(self._on_name_edited)
         self.edit_name.textChanged.connect(self._sync_target)
-        self.edit_folder.textChanged.connect(self._sync_target)
+        self.edit_folder.textChanged.connect(self._on_folder_changed)
         self._sync()
         if self._script_only:
             self.preview_card.hide()
@@ -310,7 +329,19 @@ class ExportDialog(QDialog):
         suffix = {
             "movie": "_dub", "mix_wav": "_mix", "voice_wav": "_voice", "source": "_source",
         }.get(kind, "_" + str(self.combo_version.currentData() or "current"))
-        return f"{self._stem}{suffix}.{_EXT[kind]}"
+        name = f"{self._stem}{suffix}.{_EXT[kind]}"
+        folder = self.edit_folder.text().strip()
+        if not folder:
+            return name
+        return os.path.basename(unused_export_path(os.path.join(folder, name)))
+
+    def _on_name_edited(self):
+        self._auto_name = False
+
+    def _on_folder_changed(self):
+        if self._auto_name:
+            self.edit_name.setText(self._default_name())
+        self._sync_target()
 
     def _sync(self):
         kind = self._kind()
@@ -322,8 +353,17 @@ class ExportDialog(QDialog):
         for widget in (self.lbl_audio, self.combo_audio):
             widget.setVisible(kind in {"movie"})
         self.chk_overlays.setVisible(kind == "movie")
+        self._auto_name = True
         self.edit_name.setText(self._default_name())
         self._sync_target()
+
+    def accept(self):
+        path = self.target_path()
+        if path:
+            free = unused_export_path(path)
+            if os.path.basename(free) != os.path.basename(path):
+                self.edit_name.setText(os.path.basename(free))
+        super().accept()
 
     def _browse(self):
         folder = QFileDialog.getExistingDirectory(self, "Export folder", self.edit_folder.text())

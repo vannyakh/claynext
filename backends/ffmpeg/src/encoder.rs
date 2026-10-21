@@ -63,6 +63,137 @@ pub struct ExportJob {
     pub duration_secs: Option<f64>,
 }
 
+/// Encoder flags for the codec the GUI asked for.
+///
+/// macOS uses VideoToolbox bitrate mode. Windows NVENC, Quick Sync, AMF, and
+/// Media Foundation each get their own flags. x264 presets are not passed to them.
+pub fn video_encoder_args(codec: &str, crf: u32, preset: &str) -> Vec<String> {
+    let name = if codec.trim().is_empty() {
+        "libx264".to_string()
+    } else {
+        codec.trim().to_string()
+    };
+    let lower = name.to_ascii_lowercase();
+    let quality = crf.clamp(1, 51).to_string();
+    if lower.contains("videotoolbox") {
+        return vec![
+            "-c:v".into(),
+            name,
+            "-allow_sw".into(),
+            "1".into(),
+            "-b:v".into(),
+            "8M".into(),
+            "-pix_fmt".into(),
+            "yuv420p".into(),
+        ];
+    }
+    if lower.contains("nvenc") {
+        let nv_preset = if preset.len() == 2 && preset.starts_with('p') {
+            preset.to_string()
+        } else {
+            "p4".into()
+        };
+        return vec![
+            "-c:v".into(),
+            name,
+            "-preset".into(),
+            nv_preset,
+            "-cq".into(),
+            quality,
+            "-pix_fmt".into(),
+            "yuv420p".into(),
+        ];
+    }
+    if lower.contains("qsv") {
+        return vec![
+            "-c:v".into(),
+            name,
+            "-global_quality".into(),
+            quality,
+            "-pix_fmt".into(),
+            "yuv420p".into(),
+        ];
+    }
+    if lower.contains("amf") {
+        return vec![
+            "-c:v".into(),
+            name,
+            "-quality".into(),
+            "balanced".into(),
+            "-rc".into(),
+            "cqp".into(),
+            "-qp_i".into(),
+            quality.clone(),
+            "-qp_p".into(),
+            quality,
+            "-pix_fmt".into(),
+            "yuv420p".into(),
+        ];
+    }
+    if lower.ends_with("_mf") {
+        return vec![
+            "-c:v".into(),
+            name,
+            "-rate_control".into(),
+            "quality".into(),
+            "-quality".into(),
+            "75".into(),
+            "-pix_fmt".into(),
+            "yuv420p".into(),
+        ];
+    }
+    let x264_preset = if preset.is_empty() { "medium" } else { preset };
+    let mut args = vec![
+        "-c:v".into(),
+        name.clone(),
+        "-preset".into(),
+        x264_preset.into(),
+        "-crf".into(),
+        quality,
+        "-pix_fmt".into(),
+        "yuv420p".into(),
+    ];
+    args.extend(software_thread_args(&name));
+    args
+}
+
+/// Best encoder this operating system can drive. Callers still fall back to x264.
+pub fn best_platform_codec() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        if is_encoder_available("h264_videotoolbox") {
+            return "h264_videotoolbox".to_string();
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        for name in ["h264_nvenc", "h264_qsv", "h264_amf", "h264_mf"] {
+            if is_encoder_available(name) {
+                return name.to_string();
+            }
+        }
+    }
+    "libx264".to_string()
+}
+
+/// Thread count Studio saved for CPU encoders. Hardware encoders ignore it.
+pub fn software_thread_args(codec: &str) -> Vec<String> {
+    let lower = codec.to_ascii_lowercase();
+    if !(lower.starts_with("libx") || lower == "libsvtav1") {
+        return Vec::new();
+    }
+    let Ok(raw) = std::env::var("CLAYNEXT_WORKER_THREADS") else {
+        return Vec::new();
+    };
+    let Ok(n) = raw.trim().parse::<u32>() else {
+        return Vec::new();
+    };
+    if n == 0 {
+        return Vec::new();
+    }
+    vec!["-threads".to_string(), n.to_string()]
+}
+
 /// Check if a specific encoder name is available in the installed FFmpeg binary.
 pub fn is_encoder_available(encoder_name: &str) -> bool {
     let Some(exe) = find_executable("ffmpeg") else {
@@ -132,29 +263,18 @@ where
         cmd.args(["-t", &format!("{:.3}", dur)]);
     }
 
-    // Video options
-    cmd.args(["-c:v", &job.video.codec]);
-    // Hardware encoders use different preset namespaces; keep the requested value.
-    if !job.video.preset.is_empty() {
-        cmd.args(["-preset", &job.video.preset]);
-    }
-    cmd.args(["-pix_fmt", &job.video.pixel_format]);
-
-    if let Some(crf) = job.video.crf {
-        // NVENC/QSV/AMF prefer -cq / -qp; map CRF onto the closest portable flag.
-        let codec = job.video.codec.to_ascii_lowercase();
-        if codec.contains("nvenc") {
-            cmd.args(["-cq", &crf.to_string()]);
-        } else if codec.contains("qsv") {
-            cmd.args(["-global_quality", &crf.to_string()]);
-        } else if codec.contains("amf") {
-            cmd.args(["-qp_i", &crf.to_string(), "-qp_p", &crf.to_string()]);
-        } else {
-            cmd.args(["-crf", &crf.to_string()]);
-        }
-    } else if let Some(br) = job.video.bitrate_kbps {
-        cmd.args(["-b:v", &format!("{}k", br)]);
-    }
+    let codec = if job.video.codec.trim().is_empty()
+        || matches!(job.video.codec.as_str(), "auto" | "best")
+    {
+        best_platform_codec()
+    } else {
+        job.video.codec.clone()
+    };
+    cmd.args(video_encoder_args(
+        &codec,
+        job.video.crf.unwrap_or(18),
+        &job.video.preset,
+    ));
 
     // Scaling: both dims = exact; one dim = keep aspect (even width/height for H.264).
     match (job.video.width, job.video.height) {
@@ -299,4 +419,55 @@ pub fn extract_still_image(
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod encoder_flag_tests {
+    use super::video_encoder_args;
+
+    fn has_pair(args: &[String], key: &str, value: &str) -> bool {
+        args.windows(2).any(|w| w[0] == key && w[1] == value)
+    }
+
+    #[test]
+    fn videotoolbox_uses_bitrate_not_crf() {
+        let args = video_encoder_args("h264_videotoolbox", 18, "medium");
+        assert!(has_pair(&args, "-c:v", "h264_videotoolbox"));
+        assert!(has_pair(&args, "-allow_sw", "1"));
+        assert!(has_pair(&args, "-b:v", "8M"));
+        assert!(!args.iter().any(|a| a == "-crf" || a == "-preset"));
+    }
+
+    #[test]
+    fn nvenc_maps_an_x264_preset() {
+        let args = video_encoder_args("h264_nvenc", 19, "medium");
+        assert!(has_pair(&args, "-preset", "p4"));
+        assert!(has_pair(&args, "-cq", "19"));
+        assert!(!args.iter().any(|a| a == "-crf"));
+    }
+
+    #[test]
+    fn quicksync_and_amf_skip_x264_presets() {
+        let qsv = video_encoder_args("h264_qsv", 20, "medium");
+        assert!(has_pair(&qsv, "-global_quality", "20"));
+        assert!(!qsv.iter().any(|a| a == "-preset"));
+        let amf = video_encoder_args("h264_amf", 20, "medium");
+        assert!(has_pair(&amf, "-rc", "cqp"));
+        assert!(!amf.iter().any(|a| a == "-crf" || a == "-preset"));
+    }
+
+    #[test]
+    fn media_foundation_skips_x264_flags() {
+        let args = video_encoder_args("h264_mf", 18, "medium");
+        assert!(has_pair(&args, "-c:v", "h264_mf"));
+        assert!(has_pair(&args, "-rate_control", "quality"));
+        assert!(!args.iter().any(|a| a == "-crf" || a == "-preset"));
+    }
+
+    #[test]
+    fn libx264_keeps_crf_and_preset() {
+        let args = video_encoder_args("libx264", 18, "medium");
+        assert!(has_pair(&args, "-crf", "18"));
+        assert!(has_pair(&args, "-preset", "medium"));
+    }
 }

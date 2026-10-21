@@ -138,15 +138,10 @@ QDialog#exportDialog, QDialog#exportProgressDialog {{
 }}
 #export_title {{
     color: {COLOR_TEXT_MAIN};
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 600;
     background: transparent;
-}}
-#export_title_rule {{
-    background-color: {COLOR_BORDER};
-    border: none;
-    min-height: 1px;
-    max-height: 1px;
+    padding: 0;
 }}
 #export_close {{
     background: transparent;
@@ -157,9 +152,9 @@ QDialog#exportDialog, QDialog#exportProgressDialog {{
     background-color: rgba(244, 63, 94, 0.22);
 }}
 #export_preview_card {{
-    background-color: {COLOR_BG_CARD};
-    border: 1px solid {COLOR_BORDER};
-    border-radius: 10px;
+    background: transparent;
+    border: none;
+    border-radius: 0;
 }}
 QProgressBar#export_progress {{
     border: 1px solid {COLOR_BORDER};

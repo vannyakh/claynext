@@ -15,6 +15,20 @@ from claynext.gui.components.timeline.models import (
     TimelineTrack,
 )
 
+def audio_stem_role(stem: bool, track_name: str, label: str) -> str:
+    """Which soundtrack a laid stem is: effects, the full source mix, or the original vocals."""
+    if not stem:
+        return ""
+    name = f"{track_name} {label}".lower()
+    if "effect" in name:
+        return "effects"
+    if "vocal" in name:
+        return "vocals"
+    if "source" in name:
+        return "source"
+    return "stem"
+
+
 # Clips that belong to one dub sequence. A new source must not inherit them.
 _OTHER_SEQUENCE_KINDS = frozenset({
     "caption", "text", "image", "logo", "shape", "mask", "effect", "filter", "transition",
@@ -528,16 +542,53 @@ class CanvasMedia:
             if track.kind not in {"voice", "audio"} or track.muted or track.hidden:
                 continue
             for clip in self.clips:
+                if clip.extra.get("stem"):
+                    continue
                 if clip.track_id == track.id and self.clip_volume(clip) > 0:
                     spans.append((clip.start_ms, clip.end_ms))
         return sorted(spans)
 
+    def stem_role(self, clip: TimelineClip) -> str:
+        track = self.track_by_id(clip.track_id)
+        return audio_stem_role(
+            bool(clip.extra.get("stem")),
+            getattr(track, "name", "") or "",
+            clip.label or "",
+        )
+
+    def effects_bed_active(self) -> bool:
+        """An audible Effects stem is the soundtrack, so the full movie mix stays out."""
+        for clip in self.clips:
+            if self.stem_role(clip) != "effects" or not clip.extra.get("path"):
+                continue
+            track = self.track_by_id(clip.track_id)
+            if track is not None and not track.muted and not track.hidden:
+                return True
+        return False
+
+    def effects_clip_at(self, ms: int) -> TimelineClip | None:
+        if not self.effects_bed_active():
+            return None
+        for track in self.tracks:
+            if track.kind != "audio" or track.muted or track.hidden:
+                continue
+            for clip in self.clips:
+                if clip.track_id != track.id or self.stem_role(clip) != "effects":
+                    continue
+                if clip.extra.get("path") and clip.start_ms <= ms < clip.end_ms:
+                    return clip
+        return None
+
     def voice_clip_at(self, ms: int, take: bool = False) -> TimelineClip | None:
+        replaced = self.effects_bed_active()
         for track in self.tracks:
             if track.kind not in {"voice", "audio"}:
                 continue
             for clip in self.clips:
                 if clip.track_id != track.id or bool(clip.extra.get("take")) != take:
+                    continue
+                role = self.stem_role(clip)
+                if role == "effects" or (replaced and role in {"source", "vocals"}):
                     continue
                 if clip.extra.get("path") and clip.start_ms <= ms < clip.end_ms:
                     return clip

@@ -1870,33 +1870,68 @@ class TimelinePanel(QWidget):
             clip for clip in canvas.clips
             if not (clip.kind == "audio" and clip.extra.get("stem"))
         ]
-        dur = max(1000, int(canvas.duration_ms or 0))
+        master = canvas.master_clip()
+        start = int(master.start_ms) if master is not None else 0
+        inn = int(master.extra.get("in_ms") or 0) if master is not None else 0
+        dur = int(master.duration_ms) if master is not None and master.duration_ms else max(1000, int(canvas.duration_ms or 0))
         for item in stems or []:
             path = str(item.get("path") or "")
             if not path or not os.path.isfile(path):
                 continue
             label = str(item.get("label") or "Audio")
-            track = canvas.free_track("audio", 0, dur)
+            track = canvas.free_track("audio", start, start + dur)
             track.name = label
             track.muted = bool(item.get("mute"))
             canvas.add_clip(
                 "audio",
                 label,
                 duration_ms=dur,
-                start_ms=0,
+                start_ms=start,
                 track_id=track.id,
                 extra={
                     "path": path,
                     "stem": True,
                     "auto": True,
-                    "file_ms": dur,
+                    "file_ms": dur + inn,
+                    "in_ms": inn,
                 },
             )
             self._load_wave(path)
+        self.hold_effects_bed()
         if int(getattr(self, "_sequence_load", 0)):
             return
         self._rebuild_rail()
         self.canvas.update()
+        self._emit_mix()
+
+    def hold_effects_bed(self) -> None:
+        """Keep the full movie mix from playing over the translated voices when Effects is the bed."""
+        canvas = self.canvas
+        effects = [
+            canvas.track_by_id(clip.track_id)
+            for clip in canvas.clips
+            if canvas.stem_role(clip) == "effects"
+        ]
+        effects = [track for track in effects if track is not None and not track.muted]
+        if not effects:
+            return
+        effects_ids = {track.id for track in effects}
+        for clip in list(canvas.clips):
+            if canvas.stem_role(clip) not in {"source", "vocals"}:
+                continue
+            track = canvas.track_by_id(clip.track_id)
+            if track is None:
+                continue
+            if track.id in effects_ids:
+                fresh = canvas.free_track("audio", clip.start_ms, clip.end_ms)
+                fresh.name = clip.label or "Source audio"
+                fresh.muted = True
+                clip.track_id = fresh.id
+            else:
+                track.muted = True
+        video = next((track for track in canvas.tracks if track.kind == "video"), None)
+        if video is not None:
+            video.muted = True
         self._emit_mix()
 
     def set_voice_audio(self, path: str):
@@ -2090,12 +2125,16 @@ class TimelinePanel(QWidget):
     def render_plan(self) -> dict:
         canvas = self.canvas
         voice: list[dict] = []
+        replaced = canvas.effects_bed_active()
         for track in canvas.tracks:
             if track.kind not in {"voice", "audio"} or track.muted:
                 continue
             for clip in canvas.clips:
                 path = str(clip.extra.get("path") or "")
                 if clip.track_id != track.id or not path:
+                    continue
+                role = canvas.stem_role(clip)
+                if replaced and role in {"source", "vocals"}:
                     continue
                 gain = canvas.clip_gain(clip, clip.start_ms, fades=False)
                 if gain <= 0:
@@ -2113,7 +2152,8 @@ class TimelinePanel(QWidget):
         keys: list[tuple[int, float]] = []
         bed_keys: list[tuple[int, float]] = []
         video = next((track for track in canvas.tracks if track.kind == "video"), None)
-        track_gain = 0.0 if not video or video.muted else video.volume / 100.0
+        # The Effects stem is the soundtrack. The picture's own mix would put the original dialogue under the dub.
+        track_gain = 0.0 if replaced or not video or video.muted else video.volume / 100.0
         footage = sorted(canvas.footage_clips(), key=lambda clip: clip.start_ms)
         for clip in footage:
             points = [clip.start_ms] + [int(key[0]) for key in canvas.clip_keys(clip)] + [clip.end_ms - 1]

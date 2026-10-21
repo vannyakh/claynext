@@ -96,6 +96,15 @@ _QUICK_ENGINES = [
     ("auto", "Auto · best movie path"),
     ("movie", "Movie · cinematic"),
     ("gemini", "Gemini · API"),
+    ("qwen", "Qwen · API"),
+    ("deepseek", "DeepSeek · API"),
+    ("groq", "Groq · API"),
+    ("openrouter", "OpenRouter · API"),
+    ("openai", "OpenAI · API"),
+    ("mistral", "Mistral · API"),
+    ("moonshot", "Moonshot · API"),
+    ("glm", "GLM · API"),
+    ("xai", "xAI · API"),
     ("ollama", "Ollama · local"),
     ("google", "Google · fast literal"),
 ]
@@ -804,7 +813,9 @@ class StartLocalizeDialog(QDialog):
 
     def _sync_translate_style(self, *_args):
         eid = self.combo_translator.currentData() or "auto"
-        llm = eid in {"auto", "movie", "gemini", "ollama"}
+        from claynext.models.llm_providers import CHAT_PROVIDERS
+
+        llm = eid in {"auto", "movie", "gemini", "ollama", *CHAT_PROVIDERS}
         for name in ("chk_translate_fit", "chk_translate_slang", "chk_translate_expression"):
             w = getattr(self, name, None)
             if w is not None:

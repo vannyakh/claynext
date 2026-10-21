@@ -78,6 +78,28 @@ def _parse_progress_event(line: str) -> tuple[float, str] | None:
     return max(0.0, min(100.0, pct)), str(data.get("message") or "")
 
 
+def _native_encoder_args(codec: str, crf: int, preset: str) -> list[str]:
+    """Flags that match the native encoder. x264 presets are not sent to hardware."""
+    name = (codec or "libx264").strip() or "libx264"
+    lower = name.lower()
+    quality = str(max(1, min(51, int(crf))))
+    if "videotoolbox" in lower:
+        return ["-c:v", name, "-allow_sw", "1", "-b:v", "8M", "-pix_fmt", "yuv420p"]
+    if "nvenc" in lower:
+        nv_preset = preset if len(preset) == 2 and preset.startswith("p") else "p4"
+        return ["-c:v", name, "-preset", nv_preset, "-cq", quality, "-pix_fmt", "yuv420p"]
+    if "qsv" in lower:
+        return ["-c:v", name, "-global_quality", quality, "-pix_fmt", "yuv420p"]
+    if "amf" in lower:
+        return [
+            "-c:v", name, "-quality", "balanced", "-rc", "cqp",
+            "-qp_i", quality, "-qp_p", quality, "-pix_fmt", "yuv420p",
+        ]
+    if lower.endswith("_mf"):
+        return ["-c:v", name, "-rate_control", "quality", "-quality", "75", "-pix_fmt", "yuv420p"]
+    return ["-c:v", name, "-preset", preset or "veryfast", "-crf", quality, "-pix_fmt", "yuv420p"]
+
+
 class RustFfmpegAdapter:
     """Interfaces with `backends/ffmpeg` (claynext-ffmpeg)."""
 
@@ -332,6 +354,7 @@ class RustFfmpegAdapter:
         video_filter: str = "",
         crf: int = 18,
         preset: str = "medium",
+        video_codec: str = "auto",
         start_sec: float | None = None,
         duration_sec: float | None = None,
         progress_callback: Callable[[float, str], None] | None = None,
@@ -355,8 +378,6 @@ class RustFfmpegAdapter:
             "--audio-bitrate",
             str(kbps),
         ]
-        if reencode or video_filter:
-            args += ["--reencode", "--crf", str(int(crf)), "--preset", preset or "medium"]
         if video_filter:
             args += ["--vf", video_filter]
         if start_sec and start_sec > 0:
@@ -369,10 +390,29 @@ class RustFfmpegAdapter:
             if parsed and progress_callback:
                 progress_callback(parsed[0], parsed[1])
 
-        res = _run_rust_stream(binary, args, _on_line, timeout=None)
-        if res.returncode != 0 or not out.is_file() or out.stat().st_size == 0:
-            err = (res.stderr or res.stdout or "").strip()
-            raise RuntimeError(err or "Failed to mux dubbed video.")
+        def _attempt(codec_name: str) -> None:
+            cmd = list(args)
+            if reencode or video_filter:
+                chosen = (codec_name or "auto").strip() or "auto"
+                cmd += [
+                    "--reencode",
+                    "--codec", chosen,
+                    "--crf", str(int(crf)),
+                    "--preset", preset or "medium",
+                ]
+            res = _run_rust_stream(binary, cmd, _on_line, timeout=None)
+            if res.returncode != 0 or not out.is_file() or out.stat().st_size == 0:
+                err = (res.stderr or res.stdout or "").strip()
+                raise RuntimeError(err or "Failed to mux dubbed video.")
+
+        chosen = (video_codec or "auto").strip() or "auto"
+        try:
+            _attempt(chosen)
+        except RuntimeError as exc:
+            if chosen in {"libx264", "libx265"}:
+                raise
+            logger.warning("Native encode %s failed, retrying libx264: %s", chosen, exc)
+            _attempt("libx264")
 
     @classmethod
     def transcode_video(
@@ -422,13 +462,16 @@ class RustFfmpegAdapter:
                     break
 
         binary = _find_binary("claynext-ffmpeg")
-        if binary:
+
+        def _rust_export(codec_name: str) -> bool:
+            if not binary:
+                return False
             try:
                 args = [
                     "export",
                     str(inp),
                     str(out),
-                    "--codec", codec,
+                    "--codec", codec_name,
                     "--crf", str(int(crf)),
                     "--preset", preset or "veryfast",
                     "--sample-rate", str(int(sample_rate)),
@@ -461,11 +504,18 @@ class RustFfmpegAdapter:
                 )
             except Exception as e:
                 logger.warning("Rust export failed, falling back to imageio-ffmpeg: %s", e)
+            return False
 
+        if _rust_export(codec):
+            return True
+        if codec != "libx264" and _rust_export("libx264"):
+            return True
+
+        imageio_codec = codec if "264" in codec or codec.startswith("libx") or codec.endswith("_mf") else "libx264"
         ok = cls._transcode_via_imageio(
             inp,
             out,
-            video_codec=codec if "264" in codec or codec.startswith("libx") else "libx264",
+            video_codec=imageio_codec,
             crf=crf,
             width=width,
             height=height,
@@ -478,6 +528,23 @@ class RustFfmpegAdapter:
             duration_secs=duration_secs,
             progress_callback=progress_callback,
         )
+        if not ok and imageio_codec != "libx264":
+            ok = cls._transcode_via_imageio(
+                inp,
+                out,
+                video_codec="libx264",
+                crf=crf,
+                width=width,
+                height=height,
+                preset=preset,
+                audio_codec=audio_codec,
+                sample_rate=sample_rate,
+                channels=channels,
+                audio_bitrate_kbps=audio_bitrate_kbps,
+                start_time_secs=start_time_secs,
+                duration_secs=duration_secs,
+                progress_callback=progress_callback,
+            )
         if ok and progress_callback:
             progress_callback(100.0)
         return ok
@@ -515,12 +582,7 @@ class RustFfmpegAdapter:
         args += ["-i", str(input_path)]
         if duration_secs is not None:
             args += ["-t", f"{float(duration_secs):.3f}"]
-        args += [
-            "-c:v", video_codec,
-            "-preset", preset or "veryfast",
-            "-crf", str(int(crf)),
-            "-pix_fmt", "yuv420p",
-        ]
+        args += _native_encoder_args(video_codec, int(crf), preset or "veryfast")
         if width and height:
             args += ["-vf", f"scale={int(width)}:{int(height)}"]
         elif height:

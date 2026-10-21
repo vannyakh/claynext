@@ -23,10 +23,12 @@ impl MediaFoundationProfile {
         vec![
             "-c:v".to_string(),
             self.codec.clone(),
-            "-rc".to_string(),
+            "-rate_control".to_string(),
             self.rate_control.clone(),
             "-quality".to_string(),
             self.quality.to_string(),
+            "-pix_fmt".to_string(),
+            "yuv420p".to_string(),
         ]
     }
 }

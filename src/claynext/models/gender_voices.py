@@ -881,6 +881,8 @@ def llm_analyze_cast_and_gender(
                 try:
                     with urllib.request.urlopen(req, timeout=45) as resp:
                         raw = json.loads(resp.read().decode("utf-8"))
+                        from claynext.models.llm_keys import note_llm_usage
+                        note_llm_usage(model, raw)
                         text_res = (
                             raw.get("candidates", [{}])[0]
                             .get("content", {})
@@ -908,6 +910,28 @@ def llm_analyze_cast_and_gender(
                 return True
         except Exception:
             pass
+
+    # Stored cloud keys other than Gemini (Qwen, DeepSeek, Groq, …).
+    try:
+        from claynext.models.llm_chat import chat_text, json_from_text
+        from claynext.models.llm_providers import CHAT_ORDER
+
+        for pid in CHAT_ORDER:
+            if pool.ready_count(pid) <= 0:
+                continue
+            if progress_callback:
+                try:
+                    progress_callback(22, f"Calling {pid} for character cast…")
+                except Exception:
+                    pass
+            try:
+                res = json_from_text(chat_text(pid, prompt, progress=progress_callback, temperature=0.2))
+            except Exception:
+                continue
+            if isinstance(res, dict) and _apply_llm_cast_result(segments, res):
+                return True
+    except Exception:
+        pass
 
     # 2. Try Ollama local LLM if running
     try:

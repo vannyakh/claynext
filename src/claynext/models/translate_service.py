@@ -23,6 +23,7 @@ from claynext.models.llm_keys import (
     RateLimitError,
     get_key_pool,
     is_rate_limit,
+    note_llm_usage,
     parse_retry_after,
 )
 
@@ -90,6 +91,15 @@ class TranslateEngine:
         ("auto", "Auto · Best movie (Gemini → Ollama → NLLB → Google)"),
         ("movie", "Movie dub · cinematic rewrite"),
         ("gemini", "Gemini Flash · free AI Studio"),
+        ("qwen", "Qwen · DashScope"),
+        ("deepseek", "DeepSeek"),
+        ("groq", "Groq"),
+        ("openrouter", "OpenRouter"),
+        ("openai", "OpenAI"),
+        ("mistral", "Mistral"),
+        ("moonshot", "Moonshot"),
+        ("glm", "GLM"),
+        ("xai", "xAI"),
         ("ollama", "Ollama · local cinematic"),
         ("nllb", "NLLB-200 · offline NMT"),
         ("google", "Google Translate · literal"),
@@ -406,7 +416,7 @@ class TranslateEngine:
         if isinstance(parsed, str):
             parsed = json.loads(parsed)
         if isinstance(parsed, dict):
-            for key in ("translations", "segments", "data", "items"):
+            for key in ("translations", "segments", "lines", "result", "data", "items"):
                 if isinstance(parsed.get(key), list):
                     parsed = parsed[key]
                     break
@@ -660,8 +670,10 @@ class TranslateEngine:
         try:
             if backend == "ollama":
                 mapped = TranslateEngine._ollama_generate(prompt, ollama_model)
-            else:
+            elif backend == "gemini":
                 mapped = TranslateEngine._gemini_batch(prompt, progress_callback)
+            else:
+                mapped = TranslateEngine._chat_batch(backend, prompt, progress_callback)
         except Exception:
             return
         by_key = {}
@@ -808,27 +820,31 @@ class TranslateEngine:
             )
             if backend == "ollama":
                 mapped = TranslateEngine._ollama_generate(prompt, ollama_model)
-            else:
+            elif backend == "gemini":
                 mapped = TranslateEngine._gemini_batch(prompt, progress_callback)
+            else:
+                mapped = TranslateEngine._chat_batch(backend, prompt, progress_callback)
             return TranslateEngine._map_batch(
                 batch,
                 mapped,
                 target_lang,
-                fallback_google=backend == "gemini",
+                fallback_google=backend != "ollama",
                 source_lang=source_lang,
             )
 
-        # Gemini: run concurrent batches when multiple keys are ready (rolling RPM).
+        # Cloud keys: run concurrent batches when several keys are ready.
+        from claynext.models.llm_providers import CHAT_PROVIDERS
+
         parallel = 1
-        if backend == "gemini":
-            parallel = max(1, min(4, get_key_pool().ready_count("gemini"), len(batches)))
+        if backend in {"gemini", *CHAT_PROVIDERS}:
+            parallel = max(1, min(4, get_key_pool().ready_count(backend), len(batches)))
 
         if parallel <= 1 or len(batches) <= 1:
             for b, batch in enumerate(batches):
                 by_id.update(_run_one(batch))
                 if progress_callback:
                     pct = 10 + int(((b + 1) / max(1, len(batches))) * 80)
-                    label = "Ollama" if backend == "ollama" else "Gemini Flash"
+                    label = TranslateEngine._engine_label(backend)
                     progress_callback(
                         pct, f"{label} batch {b + 1}/{len(batches)} ({len(batch)} lines)"
                     )
@@ -845,7 +861,7 @@ class TranslateEngine:
                         pct = 10 + int((done / len(batches)) * 80)
                         progress_callback(
                             pct,
-                            f"Gemini Flash parallel {done}/{len(batches)} "
+                            f"{TranslateEngine._engine_label(backend)} parallel {done}/{len(batches)} "
                             f"· {parallel} key lane(s)",
                         )
 
@@ -876,6 +892,21 @@ class TranslateEngine:
             if wait > 0:
                 time.sleep(wait)
             _last_gemini_call_by_key[key] = time.monotonic()
+
+    @staticmethod
+    def _engine_label(backend: str) -> str:
+        from claynext.models.llm_providers import CHAT_PROVIDERS
+
+        if backend in CHAT_PROVIDERS:
+            return CHAT_PROVIDERS[backend]["label"]
+        return {"ollama": "Ollama", "gemini": "Gemini Flash"}.get(backend, backend)
+
+    @staticmethod
+    def _chat_batch(provider: str, prompt: str, progress_callback: Callable = None) -> list[dict]:
+        from claynext.models.llm_chat import chat_text, json_from_text
+
+        text = chat_text(provider, prompt, progress=progress_callback)
+        return TranslateEngine._parse_lines(json_from_text(text))
 
     @staticmethod
     def _gemini_batch(prompt: str, progress_callback: Callable = None) -> list[dict]:
@@ -915,6 +946,7 @@ class TranslateEngine:
             try:
                 with urllib.request.urlopen(req, timeout=90) as resp:
                     raw = json.loads(resp.read().decode("utf-8"))
+                note_llm_usage(model, raw)
             except urllib.error.HTTPError as exc:
                 detail = exc.read().decode("utf-8", errors="replace")
                 if exc.code in (401, 403):

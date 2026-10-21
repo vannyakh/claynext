@@ -16,6 +16,12 @@ pub struct ApiKeyItem {
     #[serde(default)]
     pub fail_count: i32,
     pub last_used_at: Option<f64>,
+    /// Calls this key already made in the current minute.
+    #[serde(default)]
+    pub calls_minute: i32,
+    /// Provider speed cap. Zero means the cap is not applied here.
+    #[serde(default)]
+    pub rpm_limit: i32,
 }
 
 fn default_enabled() -> bool {
@@ -102,12 +108,13 @@ impl NativeKeyPool {
                     && k.enabled
                     && !k.secret.trim().is_empty()
                     && k.cooldown_until.is_none_or(|c| c <= now)
+                    && (k.rpm_limit <= 0 || k.calls_minute < k.rpm_limit)
             })
             .collect()
     }
 
-    /// Pick the next ready key. Prefers least-recently-used + lowest fail_count so
-    /// rolling works across fresh CLI processes (cursor alone resets every spawn).
+    /// Pick the next ready key. Lowest speed, then fewest failures, then least recently used.
+    /// A cursor only breaks a full tie so a fresh process still rolls equal keys.
     pub fn acquire_key<'a>(
         &self,
         keys: &'a [ApiKeyItem],
@@ -120,8 +127,9 @@ impl NativeKeyPool {
         }
 
         ready.sort_by(|a, b| {
-            a.fail_count
-                .cmp(&b.fail_count)
+            a.calls_minute
+                .cmp(&b.calls_minute)
+                .then_with(|| a.fail_count.cmp(&b.fail_count))
                 .then_with(|| {
                     let au = a.last_used_at.unwrap_or(0.0);
                     let bu = b.last_used_at.unwrap_or(0.0);
@@ -130,20 +138,18 @@ impl NativeKeyPool {
                 .then_with(|| a.id.cmp(&b.id))
         });
 
-        // Cursor breaks ties when last_used_at is equal (first use of several keys).
+        let tied = ready.len() > 1
+            && ready[0].calls_minute == ready[1].calls_minute
+            && ready[0].fail_count == ready[1].fail_count
+            && (ready[0].last_used_at.unwrap_or(0.0) - ready[1].last_used_at.unwrap_or(0.0)).abs() < 0.001;
+        if !tied {
+            return Some(ready[0]);
+        }
         let mut lock = self.cursor.lock().unwrap();
         let current_idx = *lock.get(provider).unwrap_or(&0);
         let selected_idx = current_idx % ready.len();
         lock.insert(provider.to_string(), (selected_idx + 1) % ready.len());
-
-        // When keys have distinct last_used_at, always take the LRU (index 0 after sort).
-        let distinct_lru = ready.len() > 1
-            && ready[0].last_used_at.unwrap_or(0.0) < ready[1].last_used_at.unwrap_or(0.0);
-        if distinct_lru {
-            Some(ready[0])
-        } else {
-            Some(ready[selected_idx])
-        }
+        Some(ready[selected_idx])
     }
 
     pub fn soonest_cooldown(&self, keys: &[ApiKeyItem], provider: &str) -> f64 {
@@ -204,6 +210,8 @@ mod tests {
                 cooldown_until: None,
                 fail_count: 0,
                 last_used_at: None,
+                calls_minute: 0,
+                rpm_limit: 0,
             },
             ApiKeyItem {
                 id: 2,
@@ -214,6 +222,8 @@ mod tests {
                 cooldown_until: None,
                 fail_count: 0,
                 last_used_at: None,
+                calls_minute: 0,
+                rpm_limit: 0,
             },
         ];
 
@@ -238,6 +248,8 @@ mod tests {
                 cooldown_until: None,
                 fail_count: 0,
                 last_used_at: Some(100.0),
+                calls_minute: 0,
+                rpm_limit: 0,
             },
             ApiKeyItem {
                 id: 2,
@@ -248,6 +260,41 @@ mod tests {
                 cooldown_until: None,
                 fail_count: 0,
                 last_used_at: Some(50.0),
+                calls_minute: 0,
+                rpm_limit: 0,
+            },
+        ];
+        let chosen = pool.acquire_key(&keys, "gemini").unwrap();
+        assert_eq!(chosen.id, 2);
+    }
+
+    #[test]
+    fn test_key_pool_skips_a_key_at_its_speed_limit() {
+        let pool = NativeKeyPool::new();
+        let keys = vec![
+            ApiKeyItem {
+                id: 1,
+                provider: "gemini".to_string(),
+                secret: "AIza1".to_string(),
+                label: "Busy".to_string(),
+                enabled: true,
+                cooldown_until: None,
+                fail_count: 0,
+                last_used_at: Some(1.0),
+                calls_minute: 15,
+                rpm_limit: 15,
+            },
+            ApiKeyItem {
+                id: 2,
+                provider: "gemini".to_string(),
+                secret: "AIza2".to_string(),
+                label: "Open".to_string(),
+                enabled: true,
+                cooldown_until: None,
+                fail_count: 4,
+                last_used_at: Some(90.0),
+                calls_minute: 2,
+                rpm_limit: 15,
             },
         ];
         let chosen = pool.acquire_key(&keys, "gemini").unwrap();

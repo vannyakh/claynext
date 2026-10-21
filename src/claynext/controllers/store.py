@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -69,6 +69,20 @@ CREATE TABLE IF NOT EXISTS api_keys (
     created_at     TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_api_keys_provider ON api_keys(provider, enabled);
+
+CREATE TABLE IF NOT EXISTS llm_calls (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    key_id      INTEGER NOT NULL,
+    provider    TEXT    NOT NULL,
+    model       TEXT    NOT NULL DEFAULT '',
+    tokens_in   INTEGER NOT NULL DEFAULT 0,
+    tokens_out  INTEGER NOT NULL DEFAULT 0,
+    ok          INTEGER NOT NULL DEFAULT 1,
+    latency_ms  INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_llm_calls_key ON llm_calls(key_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_llm_calls_provider ON llm_calls(provider, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS tool_settings (
     tool          TEXT NOT NULL,
@@ -368,6 +382,30 @@ class StudioStore:
             (1 if enabled else 0, key_id),
         )
 
+    def update_api_key(
+        self,
+        key_id: int,
+        *,
+        provider: str,
+        label: str,
+        secret: str | None = None,
+    ):
+        """Rename a key, move it to another provider, and replace the secret when one is given."""
+        if secret:
+            self._execute(
+                """
+                UPDATE api_keys
+                SET provider = ?, label = ?, secret = ?, fail_count = 0, cooldown_until = NULL
+                WHERE id = ?
+                """,
+                (provider, label, secret, key_id),
+            )
+            return
+        self._execute(
+            "UPDATE api_keys SET provider = ?, label = ? WHERE id = ?",
+            (provider, label, key_id),
+        )
+
     def update_api_key_state(
         self,
         key_id: int,
@@ -394,6 +432,80 @@ class StudioStore:
             return
         values.append(key_id)
         self._execute(f"UPDATE api_keys SET {', '.join(sets)} WHERE id = ?", tuple(values))
+
+    def log_llm_call(
+        self,
+        key_id: int,
+        provider: str,
+        *,
+        model: str = "",
+        tokens_in: int = 0,
+        tokens_out: int = 0,
+        ok: bool = True,
+        latency_ms: int = 0,
+    ) -> None:
+        """Store one LLM call against its key. Secrets are never written here."""
+        self._execute(
+            """
+            INSERT INTO llm_calls
+                (key_id, provider, model, tokens_in, tokens_out, ok, latency_ms, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(key_id),
+                provider,
+                (model or "")[:80],
+                max(0, int(tokens_in or 0)),
+                max(0, int(tokens_out or 0)),
+                1 if ok else 0,
+                max(0, int(latency_ms or 0)),
+                _now(),
+            ),
+        )
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat(timespec="seconds")
+        self._execute("DELETE FROM llm_calls WHERE created_at < ?", (cutoff,))
+
+    def llm_usage(self, provider: str) -> dict[int, dict[str, Any]]:
+        """Per-key calls and tokens for the last minute and the last day."""
+        now = datetime.now(timezone.utc)
+        minute = (now - timedelta(seconds=60)).isoformat(timespec="seconds")
+        day = (now - timedelta(days=1)).isoformat(timespec="seconds")
+        rows = self._execute(
+            """
+            SELECT key_id, model, tokens_in, tokens_out, created_at
+            FROM llm_calls
+            WHERE provider = ? AND created_at >= ?
+            ORDER BY id ASC
+            """,
+            (provider, day),
+            fetch="all",
+        )
+        out: dict[int, dict[str, Any]] = {}
+        for row in rows or []:
+            key_id = int(row["key_id"])
+            slot = out.setdefault(
+                key_id,
+                {
+                    "calls_minute": 0,
+                    "tokens_minute": 0,
+                    "calls_day": 0,
+                    "tokens_day": 0,
+                    "last_model": "",
+                    "oldest_minute": "",
+                },
+            )
+            tokens = int(row["tokens_in"] or 0) + int(row["tokens_out"] or 0)
+            created = str(row["created_at"] or "")
+            slot["calls_day"] += 1
+            slot["tokens_day"] += tokens
+            if row["model"]:
+                slot["last_model"] = str(row["model"])
+            if created >= minute:
+                slot["calls_minute"] += 1
+                slot["tokens_minute"] += tokens
+                if not slot["oldest_minute"] or created < slot["oldest_minute"]:
+                    slot["oldest_minute"] = created
+        return out
 
     def migrate_legacy_api_keys(self):
         gem = self.get_setting("dub", "gemini_key", "")

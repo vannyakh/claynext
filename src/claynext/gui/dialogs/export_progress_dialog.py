@@ -37,13 +37,12 @@ class ExportProgressDialog(QDialog):
         self._timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._timer.timeout.connect(self._tick)
 
-        root, rule = frameless_shell(self)
+        root = frameless_shell(self)
         root.addWidget(ExportTitleBar(self, title or "Export"))
-        root.addWidget(rule)
 
         content = QHBoxLayout()
-        content.setContentsMargins(16, 4, 16, 8)
-        content.setSpacing(16)
+        content.setContentsMargins(18, 10, 18, 14)
+        content.setSpacing(18)
         details = QVBoxLayout()
         details.setSpacing(10)
 
@@ -91,7 +90,7 @@ class ExportProgressDialog(QDialog):
         root.addLayout(content)
 
         buttons = QHBoxLayout()
-        buttons.setContentsMargins(16, 0, 16, 0)
+        buttons.setContentsMargins(18, 0, 18, 0)
         buttons.addStretch(1)
         self.btn_close = QPushButton("Close")
         self.btn_close.setObjectName("api_keys_btn_primary")

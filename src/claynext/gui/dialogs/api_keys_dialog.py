@@ -25,17 +25,26 @@ def mask_secret(secret: str) -> str:
 
 
 class ApiKeysDialog(QDialog):
-    """Form-only dialog to add one API key for a provider."""
+    """Form-only dialog to add or edit one API key for a provider."""
 
-    def __init__(self, parent=None, provider: str = "gemini"):
+    def __init__(self, parent=None, provider: str = "gemini", key_id: int | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Add API key")
         self.setObjectName("apiKeysDialog")
         self.setFixedWidth(360)
         self.setModal(True)
         self._pool = get_key_pool()
         get_store().migrate_legacy_api_keys()
+        self._key_id = int(key_id) if key_id else None
+        self._record = None
+        if self._key_id:
+            self._record = next(
+                (row for row in self._pool.list_keys() if int(row["id"]) == self._key_id),
+                None,
+            )
+            if self._record:
+                provider = str(self._record.get("provider") or provider)
         self._provider = provider if provider in {p[0] for p in PROVIDERS} else "gemini"
+        self.setWindowTitle("Edit API key" if self._record else "Add API key")
         self._init_ui()
 
     def _init_ui(self):
@@ -52,15 +61,7 @@ class ApiKeysDialog(QDialog):
         idx = self.combo_provider.findData(self._provider)
         if idx >= 0:
             self.combo_provider.setCurrentIndex(idx)
-        self.combo_provider.currentIndexChanged.connect(self._on_provider_changed)
         layout.addWidget(self.combo_provider)
-
-        self.lbl_gemini_hint = QLabel(
-            "Gemini free tier · 15 RPM / 1,500 RPD · keys rotate on rate limit."
-        )
-        self.lbl_gemini_hint.setWordWrap(True)
-        self.lbl_gemini_hint.setObjectName("settings_section_hint")
-        layout.addWidget(self.lbl_gemini_hint)
 
         layout.addWidget(self._field_label("Label"))
         self.edit_label = QLineEdit()
@@ -72,7 +73,9 @@ class ApiKeysDialog(QDialog):
         layout.addWidget(self._field_label("API key"))
         self.edit_secret = QLineEdit()
         self.edit_secret.setObjectName("api_keys_input")
-        self.edit_secret.setPlaceholderText("Paste API key")
+        self.edit_secret.setPlaceholderText(
+            "Leave blank to keep this key" if self._record else "Paste API key"
+        )
         self.edit_secret.setEchoMode(QLineEdit.EchoMode.Password)
         self.edit_secret.setFixedHeight(28)
         self.edit_secret.returnPressed.connect(self._accept_add)
@@ -83,7 +86,7 @@ class ApiKeysDialog(QDialog):
         )
         btn_ok = buttons.button(QDialogButtonBox.StandardButton.Ok)
         btn_cancel = buttons.button(QDialogButtonBox.StandardButton.Cancel)
-        btn_ok.setText("Add key")
+        btn_ok.setText("Save" if self._record else "Add key")
         btn_ok.setObjectName("btn_primary")
         btn_cancel.setObjectName("btn_secondary")
         for btn in (btn_ok, btn_cancel):
@@ -93,8 +96,11 @@ class ApiKeysDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-        self._on_provider_changed()
-        self.edit_secret.setFocus()
+        if self._record:
+            self.edit_label.setText(str(self._record.get("label") or ""))
+            self.edit_label.setFocus()
+        else:
+            self.edit_secret.setFocus()
 
     @staticmethod
     def _field_label(text: str) -> QLabel:
@@ -105,18 +111,21 @@ class ApiKeysDialog(QDialog):
     def provider_id(self) -> str:
         return str(self.combo_provider.currentData() or "gemini")
 
-    def _on_provider_changed(self, *_args) -> None:
-        self.lbl_gemini_hint.setVisible(self.provider_id() == "gemini")
-
     def _accept_add(self):
         secret = self.edit_secret.text().strip()
+        label = self.edit_label.text().strip()
+        if self._record:
+            self._pool.update_key(
+                int(self._record["id"]),
+                provider=self.provider_id(),
+                label=label,
+                secret=secret,
+            )
+            self.accept()
+            return
         if not secret:
             QMessageBox.information(self, "API key", "Paste a key first.")
             self.edit_secret.setFocus()
             return
-        self._pool.add_key(
-            self.provider_id(),
-            secret,
-            self.edit_label.text().strip(),
-        )
+        self._pool.add_key(self.provider_id(), secret, label)
         self.accept()

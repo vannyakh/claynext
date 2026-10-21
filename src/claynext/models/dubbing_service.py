@@ -376,13 +376,22 @@ def _fit_segments_to_soundtrack(segments: list[dict], path: str) -> list[dict]:
     return segments
 
 
+def _speech_device() -> str:
+    try:
+        from claynext.adapters.resources import resource_plan
+
+        return "cuda" if resource_plan().get("speech_device") == "cuda" else "cpu"
+    except Exception:
+        return "cpu"
+
+
 def _tts_workers(requested: int | None) -> int:
     if requested is not None and int(requested) > 0:
         return max(1, int(requested))
     try:
-        from claynext.adapters.cpu import get_cpu_adapter
+        from claynext.adapters.resources import resource_plan
 
-        return max(1, int(get_cpu_adapter().hardware_plan().get("tts_workers") or 1))
+        return max(1, int(resource_plan().get("tts_workers") or 1))
     except Exception:
         return 1
 
@@ -627,7 +636,7 @@ class DubbingEngine:
                 asr_source,
                 token,
                 whisper_model_name=wx_model if wx_model in {"tiny", "base", "small", "medium", "large-v3", "large-v2"} else "small",
-                device="cuda",
+                device=_speech_device(),
                 batch_chunk_size=15,
                 progress_callback=lambda p, m: ping(16 + int(p * 0.22), m),
             )

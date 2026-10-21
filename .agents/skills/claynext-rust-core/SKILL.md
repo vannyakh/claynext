@@ -75,7 +75,7 @@ moves to Rust** (`backends/`, `crates/`), invoked through **Adapters**.
 | `extract-crop` | Accurate playhead crop of a normalized capture zone |
 | `decode-audio` | PCM f32 (+ optional `.f32` out path) |
 | `demux-audio` | Extract PCM WAV (sample rate / channels) |
-| `export` / `mux` | Transcode / mux. `--vf` canvas graphs (split, overlay) encode with `-filter_complex` so the picture matches the preview |
+| `export` / `mux` | Transcode / mux. `--codec auto` uses VideoToolbox on macOS and NVENC, Quick Sync, AMF, or Media Foundation on Windows, then libx264 if that encoder fails. `--vf` canvas graphs encode with `-filter_complex` |
 
 ### Also
 

@@ -69,6 +69,7 @@ def ensure_playback_file(media_path: str, progress_callback=None) -> str:
         video_codec="libx264",
         crf=23,
         preset="ultrafast",
+        prefer_hardware=True,
         progress_callback=progress_callback,
     )
     if success and cached.is_file() and cached.stat().st_size > 0:
@@ -100,6 +101,7 @@ def ensure_proxy_render(media_path: str, progress_callback=None) -> str:
         crf=26,
         height=720,
         preset="ultrafast",
+        prefer_hardware=True,
         progress_callback=progress_callback,
     )
     if ok and out_path.is_file() and out_path.stat().st_size > 0:

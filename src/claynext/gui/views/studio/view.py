@@ -172,6 +172,7 @@ class StudioView(
             "sequences", "Sequences", self.timeline.sequences,
             Qt.DockWidgetArea.TopDockWidgetArea, closable=False,
         )
+        self.timeline_stage.set_header_widget("sequences", self.timeline.sequences.header_actions())
         self.timeline.sequences.presence_changed.connect(self._show_sequences)
         seq_dock = self.timeline_stage.dock("sequences")
         if seq_dock is not None:

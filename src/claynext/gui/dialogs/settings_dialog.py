@@ -5,8 +5,17 @@ from PySide6.QtWidgets import (
     QLineEdit, QPushButton, QFileDialog, QTabWidget, QWidget, QSpinBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
     QScrollArea, QFrame, QSizePolicy, QAbstractItemView,
+    QStyledItemDelegate, QStyle, QStyleOptionViewItem,
 )
 from PySide6.QtCore import Qt, QThreadPool
+from PySide6.QtGui import QColor
+from claynext.constants.theme_constants import (
+    COLOR_ACCENT_CYAN,
+    COLOR_ACCENT_EMERALD,
+    COLOR_ACCENT_ROSE,
+    COLOR_TEXT_MAIN,
+    COLOR_TEXT_MUTED,
+)
 from claynext.utils.config import DEFAULT_CONFIG, MODELS_DIR, OUTPUTS_DIR
 from claynext.gui.components.settings.panel import ModelsPanel
 from claynext.gui.components.settings.toggle import SettingsToggle, bind_toggle_label
@@ -22,6 +31,46 @@ from claynext.models.features import (
 )
 from claynext.controllers.store import get_store
 
+_HEALTH_COLORS = {
+    "Healthy": COLOR_ACCENT_EMERALD,
+    "Busy": COLOR_ACCENT_CYAN,
+    "Shaky": "#f59e0b",
+    "Worn": COLOR_ACCENT_ROSE,
+    "Limited": "#f59e0b",
+    "Off": COLOR_TEXT_MUTED,
+}
+
+
+def _health_color(label: str) -> str:
+    if str(label).startswith("Cooling"):
+        return COLOR_ACCENT_CYAN
+    return _HEALTH_COLORS.get(label, COLOR_TEXT_MAIN)
+
+
+class _HealthDelegate(QStyledItemDelegate):
+    """Paint health text in its status color. The table stylesheet forces item color."""
+
+    def paint(self, painter, option, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        text = opt.text
+        opt.text = ""
+        widget = opt.widget
+        style = widget.style() if widget is not None else None
+        if style is not None:
+            style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, widget)
+        if not text:
+            return
+        color = index.data(Qt.ItemDataRole.UserRole) or COLOR_TEXT_MAIN
+        painter.save()
+        painter.setPen(QColor(str(color)))
+        painter.drawText(
+            opt.rect.adjusted(8, 0, -8, 0),
+            int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+            text,
+        )
+        painter.restore()
+
 
 class SettingsDialog(QDialog):
     """Studio settings — Features, models, paths, and appearance."""
@@ -29,8 +78,8 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings — Claynext Studio")
-        self.setMinimumSize(660, 440)
-        self.resize(720, 480)
+        self.setMinimumSize(760, 440)
+        self.resize(860, 500)
         self.setModal(True)
         self.thread_pool = QThreadPool.globalInstance()
         self._feature_cards: list[QFrame] = []
@@ -216,20 +265,20 @@ class SettingsDialog(QDialog):
         head.addWidget(btn_add, 0, Qt.AlignmentFlag.AlignVCenter)
         lay.addLayout(head)
 
-        self.api_keys_table = QTableWidget(0, 5)
+        self.api_keys_table = QTableWidget(0, 6)
         self.api_keys_table.setObjectName("settings_api_keys_table")
         self.api_keys_table.setHorizontalHeaderLabels(
-            ["Label", "Key", "Status", "Fails", "Enabled"]
+            ["Label", "Key", "Health", "Tokens", "Limit", "Speed"]
         )
         hdr = self.api_keys_table.horizontalHeader()
         hdr.setHighlightSections(False)
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self.api_keys_table.setColumnWidth(3, 52)
-        self.api_keys_table.setColumnWidth(4, 64)
+        for col, width in ((3, 64), (4, 58), (5, 72)):
+            hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
+            self.api_keys_table.setColumnWidth(col, width)
+        self.api_keys_table.setItemDelegateForColumn(2, _HealthDelegate(self.api_keys_table))
         self.api_keys_table.verticalHeader().setVisible(False)
         self.api_keys_table.verticalHeader().setDefaultSectionSize(32)
         self.api_keys_table.setShowGrid(False)
@@ -239,6 +288,7 @@ class SettingsDialog(QDialog):
         self.api_keys_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.api_keys_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.api_keys_table.customContextMenuRequested.connect(self._api_keys_context_menu)
+        self.api_keys_table.itemDoubleClicked.connect(lambda *_args: self._open_edit_api_key())
         lay.addWidget(self.api_keys_table, 1)
 
         self._reload_api_keys()
@@ -278,6 +328,9 @@ class SettingsDialog(QDialog):
                 None,
             )
             enabled = bool(rec and int(rec.get("enabled") or 0) == 1)
+            act_edit = menu.addAction("Edit")
+            act_edit.triggered.connect(self._open_edit_api_key)
+            menu.addSeparator()
             act_toggle = menu.addAction("Disable" if enabled else "Enable")
             act_toggle.triggered.connect(self._toggle_api_key)
             act_remove = menu.addAction("Remove")
@@ -290,43 +343,48 @@ class SettingsDialog(QDialog):
     def _reload_api_keys(self, *_args):
         if not hasattr(self, "api_keys_table"):
             return
+        from claynext.controllers.store import get_store
         from claynext.gui.dialogs.api_keys_dialog import mask_secret
-        from claynext.models.llm_keys import _now, _parse_iso
+        from claynext.models.llm_keys import describe_key
 
         provider = self._api_provider_id()
         rows = self._api_key_pool.list_keys(provider)
+        usage = get_store().llm_usage(provider)
         self.api_keys_table.setRowCount(0)
-        now = _now()
         for rec in rows:
             r = self.api_keys_table.rowCount()
             self.api_keys_table.insertRow(r)
             label = QTableWidgetItem(rec.get("label") or f"Key {rec['id']}")
             label.setData(Qt.ItemDataRole.UserRole, int(rec["id"]))
+            view = describe_key(rec, usage.get(int(rec["id"])))
+            fails = int(rec.get("fail_count") or 0)
             self.api_keys_table.setItem(r, 0, label)
             self.api_keys_table.setItem(r, 1, QTableWidgetItem(mask_secret(rec.get("secret") or "")))
-            until = _parse_iso(rec.get("cooldown_until"))
-            enabled = int(rec.get("enabled") or 0) == 1
-            if not enabled:
-                status = "Disabled"
-            elif until and until > now:
-                secs = int((until - now).total_seconds())
-                status = f"Cooling {secs}s"
-            else:
-                status = "Ready"
-            fails = QTableWidgetItem(str(rec.get("fail_count") or 0))
-            fails.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            enabled_item = QTableWidgetItem("Yes" if enabled else "No")
-            enabled_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.api_keys_table.setItem(r, 2, QTableWidgetItem(status))
-            self.api_keys_table.setItem(r, 3, fails)
-            self.api_keys_table.setItem(r, 4, enabled_item)
+            health = QTableWidgetItem(view["health"])
+            health.setData(Qt.ItemDataRole.UserRole, _health_color(view["health"]))
+            health.setForeground(QColor(_health_color(view["health"])))
+            if fails:
+                health.setToolTip(f"{fails} rate-limit hits. Rotation prefers a healthier key.")
+            self.api_keys_table.setItem(r, 2, health)
+            for col, text in ((3, view["tokens"]), (4, view["limit"]), (5, view["speed"])):
+                cell = QTableWidgetItem(text)
+                cell.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.api_keys_table.setItem(r, col, cell)
 
     def _open_add_api_key(self):
+        self._open_api_key_dialog()
+
+    def _open_edit_api_key(self):
+        key_id = self._selected_api_key_id()
+        if key_id is None:
+            return
+        self._open_api_key_dialog(key_id)
+
+    def _open_api_key_dialog(self, key_id: int | None = None):
         from claynext.gui.dialogs.api_keys_dialog import ApiKeysDialog
 
-        dlg = ApiKeysDialog(self, provider=self._api_provider_id())
+        dlg = ApiKeysDialog(self, provider=self._api_provider_id(), key_id=key_id)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            # Keep provider filter on the key that was added
             pid = dlg.provider_id()
             idx = self.combo_api_provider.findData(pid)
             if idx >= 0:
@@ -594,20 +652,30 @@ class SettingsDialog(QDialog):
     def _build_hardware_paths_tab(self) -> QWidget:
         page, lay = self._scroll_page()
 
+        from claynext.adapters.resources import available_devices, resource_plan
+
         self.combo_device = QComboBox()
         self.combo_device.setFixedHeight(28)
         self.combo_device.setFixedWidth(280)
-        self.combo_device.addItems([
-            "CUDA (NVIDIA GPU)", "DirectML (AMD / Intel GPU)", "CPU Threadpool (Fallback)",
-        ])
+        for row in available_devices():
+            self.combo_device.addItem(row["label"], row["id"])
         lay.addWidget(self._setting_row("Preferred device", self.combo_device))
 
+        cores = max(1, int(resource_plan()["logical_cores"]))
         self.spin_threads = QSpinBox()
         self.spin_threads.setFixedHeight(28)
         self.spin_threads.setFixedWidth(88)
-        self.spin_threads.setRange(1, 16)
-        self.spin_threads.setValue(4)
+        self.spin_threads.setRange(0, cores)
+        self.spin_threads.setSpecialValueText("Auto")
+        self.spin_threads.setValue(0)
         lay.addWidget(self._setting_row("Worker threads", self.spin_threads))
+
+        self.lbl_hardware = QLabel("")
+        self.lbl_hardware.setObjectName("settings_section_hint")
+        self.lbl_hardware.setWordWrap(True)
+        lay.addWidget(self.lbl_hardware)
+        self.combo_device.currentIndexChanged.connect(self._refresh_hardware_label)
+        self.spin_threads.valueChanged.connect(self._refresh_hardware_label)
 
         lay.addWidget(self._divider())
 
@@ -662,6 +730,17 @@ class SettingsDialog(QDialog):
         lay.addStretch(1)
         return page
 
+    def _refresh_hardware_label(self, *_args) -> None:
+        if not hasattr(self, "lbl_hardware"):
+            return
+        from claynext.adapters.resources import describe_plan, resource_plan
+
+        plan = resource_plan(
+            device=str(self.combo_device.currentData() or "best"),
+            threads=int(self.spin_threads.value()),
+        )
+        self.lbl_hardware.setText(describe_plan(plan))
+
     def browse_folder(self, target_line_edit: QLineEdit):
         folder = QFileDialog.getExistingDirectory(self, "Select Directory", target_line_edit.text())
         if folder:
@@ -705,13 +784,12 @@ class SettingsDialog(QDialog):
         self._refresh_stem_status_label()
         self._populate_features_cards()
 
-        device = store.get_setting("studio", "device", DEFAULT_CONFIG["device"])
-        self._set_combo_text(self.combo_device, device)
-        try:
-            threads = int(store.get_setting("studio", "worker_threads", DEFAULT_CONFIG["worker_threads"]))
-        except ValueError:
-            threads = 4
-        self.spin_threads.setValue(max(1, min(16, threads)))
+        from claynext.adapters.resources import stored_choice
+
+        device, threads = stored_choice()
+        self._set_combo_data(self.combo_device, device)
+        self.spin_threads.setValue(max(0, min(self.spin_threads.maximum(), threads)))
+        self._refresh_hardware_label()
         self.txt_models_dir.setText(
             store.get_setting("studio", "models_directory", str(MODELS_DIR)) or str(MODELS_DIR)
         )
@@ -737,8 +815,9 @@ class SettingsDialog(QDialog):
         self.chk_prefer_voxcpm.setChecked(DEFAULT_CONFIG["prefer_voxcpm"] == "1")
         self._refresh_stem_status_label()
         self._populate_features_cards()
-        self._set_combo_text(self.combo_device, DEFAULT_CONFIG["device"])
+        self._set_combo_data(self.combo_device, DEFAULT_CONFIG["device"])
         self.spin_threads.setValue(int(DEFAULT_CONFIG["worker_threads"]))
+        self._refresh_hardware_label()
         self.txt_models_dir.setText(str(MODELS_DIR))
         self.txt_outputs_dir.setText(str(OUTPUTS_DIR))
         self.combo_theme.setCurrentIndex(0)
@@ -758,8 +837,14 @@ class SettingsDialog(QDialog):
         set_feature_setting("prefer_whisperx", "1" if self.chk_prefer_whisperx.isChecked() else "0")
         set_feature_setting("prefer_voxcpm", "1" if self.chk_prefer_voxcpm.isChecked() else "0")
 
-        store.set_setting("studio", "device", self.combo_device.currentText())
+        store.set_setting("studio", "device", str(self.combo_device.currentData() or "best"))
         store.set_setting("studio", "worker_threads", str(self.spin_threads.value()))
+        try:
+            from claynext.adapters.resources import apply_process_threads
+
+            apply_process_threads()
+        except Exception:
+            pass
         store.set_setting("studio", "models_directory", self.txt_models_dir.text().strip() or str(MODELS_DIR))
         store.set_setting("studio", "save_directory", self.txt_outputs_dir.text().strip() or str(OUTPUTS_DIR))
 

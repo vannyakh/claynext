@@ -87,7 +87,18 @@ pub fn select_optimal_video_encoder(prefer_hevc: bool) -> SelectedCodec {
         }
     }
 
+    // Windows without a vendor encoder still has Media Foundation.
+    #[cfg(target_os = "windows")]
+    {
+        let mut profile = MediaFoundationProfile::default();
+        if prefer_hevc {
+            profile.codec = "hevc_mf".to_string();
+        }
+        return SelectedCodec::MediaFoundation(profile);
+    }
+
     // Fallback to CPU Software (libx264/libx265)
+    #[allow(unreachable_code)]
     SelectedCodec::CpuSoftware {
         codec: if prefer_hevc {
             "libx265".to_string()

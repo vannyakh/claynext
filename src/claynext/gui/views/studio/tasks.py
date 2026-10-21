@@ -1010,7 +1010,7 @@ class TaskTools:
             return
         voice_id = self.combo_voice.currentData() if hasattr(self, "combo_voice") else None
         if not voice_id:
-            self._show_error("No voice", "Choose an Edge neural voice.")
+            self._show_error("No voice", "Choose a voice.")
             return
         from claynext.gui.dialogs.env_alert import ensure_job_environment
 
@@ -1561,7 +1561,7 @@ class TaskTools:
     def _retry_environment_ready(self) -> bool:
         voice_id = self.combo_voice.currentData() if hasattr(self, "combo_voice") else None
         if not voice_id:
-            self._show_error("No voice", "Choose an Edge neural voice.")
+            self._show_error("No voice", "Choose a voice.")
             return False
         from claynext.gui.dialogs.env_alert import ensure_job_environment
 

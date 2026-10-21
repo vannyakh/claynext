@@ -81,9 +81,19 @@ def torch_wheels_available() -> bool:
     return True
 
 
+def _detect_audio_separator() -> bool:
+    try:
+        from claynext.models.stem_separation import separator_available
+        return separator_available()
+    except Exception:
+        return False
+
+
 def _unsupported_reason(feature_id: str) -> str:
     if feature_id == "demucs_mlx":
         return "Apple Silicon only. This Mac cannot run Demucs MLX."
+    if feature_id == "audio_separator":
+        return "Audio Separator needs PyTorch, which has no Intel macOS build."
     if not torch_wheels_available():
         return "PyTorch has no Intel macOS build, so this feature cannot be installed here."
     return "This platform cannot install this feature."
@@ -106,6 +116,15 @@ FEATURE_REGISTRY: list[dict[str, Any]] = [
         "extra": "demucs",
         "hint": "Meta htdemucs stem separation. uv sync --extra demucs",
         "detect": _detect_demucs,
+        "supported": torch_wheels_available,
+    },
+    {
+        "id": "audio_separator",
+        "label": "Audio Separator (UVR)",
+        "category": "audio",
+        "extra": "audio-separator",
+        "hint": "Vocal / effects split for dub transcripts. Not installable on Intel macOS (no PyTorch wheel), and it needs torch>=2.13 beside the Demucs pin.",
+        "detect": _detect_audio_separator,
         "supported": torch_wheels_available,
     },
     {
@@ -252,6 +271,8 @@ def stem_status_label() -> str:
         return f"Stem bed · Demucs MLX ({demucs_model_name()})"
     if backend == "torch":
         return f"Stem bed · Demucs {demucs_model_name()}"
+    if backend == "separator":
+        return "Stem bed · UVR vocals / effects"
     if mode == "demucs":
         return "Stem bed · Demucs required · uv sync --extra demucs-mlx or demucs"
     return "Stem bed · FFmpeg fallback · uv sync --extra demucs-mlx or demucs"

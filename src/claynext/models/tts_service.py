@@ -49,7 +49,7 @@ def voice_display_fallback(voice_id: str) -> str:
         return "Voice"
     stem = voice_id.split("/")[-1].replace("Neural", "")
     skip = {
-        "edge", "kitten", "voxcpm", "en", "us", "km", "kh", "vi", "vn",
+        "edge", "kitten", "voxcpm", "eleven", "en", "us", "km", "kh", "vi", "vn",
         "ja", "jp", "ko", "kr", "zh", "cn", "female", "male",
     }
     for part in reversed(stem.replace("_", "-").split("-")):
@@ -60,13 +60,15 @@ def voice_display_fallback(voice_id: str) -> str:
 
 class TTSEngine:
     """
-    Text-to-Speech engine: KittenTTS (CPU ONNX), Edge TTS (online), and VoxCPM (local neural).
+    Text-to-Speech engine: KittenTTS (CPU ONNX), Edge TTS (online), VoxCPM (local neural), and ElevenLabs.
     """
     PROVIDERS = [
         "KittenTTS (Local CPU/ONNX)",
         "Microsoft Edge TTS (Online Free)",
         "VoxCPM (Local Neural · Multilingual)",
+        "ElevenLabs (Online)",
     ]
+    ELEVEN_MODEL = "eleven_multilingual_v2"
 
     KITTEN_MODELS = [
         ("KittenML/kitten-tts-nano-0.8-fp32", "Kitten Nano (15M · Ultra-Fast CPU)"),
@@ -183,6 +185,18 @@ class TTSEngine:
         {"id": "zh-CN-XiaoxiaoNeural", "name": "Xiaoxiao", "alias": "Xiaoxiao", "lang": "Chinese", "tag": "Neural", "gender": "Female"},
     ]
 
+    # Premade elevenlabs.io voices. Ids are `eleven:<api voice id>` so they never collide with Edge.
+    ELEVEN_VOICES = [
+        {"id": "eleven:JBFqnCBsd6RMkjVDRZzb", "name": "George", "alias": "George", "lang": "All", "tag": "ElevenLabs", "gender": "Male"},
+        {"id": "eleven:EXAVITQu4vr4xnSDxMaL", "name": "Sarah", "alias": "Sarah", "lang": "All", "tag": "ElevenLabs", "gender": "Female"},
+        {"id": "eleven:onwK4e9ZLuTAKqWW03F9", "name": "Daniel", "alias": "Daniel", "lang": "All", "tag": "ElevenLabs", "gender": "Male"},
+        {"id": "eleven:XB0fDUnXU5powFXDhCwa", "name": "Charlotte", "alias": "Charlotte", "lang": "All", "tag": "ElevenLabs", "gender": "Female"},
+        {"id": "eleven:21m00Tcm4TlvDq8ikWAM", "name": "Rachel", "alias": "Rachel", "lang": "All", "tag": "ElevenLabs", "gender": "Female"},
+        {"id": "eleven:pNInz6obpgDQGcFmaJgB", "name": "Adam", "alias": "Adam", "lang": "All", "tag": "ElevenLabs", "gender": "Male"},
+        {"id": "eleven:ErXwobaYiN019PkySvjV", "name": "Antoni", "alias": "Antoni", "lang": "All", "tag": "ElevenLabs", "gender": "Male"},
+        {"id": "eleven:TxGEqnHWrfWFTfGW9XjX", "name": "Josh", "alias": "Josh", "lang": "All", "tag": "ElevenLabs", "gender": "Male"},
+    ]
+
     CLONE_VOICES = [
         {
             "id": "clone:movie",
@@ -195,7 +209,7 @@ class TTSEngine:
         }
     ]
 
-    VOICE_PRESETS = CLONE_VOICES + KITTEN_VOICES + VOXCPM_VOICES + EDGE_VOICES
+    VOICE_PRESETS = CLONE_VOICES + KITTEN_VOICES + VOXCPM_VOICES + EDGE_VOICES + ELEVEN_VOICES
 
     @staticmethod
     def _is_clone_voice(voice_id: str) -> bool:
@@ -220,6 +234,14 @@ class TTSEngine:
         return any(v["id"] == voice_id for v in TTSEngine.VOXCPM_VOICES)
 
     @staticmethod
+    def _is_eleven_voice(voice_id: str) -> bool:
+        return bool(voice_id) and voice_id.startswith("eleven:")
+
+    @staticmethod
+    def _eleven_api_id(voice_id: str) -> str:
+        return voice_id.split(":", 1)[1] if ":" in (voice_id or "") else voice_id
+
+    @staticmethod
     def _is_edge_voice(voice_id: str) -> bool:
         if not voice_id:
             return False
@@ -240,6 +262,10 @@ class TTSEngine:
     @staticmethod
     def edge_voices() -> List[Dict[str, Any]]:
         return list(TTSEngine.EDGE_VOICES)
+
+    @staticmethod
+    def eleven_voices() -> List[Dict[str, Any]]:
+        return list(TTSEngine.ELEVEN_VOICES)
 
     @staticmethod
     def voice_label(voice: dict[str, Any] | str) -> str:
@@ -327,7 +353,7 @@ class TTSEngine:
         progress_callback: Callable | None = None,
         allow_expression_tags: bool = True,
     ) -> str:
-        """Route to Kitten / VoxCPM / Edge based on voice id.
+        """Route to Kitten / VoxCPM / ElevenLabs / Edge based on voice id.
 
         When ``allow_expression_tags`` is True (default), inline cues like
         ``[laugh]`` / ``[sigh]`` / ``[excited]`` are expanded before speaking.
@@ -409,6 +435,14 @@ class TTSEngine:
                 output_path,
                 model_name=model_name or TTSEngine.VOXCPM_DEFAULT_MODEL,
                 reference_wav=reference_wav,
+                progress_callback=progress_callback,
+            )
+        if TTSEngine._is_eleven_voice(voice_id):
+            return TTSEngine.synthesize_eleven(
+                text,
+                voice_id,
+                output_path,
+                speed=speed,
                 progress_callback=progress_callback,
             )
         if TTSEngine._is_kitten_voice(voice_id):
@@ -683,6 +717,82 @@ class TTSEngine:
         return output_path
 
     @staticmethod
+    def synthesize_eleven(
+        text: str,
+        voice_id: str,
+        output_path: str,
+        speed: float = 1.0,
+        progress_callback: Callable | None = None,
+    ) -> str:
+        """Speak with elevenlabs.io. The key lives in Settings → API Keys, or ELEVENLABS_API_KEY."""
+        import json
+        import urllib.error
+        import urllib.request
+
+        from claynext.models.llm_keys import RateLimitError, get_key_pool
+
+        raw = (text or "").strip()
+        if not raw:
+            raise RuntimeError("No text to speak.")
+        if not TTSEngine._is_eleven_voice(voice_id):
+            raise RuntimeError(f"Voice is not an ElevenLabs voice: {voice_id}")
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        api_voice = TTSEngine._eleven_api_id(voice_id)
+        pace = max(0.25, min(4.0, float(speed or 1.0)))
+        if progress_callback:
+            progress_callback(40, "Speaking with ElevenLabs…")
+
+        def _call(secret: str) -> bytes:
+            url = (
+                "https://api.elevenlabs.io/v1/text-to-speech/"
+                f"{api_voice}?output_format=mp3_44100_128"
+            )
+            body = {
+                "text": raw,
+                "model_id": TTSEngine.ELEVEN_MODEL,
+                "voice_settings": {
+                    "stability": 0.45,
+                    "similarity_boost": 0.75,
+                    "style": 0.0,
+                    "speed": pace,
+                    "use_speaker_boost": True,
+                },
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(body).encode("utf-8"),
+                headers={
+                    "xi-api-key": secret,
+                    "Content-Type": "application/json",
+                    "Accept": "audio/mpeg",
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=180) as resp:
+                    return resp.read()
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="replace")[:300]
+                if exc.code == 429:
+                    raise RateLimitError(detail or "ElevenLabs rate limit")
+                if exc.code in {401, 403}:
+                    raise RuntimeError(
+                        "ElevenLabs rejected the API key. "
+                        "Add a key in Settings → API Keys → ElevenLabs."
+                    )
+                raise RuntimeError(f"ElevenLabs TTS failed ({exc.code}). {detail}") from exc
+
+        audio = get_key_pool().call_with_rotation(
+            "elevenlabs", _call, progress=progress_callback,
+        )
+        if not audio:
+            raise RuntimeError("ElevenLabs returned empty audio.")
+        Path(output_path).write_bytes(audio)
+        if progress_callback:
+            progress_callback(100, "ElevenLabs speech ready")
+        return output_path
+
+    @staticmethod
     def _extract_peaks(file_path: str, count: int = 70) -> list[float]:
         try:
             import soundfile as sf
@@ -731,7 +841,7 @@ class TTSEngine:
         reference_wav: str = "",
         progress_callback: Callable | None = None,
     ) -> Dict[str, Any]:
-        """Synthesize text with KittenTTS, VoxCPM, or Edge TTS."""
+        """Synthesize text with KittenTTS, VoxCPM, ElevenLabs, or Edge TTS."""
         if progress_callback:
             progress_callback(10, f"Connecting to {provider} voice '{voice_id}'…")
 
@@ -792,7 +902,29 @@ class TTSEngine:
                 if progress_callback:
                     progress_callback(40, f"KittenTTS error: {exc} — attempting Edge TTS fallback…")
 
-        # 3. Microsoft Edge TTS online synthesis
+        # 3. ElevenLabs online synthesis
+        if TTSEngine._is_eleven_voice(voice_id) or "ElevenLabs" in (provider or ""):
+            try:
+                eleven_voice = voice_id if TTSEngine._is_eleven_voice(voice_id) else TTSEngine.ELEVEN_VOICES[0]["id"]
+                actual_path = TTSEngine.synthesize_eleven(
+                    text, eleven_voice, output_path, speed=speed, progress_callback=progress_callback,
+                )
+                duration = TTSEngine._probe_duration(actual_path)
+                peaks = TTSEngine._extract_peaks(actual_path)
+                return {
+                    "text": text,
+                    "duration": duration,
+                    "sample_rate": 44100,
+                    "wave_peaks": peaks,
+                    "file_path": actual_path,
+                }
+            except Exception as exc:
+                if progress_callback:
+                    progress_callback(55, f"ElevenLabs unavailable: {exc}")
+                if TTSEngine._is_eleven_voice(voice_id):
+                    raise
+
+        # 4. Microsoft Edge TTS online synthesis
         if TTSEngine._is_edge_voice(voice_id) or "Edge" in (provider or ""):
             try:
                 edge_voice = voice_id if TTSEngine._is_edge_voice(voice_id) else "en-US-AvaNeural"
@@ -812,7 +944,7 @@ class TTSEngine:
                 if progress_callback:
                     progress_callback(60, f"Edge TTS unavailable: {exc} — falling back to local synthesizer…")
 
-        # 4. Fallback tone synthesizer
+        # 5. Fallback tone synthesizer
         sample_rate = 22050
         duration = max(1.5, len(text) * 0.06 / max(0.2, speed))
         num_samples = int(sample_rate * duration)

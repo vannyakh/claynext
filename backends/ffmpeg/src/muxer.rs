@@ -36,6 +36,8 @@ pub struct MuxOptions {
     pub video_preset: String,
     /// When set, video is re-encoded with this ffmpeg filter graph.
     pub video_filter: String,
+    /// `auto` picks VideoToolbox on macOS and NVENC / QSV / AMF / Media Foundation on Windows.
+    pub video_codec: String,
     /// Trim both inputs to this window, in seconds. Video uses it as `-ss`/`-t`.
     pub start_seconds: Option<f64>,
     pub duration_seconds: Option<f64>,
@@ -52,6 +54,7 @@ impl Default for MuxOptions {
             video_crf: 18,
             video_preset: "medium".into(),
             video_filter: String::new(),
+            video_codec: "auto".into(),
             start_seconds: None,
             duration_seconds: None,
         }
@@ -158,16 +161,18 @@ where
         } else {
             options.video_preset.as_str()
         };
-        cmd.args([
-            "-c:v",
-            "libx264",
-            "-preset",
+        let codec = if options.video_codec.trim().is_empty()
+            || matches!(options.video_codec.as_str(), "auto" | "best")
+        {
+            crate::encoder::best_platform_codec()
+        } else {
+            options.video_codec.clone()
+        };
+        cmd.args(crate::encoder::video_encoder_args(
+            &codec,
+            options.video_crf,
             preset,
-            "-crf",
-            &options.video_crf.to_string(),
-            "-pix_fmt",
-            "yuv420p",
-        ]);
+        ));
     }
 
     // Audio codec handling

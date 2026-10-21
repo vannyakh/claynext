@@ -159,7 +159,7 @@ class ScriptExportTools:
         self.open_export_dialog("movie")
 
     def open_export_dialog(self, kind: str = "", *, script_only: bool = False):
-        from claynext.gui.dialogs.export_dialog import ExportDialog
+        from claynext.gui.dialogs.export_dialog import ExportDialog, unused_export_path
 
         source = self.timeline.canvas.media_path or self.selected_file
         stem = os.path.splitext(os.path.basename(source))[0] if source else "dub"
@@ -190,6 +190,7 @@ class ScriptExportTools:
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         opts = dialog.options()
+        opts["path"] = unused_export_path(opts["path"])
         QSettings("Claynext", "ClaynextStudio").setValue(
             key, json.dumps({k: v for k, v in opts.items() if k != "path"}),
         )

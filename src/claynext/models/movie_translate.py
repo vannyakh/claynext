@@ -6,9 +6,10 @@ Dub pipeline call path:
 
 Auto / movie engine order:
   1. Gemini Flash (rolling API keys, parallel batches)
-  2. Ollama (aya-expanse / qwen3 / requested — local quality)
-  3. NLLB-200 offline (if weights are present)
-  4. Google Translate (last-resort literal)
+  2. Any other stored cloud key (Qwen, DeepSeek, Groq, OpenRouter, …)
+  3. Ollama (aya-expanse / qwen3 / requested — local quality)
+  4. NLLB-200 offline (if weights are present)
+  5. Google Translate (last-resort literal)
 """
 from __future__ import annotations
 
@@ -103,6 +104,7 @@ def resolve_movie_engine_chain(
 
     backend: gemini | ollama | nllb | google
     """
+    from claynext.models.llm_providers import CHAT_ORDER, CHAT_PROVIDERS
     from claynext.models.translate_service import TranslateEngine
 
     engine = (translator or "auto").strip().lower()
@@ -117,6 +119,9 @@ def resolve_movie_engine_chain(
 
     if engine == "gemini":
         _add("Gemini Flash · cinematic", "gemini")
+    elif engine in CHAT_PROVIDERS:
+        spec = CHAT_PROVIDERS[engine]
+        _add(f"{spec['label']} · {spec['model']}", engine, spec["model"])
     elif engine == "ollama":
         _add(f"Ollama {model} · cinematic", "ollama", model)
     elif engine == "nllb":
@@ -126,6 +131,10 @@ def resolve_movie_engine_chain(
     elif cinematic:
         if pool.secrets("gemini") or pool.ready_count("gemini") > 0:
             _add("Gemini Flash · cinematic (rolling keys)", "gemini")
+        for pid in CHAT_ORDER:
+            if pool.ready_count(pid) > 0:
+                spec = CHAT_PROVIDERS[pid]
+                _add(f"{spec['label']} · {spec['model']}", pid, spec["model"])
         if TranslateEngine.ollama_available():
             _add(f"Ollama {model} · cinematic", "ollama", model)
         try:
@@ -247,6 +256,7 @@ def translate_movie_dialogue(
     """
     Translate film dialogue for dubbing — cinematic rewrite, cast-aware, slot-fit.
     """
+    from claynext.models.llm_providers import CHAT_PROVIDERS
     from claynext.models.translate_service import TranslateEngine
 
     if not segments:
@@ -295,11 +305,11 @@ def translate_movie_dialogue(
     for i, (label, backend, model) in enumerate(chain):
         ping(4, f"Movie translate · {len(segments)} line(s) → {native} ({label})…")
         try:
-            if backend == "gemini":
+            if backend == "gemini" or backend in CHAT_PROVIDERS:
                 rows = TranslateEngine._translate_llm(
                     segments,
                     target_lang,
-                    "gemini",
+                    backend,
                     "",
                     ping,
                     source_lang=source_lang,

@@ -213,6 +213,15 @@ def _extract_wav(media_path: str, wav_path: str, progress_callback: Callable | N
         raise RuntimeError(err or "Could not extract audio from this media file.")
 
 
+def _speech_device() -> str:
+    try:
+        from claynext.adapters.resources import resource_plan
+
+        return "cuda" if resource_plan().get("speech_device") == "cuda" else "cpu"
+    except Exception:
+        return "cpu"
+
+
 def _resolve_model(model_name: str, device_override: str = "auto") -> tuple[str, str]:
     raw = (model_name or "whisper-small").strip()
     lower = raw.lower()
@@ -222,7 +231,7 @@ def _resolve_model(model_name: str, device_override: str = "auto") -> tuple[str,
     elif dev_ov in {"cuda", "gpu", "float16"}:
         device = "cuda"
     else:
-        device = "cuda" if "cuda" in lower else "cpu"
+        device = "cuda" if "cuda" in lower else _speech_device()
     size = lower.replace("faster-whisper-", "").replace("whisper-", "")
     size = size.replace("-cuda", "").strip() or "small"
     aliases = {
@@ -326,6 +335,8 @@ def _transcribe_gemini(
             try:
                 with urllib.request.urlopen(req, timeout=120) as resp:
                     resp_data = json.loads(resp.read().decode("utf-8"))
+                    from claynext.models.llm_keys import note_llm_usage
+                    note_llm_usage("gemini-2.0-flash", resp_data)
                     cand_text = resp_data["candidates"][0]["content"]["parts"][0]["text"]
                     return json.loads(cand_text)
             except urllib.error.HTTPError as err:
@@ -425,13 +436,33 @@ class ASREngine:
         else:
             compute = "float16" if device == "cuda" else "int8"
 
+        cpu_threads = 4
+        if device == "cpu":
+            try:
+                from claynext.adapters.resources import resource_plan
+
+                cpu_threads = max(1, int(resource_plan()["threads"]))
+            except Exception:
+                cpu_threads = 4
         try:
-            model = WhisperModel(size, device=device, compute_type=compute)
+            model = WhisperModel(
+                size,
+                device=device,
+                compute_type=compute,
+                cpu_threads=cpu_threads,
+                num_workers=1,
+            )
         except Exception:
             if device != "cpu":
                 if progress_callback:
                     progress_callback(10, "GPU unavailable — using CPU…")
-                model = WhisperModel(size, device="cpu", compute_type="int8")
+                model = WhisperModel(
+                    size,
+                    device="cpu",
+                    compute_type="int8",
+                    cpu_threads=cpu_threads,
+                    num_workers=1,
+                )
             else:
                 raise RuntimeError(f"Could not load Whisper model '{size}'.") from None
 

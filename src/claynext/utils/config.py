@@ -27,7 +27,7 @@ APP_AUTHOR = "Claynext"
 
 DEFAULT_CONFIG = {
     "theme": "Dark Cyber",
-    "device": "CPU Threadpool (Fallback)",
+    "device": "best",
     "asr_model": "whisper-medium",
     "tts_model": "qwen-tts-v1",
     "ocr_engine": "easyocr-multilingual",
@@ -45,7 +45,7 @@ DEFAULT_CONFIG = {
     "auto_open_exports": "1",
     "keep_awake": "1",
     "notify_on_complete": "1",
-    "worker_threads": "4",
+    "worker_threads": "0",
     "ui_animations": "1",
     "accent": "Indigo / Purple (#6366f1)",
 }
@@ -75,7 +75,7 @@ __all__ = [
 
 def _default_device() -> str:
     if os.environ.get("CUDA_VISIBLE_DEVICES", "").strip():
-        return "CUDA (NVIDIA GPU)"
+        return "cuda"
     return DEFAULT_CONFIG["device"]
 
 

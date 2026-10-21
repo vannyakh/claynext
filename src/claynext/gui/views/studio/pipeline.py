@@ -60,7 +60,7 @@ class PipelineTools:
 
         voice_id = self.combo_voice.currentData()
         if not voice_id:
-            self._show_error("No voice", "Choose an Edge neural voice.")
+            self._show_error("No voice", "Choose a voice.")
             return
 
         # Environment preflight runs in StartLocalizeDialog before Accept.
@@ -508,16 +508,9 @@ class PipelineTools:
             self.timeline.set_compositions(names, -1)
 
     def _load_hardware_plan(self) -> dict:
-        from claynext.adapters.cpu import get_cpu_adapter
+        from claynext.adapters.resources import apply_process_threads, resource_plan
 
-        plan = dict(get_cpu_adapter().hardware_plan())
-        try:
-            cap = int(self.store.get_setting("studio", "worker_threads", "0") or 0)
-        except (TypeError, ValueError):
-            cap = 0
-        if cap > 0:
-            plan["dub_jobs"] = max(1, min(int(plan.get("dub_jobs") or 1), cap))
-            plan["tts_workers"] = max(1, min(int(plan.get("tts_workers") or 1), cap))
+        plan = apply_process_threads(resource_plan())
         self._hardware_plan = plan
         return plan
 
@@ -1488,6 +1481,9 @@ class PipelineTools:
             self.timeline.apply_fx(fx)
 
         # Legacy sessions stored a Caption track but never the caption clips
+        if hasattr(self.timeline, "hold_effects_bed"):
+            self.timeline.hold_effects_bed()
+
         if overlays is None:
             auto = True
             if hasattr(self, "store"):

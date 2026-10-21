@@ -94,6 +94,12 @@ def main(argv: list[str] | None = None):
     app = QApplication([sys.argv[0], *qt_args])
     app.setApplicationName("Claynext Studio")
     app.setOrganizationName("Claynext")
+    try:
+        from claynext.adapters.resources import apply_process_threads
+
+        apply_process_threads()
+    except Exception:
+        pass
 
     tool_index = _resolve_tool_index(args.tool)
     open_studio = bool(args.studio or args.project)

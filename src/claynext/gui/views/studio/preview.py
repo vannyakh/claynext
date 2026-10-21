@@ -48,6 +48,10 @@ class PreviewTools:
             player = QMediaPlayer(panel)
             player.setAudioOutput(out)
             self._clip_lanes[take] = [player, out, ""]
+        effects_out = QAudioOutput(panel)
+        effects_player = QMediaPlayer(panel)
+        effects_player.setAudioOutput(effects_out)
+        self._effects_lane = [effects_player, effects_out, ""]
         self.overlay.item_selected.connect(self._on_overlay_selected)
         self.overlay.items_changed.connect(self._on_overlays_changed)
         self.overlay.item_edited.connect(self._on_overlay_edited)
@@ -294,6 +298,9 @@ class PreviewTools:
 
     def _apply_timeline_gains(self):
         source, voice, bed = self._timeline_gains
+        if hasattr(self, "timeline") and self.timeline.canvas.effects_bed_active():
+            # The Effects track is the bed. The movie file still carries the original dialogue.
+            source, bed = 0.0, 0.0
         self.preview.set_source_gain(source)
         self.preview.set_voice_gain(voice)
         self.preview.set_bed_gain(bed)
@@ -408,6 +415,7 @@ class PreviewTools:
         if not playing or self._player_mode != "timeline":
             for lane in self._clip_lanes.values():
                 lane[0].pause()
+            self._effects_lane[0].pause()
             return
         self._reset_clip_lanes()
         self._sync_voice_clip(self.preview.player.position())
@@ -415,11 +423,14 @@ class PreviewTools:
     def _reset_clip_lanes(self):
         for lane in self._clip_lanes.values():
             lane[2] = ""
+        self._effects_lane[2] = ""
 
     def _stop_clip_lanes(self):
         for lane in self._clip_lanes.values():
             lane[0].stop()
             lane[2] = ""
+        self._effects_lane[0].stop()
+        self._effects_lane[2] = ""
 
     def _sync_voice_clip(self, ms: int):
         if not hasattr(self, "timeline"):
@@ -432,6 +443,8 @@ class PreviewTools:
         for take, lane in self._clip_lanes.items():
             clip = None if outside else self.timeline.canvas.voice_clip_at(ms, take=take)
             self._sync_clip_lane(lane, clip, ms)
+        effects = None if outside else self.timeline.canvas.effects_clip_at(ms)
+        self._sync_clip_lane(self._effects_lane, effects, ms)
 
     def _sync_clip_lane(self, lane: list, clip, ms: int):
         player, out, current = lane

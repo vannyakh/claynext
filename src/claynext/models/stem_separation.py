@@ -2,12 +2,15 @@
 Movie vocal / music stem separation for dubbing mix beds.
 
 Backends (first available wins):
-  1. demucs-mlx — Apple Silicon MLX port (https://huggingface.co/mlx-community/demucs-mlx)
-  2. demucs     — Meta Demucs / htdemucs (https://github.com/facebookresearch/demucs)
+  1. demucs-mlx — Apple Silicon MLX port
+  2. demucs     — Meta Demucs / htdemucs
+  3. audio-separator — UVR vocal / instrumental (https://github.com/nomadkaraoke/python-audio-separator)
 
 Install:
-  uv sync --extra demucs-mlx   # macOS arm64
-  uv sync --extra demucs       # PyTorch Demucs (not Intel macOS)
+  uv sync --extra demucs-mlx        # macOS arm64
+  uv sync --extra demucs            # PyTorch Demucs (not Intel macOS)
+  # audio-separator is not an extra yet: it needs torch>=2.13, and the
+  # demucs extra pins torch==2.8. Intel macOS has no torch wheel at all.
 """
 from __future__ import annotations
 
@@ -20,6 +23,8 @@ from typing import Callable
 Ping = Callable[[int, str], None] | None
 
 DEFAULT_MODEL = "htdemucs"
+# ONNX MDX model: Instrumental (effects + music) and Vocals. Weights land in data/models.
+SEPARATOR_MODEL = "UVR-MDX-NET-Inst_HQ_3.onnx"
 VOCAL_KEYS = frozenset({"vocals", "vocal"})
 
 
@@ -28,8 +33,17 @@ def demucs_mlx_supported() -> bool:
     return platform.system() == "Darwin" and platform.machine() in {"arm64", "aarch64"}
 
 
+def separator_available() -> bool:
+    """True when python-audio-separator can be imported."""
+    try:
+        from audio_separator.separator import Separator  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
 def backend_available() -> str | None:
-    """Return ``mlx``, ``torch``, or ``None``."""
+    """Return ``mlx``, ``torch``, ``separator``, or ``None``."""
     if demucs_mlx_supported():
         try:
             import demucs_mlx  # noqa: F401
@@ -41,6 +55,9 @@ def backend_available() -> str | None:
         return "torch"
     except Exception:
         return None
+    if separator_available():
+        return "separator"
+    return None
 
 
 def _media_key(media_path: str, model: str, backend: str) -> str:
@@ -139,11 +156,47 @@ def _separate_mlx(wav_path: str, model: str, ping: Ping) -> tuple[dict, int]:
     return stems, rate
 
 
+def _separate_uvr(media_path: str, work: Path, ping: Ping) -> tuple[Path | None, Path | None]:
+    """Split effects+music from vocals with audio-separator. Returns file paths."""
+    from audio_separator.separator import Separator
+    from claynext.utils.paths import MODELS_DIR
+
+    model_dir = MODELS_DIR / "audio-separator"
+    model_dir.mkdir(parents=True, exist_ok=True)
+    work.mkdir(parents=True, exist_ok=True)
+    if ping:
+        ping(12, "Splitting vocals from effects…")
+    separator = Separator(
+        output_dir=str(work),
+        output_format="WAV",
+        model_file_dir=str(model_dir),
+        sample_rate=48000,
+    )
+    separator.load_model(model_filename=SEPARATOR_MODEL)
+    written = separator.separate(media_path) or []
+    vocals: Path | None = None
+    instrumental: Path | None = None
+    for item in written:
+        path = Path(str(item))
+        name = path.name.lower()
+        if "vocal" in name and "instrument" not in name:
+            vocals = path
+        elif "instrument" in name or "no_vocal" in name or "karaoke" in name:
+            instrumental = path
+    return instrumental, vocals
+
+
 def _separate_torch(wav_path: str, model: str, ping: Ping) -> tuple[dict, int]:
     from demucs.api import Separator, save_audio  # noqa: F401 — save kept for parity
 
     if ping:
         ping(12, f"Demucs · {model} stem separation…")
+    try:
+        from claynext.adapters.resources import apply_process_threads
+
+        apply_process_threads()
+    except Exception:
+        pass
     sep = Separator(model=model)
     _origin, stems = sep.separate_audio_file(Path(wav_path))
     rate = int(getattr(sep, "samplerate", 44100) or 44100)
@@ -163,7 +216,7 @@ def separate_movie_stems(
 
     Returns paths::
         {
-          "backend": "mlx" | "torch" | None,
+          "backend": "mlx" | "torch" | "separator" | None,
           "bed": instrumental WAV @ 48 kHz stereo (or None),
           "vocals": vocal stem WAV @ 48 kHz stereo (or None),
           "model": model name,
@@ -176,6 +229,8 @@ def separate_movie_stems(
     backend = backend_available()
     if not backend:
         return empty
+    if backend == "separator":
+        model = SEPARATOR_MODEL
 
     key = _media_key(media_path, model, backend)
     root = Path(out_dir) if out_dir else _cache_dir(key)
@@ -198,6 +253,22 @@ def separate_movie_stems(
         }
 
     ping = progress_callback
+    if backend == "separator":
+        try:
+            instrumental_path, vocals_file = _separate_uvr(media_path, root / "uvr", ping)
+        except Exception:
+            return empty
+        if ping:
+            ping(40, "Writing isolated music bed and vocal stem…")
+        bed_ok = bool(instrumental_path and _resample_48k(instrumental_path, bed_path))
+        voc_ok = bool(vocals_file and _resample_48k(vocals_file, vocals_path))
+        return {
+            "backend": backend,
+            "bed": str(bed_path) if bed_ok else None,
+            "vocals": str(vocals_path) if voc_ok else None,
+            "model": model,
+        }
+
     try:
         if backend == "mlx":
             stems, rate = _separate_mlx(media_path, model, ping)

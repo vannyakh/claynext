@@ -206,7 +206,7 @@ fn main() {
                 let opts = parse_export_flags(&args[4..]);
 
                 let mut video = VideoEncoderConfig::default();
-                video.codec = opts.codec.unwrap_or_else(|| "libx264".into());
+                video.codec = opts.codec.unwrap_or_else(|| "auto".into());
                 video.crf = Some(opts.crf.unwrap_or(22));
                 video.preset = opts.preset.unwrap_or_else(|| "veryfast".into());
                 video.width = opts.width;
@@ -302,7 +302,7 @@ fn main() {
                 }
             } else {
                 eprintln!(
-                    "Usage: claynext-ffmpeg mux <video_in> <audio_in> <output> [--reencode] [--crf 18] [--preset medium] [--audio-bitrate 256] [--vf FILTER]\n\
+                    "Usage: claynext-ffmpeg mux <video_in> <audio_in> <output> [--reencode] [--codec auto] [--crf 18] [--preset medium] [--audio-bitrate 256] [--vf FILTER]\n\
 A canvas graph (split/overlay) is applied with -filter_complex so the encode matches the preview."
                 );
                 std::process::exit(1);
@@ -445,6 +445,12 @@ fn parse_mux_flags(args: &[String]) -> MuxOptions {
             "--preset" => {
                 if let Some(value) = args.get(i + 1) {
                     options.video_preset = value.clone();
+                }
+                i += 2;
+            }
+            "--codec" => {
+                if let Some(value) = args.get(i + 1) {
+                    options.video_codec = value.clone();
                 }
                 i += 2;
             }

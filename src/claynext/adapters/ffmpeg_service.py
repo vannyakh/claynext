@@ -18,6 +18,35 @@ def ffmpeg_exe() -> str:
         return "ffmpeg"
 
 
+def _video_encode_args(quality: str = "finish", *, force_cpu: bool = False) -> list[str]:
+    try:
+        from claynext.adapters.resources import video_encode_args
+
+        return video_encode_args(quality=quality, force_cpu=force_cpu)
+    except Exception:
+        preset = "medium" if quality != "fast" else "veryfast"
+        crf = "18" if quality != "fast" else "20"
+        return ["-c:v", "libx264", "-preset", preset, "-crf", crf, "-pix_fmt", "yuv420p"]
+
+
+def _planned_video_codec(quality: str = "finish") -> str:
+    """Encoder name for this Mac or Windows machine, or libx264 when CPU is chosen."""
+    args = _video_encode_args(quality)
+    if "-c:v" in args:
+        return str(args[args.index("-c:v") + 1])
+    return "libx264"
+
+
+def _with_cpu_encode(args: list[str], quality: str) -> list[str] | None:
+    if "-c:v" not in args or args[args.index("-c:v") + 1] == "libx264":
+        return None
+    if "-c:a" not in args and "-c" not in args:
+        return None
+    start = args.index("-c:v")
+    end = args.index("-c:a") if "-c:a" in args else args.index("-c")
+    return [*args[:start], *_video_encode_args(quality, force_cpu=True), *args[end:]]
+
+
 def run_ffmpeg(args: list[str], timeout: int = 600) -> subprocess.CompletedProcess:
     return subprocess.run(
         [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-nostdin", *args],
@@ -814,8 +843,8 @@ def _write_overlay_ass(
             continue
         clip_start = float(item.get("start_ms") or 0) / 1000.0
         clip_end = float(item.get("end_ms") or 0) / 1000.0 or 36000.0
-        if kind == "shape":
-            if _picture_overlay(item):
+        if kind in {"shape", "mask"}:
+            if _picture_overlay(item) or _is_blur_mask(item):
                 continue
             events += shape_events(item, clip_start, clip_end, width, height)
             continue
@@ -875,6 +904,108 @@ def _write_overlay_ass(
     return path
 
 
+_BLUR_MASKS = frozenset({"blur_rect", "blur_circle", "frosted_glass", "mosaic", "vignette_blur"})
+
+
+def _is_blur_mask(item: dict) -> bool:
+    """A shape the preview paints by blurring the picture, not by filling a colour."""
+    if item.get("hidden"):
+        return False
+    if str(item.get("kind") or "") not in {"shape", "mask"}:
+        return False
+    key = str(item.get("shape") or "")
+    return key in _BLUR_MASKS or bool(item.get("blur_on"))
+
+
+def _blur_box(item: dict, width: int, height: int) -> tuple[int, int, int, int] | None:
+    """Pixel box of a blur mask, matching preview size (width/height are in canvas heights)."""
+    from claynext.models.text_style import clean_text_style
+
+    style = clean_text_style(item)
+    scale = max(0.05, style["scale"] / 100.0)
+    bw = max(2, int(round(float(item.get("w") or 0.3) * scale * height)))
+    bh = max(2, int(round(float(item.get("h") or 0.3) * scale * height)))
+    cx = float(item.get("x", 0.5)) * width
+    cy = float(item.get("y", 0.5)) * height
+    x = int(round(cx - bw / 2.0))
+    y = int(round(cy - bh / 2.0))
+    bw = min(bw, width)
+    bh = min(bh, height)
+    x = max(0, min(width - bw, x))
+    y = max(0, min(height - bh, y))
+    bw -= bw % 2
+    bh -= bh % 2
+    x -= x % 2
+    y -= y % 2
+    if bw < 4 or bh < 4:
+        return None
+    return x, y, bw, bh
+
+
+def _even(value: int) -> int:
+    size = max(2, int(value))
+    return size - size % 2
+
+
+def _blur_alpha(key: str) -> str | None:
+    """Keep the blur inside the same rounded or oval outline the preview clips to."""
+    if key in {"blur_circle", "vignette_blur"}:
+        return "if(lte(pow((X-W/2)/(W/2)\\,2)+pow((Y-H/2)/(H/2)\\,2)\\,1)\\,255\\,0)"
+    frac = 0.16 if key == "frosted_glass" else 0.08 if key in {"blur_rect", "mosaic"} else None
+    if frac is None:
+        return None
+    radius = f"({frac:.2f}*min(W\\,H))"
+    dx = f"(abs(X-W/2)-(W/2-{radius}))"
+    dy = f"(abs(Y-H/2)-(H/2-{radius}))"
+    dist = f"(hypot(max({dx}\\,0)\\,max({dy}\\,0))+min(max({dx}\\,{dy})\\,0))"
+    return f"if(lte({dist}\\,{radius})\\,255\\,0)"
+
+
+def _blur_mask_chain(item: dict, width: int, height: int, last: str, index: int) -> tuple[list[str], str]:
+    """Crop the mask, soften it the way the preview does, and lay it back on the picture."""
+    box = _blur_box(item, width, height)
+    if box is None:
+        return [], last
+    x, y, bw, bh = box
+    from claynext.models.text_style import clean_text_style
+
+    style = clean_text_style(item)
+    radius = int(style.get("blur_radius") or 20)
+    key = str(item.get("shape") or "blur_rect")
+    cell = max(6, min(48, int(radius * 0.45)))
+    if key == "mosaic":
+        sw, sh = _even(max(2, bw // cell)), _even(max(2, bh // cell))
+        effect = f"scale={sw}:{sh}:flags=neighbor,scale={bw}:{bh}:flags=neighbor"
+    else:
+        # Same downsample the preview uses: shrink, step back up, then restore size.
+        div = max(2, min(32, int(radius * 0.35 + 2)))
+        sw, sh = _even(max(2, bw // div)), _even(max(2, bh // div))
+        mw, mh = _even(max(2, bw // 2)), _even(max(2, bh // 2))
+        effect = (
+            f"scale={sw}:{sh}:flags=bilinear,scale={mw}:{mh}:flags=bilinear,"
+            f"scale={bw}:{bh}:flags=bilinear"
+        )
+        if key == "frosted_glass":
+            effect += ",eq=brightness=0.05:saturation=0.90"
+        elif key == "vignette_blur":
+            effect += ",eq=brightness=-0.08"
+    alpha = _blur_alpha(key)
+    if alpha:
+        effect += f",format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{alpha}'"
+    opacity = max(0.0, min(1.0, float(style.get("opacity") or 100) / 100.0))
+    if opacity < 0.995:
+        effect += f",format=rgba,colorchannelmixer=aa={opacity:.3f}"
+    start = float(item.get("start_ms") or 0) / 1000.0
+    end = float(item.get("end_ms") or 0) / 1000.0 or 36000.0
+    enable = f":enable='between(t,{start:.3f},{end:.3f})'"
+    base, src, patch, out = f"vb{index}", f"vs{index}", f"vk{index}", f"vm{index}"
+    return [
+        f"[{last}]split[{base}][{src}]",
+        f"[{src}]crop={bw}:{bh}:{x}:{y},{effect}[{patch}]",
+        f"[{base}][{patch}]overlay={x}:{y}:format=auto{enable}[{out}]",
+    ], out
+
+
 def _picture_overlay(item: dict) -> bool:
     """A logo, image, or filled picture frame that should burn as a still."""
     if item.get("hidden"):
@@ -906,13 +1037,17 @@ def compose_overlays(
     width, height = probe_size(video_path)
     images = [it for it in rows if _picture_overlay(it)]
     ass_path = _write_overlay_ass(rows, segments, str(root), width, height)
-    if not images and not ass_path:
+    blur_rows = [it for it in rows if _is_blur_mask(it)]
+    if not images and not ass_path and not blur_rows:
         return video_path
     args: list[str] = ["-y", "-i", video_path]
     for item in images:
         args += ["-i", str(item["path"])]
     filters: list[str] = []
     last = "0:v"
+    for index, item in enumerate(blur_rows):
+        chain, last = _blur_mask_chain(item, width, height, last, index)
+        filters.extend(chain)
     for i, item in enumerate(images, start=1):
         w = max(16, int(width * float(item.get("w") or 0.14)))
         h = max(16, int(height * float(item.get("h") or 0.14)))
@@ -947,7 +1082,7 @@ def compose_overlays(
         args += ["-map", "0:v"]
     args += [
         "-map", "0:a?",
-        "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
+        *_video_encode_args("finish"),
         "-c:a", "copy",
         "-movflags", "+faststart",
         "-shortest",
@@ -960,6 +1095,10 @@ def compose_overlays(
             progress_callback(frac * 100.0, "Rendering on-screen text…")
 
     proc = run_ffmpeg_progress(args, duration_sec=duration, on_fraction=_on_fraction, timeout=1200)
+    if proc.returncode != 0 or not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
+        retry = _with_cpu_encode(args, "finish")
+        if retry:
+            proc = run_ffmpeg_progress(retry, duration_sec=duration, on_fraction=_on_fraction, timeout=1200)
     if proc.returncode != 0 or not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
         err = str(proc.stderr or "").strip()
         raise RuntimeError(err or "Overlay compose failed.")
@@ -985,12 +1124,17 @@ def concat_videos(paths: list[str], output_path: str, progress_callback=None) ->
         ], timeout=1800)
         if copied.returncode == 0 and os.path.isfile(output_path) and os.path.getsize(output_path) > 0:
             return output_path
-        encoded = run_ffmpeg([
+        encode_args = [
             "-y", "-f", "concat", "-safe", "0", "-i", str(list_path),
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            *_video_encode_args("fast"),
             "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
             output_path,
-        ], timeout=3600)
+        ]
+        encoded = run_ffmpeg(encode_args, timeout=3600)
+        if encoded.returncode != 0 or not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
+            retry = _with_cpu_encode(encode_args, "fast")
+            if retry:
+                encoded = run_ffmpeg(retry, timeout=3600)
         if encoded.returncode != 0 or not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
             err = (encoded.stderr or copied.stderr or b"").decode("utf-8", errors="replace").strip()
             raise RuntimeError(err or "Could not merge the episodes.")
@@ -1335,6 +1479,7 @@ def mux_video(
             RustFfmpegAdapter.mux_with_progress(
                 video_path, audio_path, output_path,
                 reencode=reencode, audio_bitrate=audio_bitrate, video_filter=video_filter,
+                video_codec=_planned_video_codec("finish") if reencode else "copy",
                 start_sec=video_start, duration_sec=video_duration,
                 progress_callback=_ping,
             )
@@ -1347,7 +1492,7 @@ def mux_video(
             raise
         _ = exc
 
-    video_codec = ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p"] if reencode else ["-c:v", "copy"]
+    video_codec = _video_encode_args("finish") if reencode else ["-c:v", "copy"]
     duration = float(video_duration) if video_duration else probe_duration(video_path)
     seek = ["-ss", f"{float(video_start):.3f}"] if video_start and video_start > 0 else []
     limit = ["-t", f"{float(video_duration):.3f}"] if video_duration and video_duration > 0 else []
@@ -1355,13 +1500,22 @@ def mux_video(
     def _on_fraction(frac: float) -> None:
         _ping(frac * 100.0, label)
 
-    proc = run_ffmpeg_progress([
+    mux_args = [
         "-y", *seek, *limit, "-i", video_path, "-i", audio_path,
         *_video_filter_args(video_filter),
         *video_codec, "-c:a", "aac", "-b:a", audio_bitrate,
         "-shortest", "-movflags", "+faststart",
         output_path,
-    ], duration_sec=duration, on_fraction=_on_fraction, timeout=3600 if reencode else 900)
+    ]
+    proc = run_ffmpeg_progress(
+        mux_args, duration_sec=duration, on_fraction=_on_fraction, timeout=3600 if reencode else 900,
+    )
+    if reencode and (proc.returncode != 0 or not os.path.isfile(output_path) or os.path.getsize(output_path) == 0):
+        retry = _with_cpu_encode(mux_args, "finish")
+        if retry:
+            proc = run_ffmpeg_progress(
+                retry, duration_sec=duration, on_fraction=_on_fraction, timeout=3600,
+            )
     if proc.returncode != 0 or not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
         err = (proc.stderr or "").strip()
         raise RuntimeError(err or "Failed to mux dubbed video.")
@@ -1380,7 +1534,7 @@ def encode_source_movie(src: str, dest: str, progress_callback=None) -> str:
 
     ok = RustFfmpegAdapter.transcode_video(
         src, dest,
-        video_codec="libx264",
+        video_codec=_planned_video_codec("finish"),
         crf=18,
         preset="medium",
         audio_codec="aac",
