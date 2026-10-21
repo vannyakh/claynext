@@ -43,7 +43,7 @@ fn default_source_lang() -> String {
 }
 
 /// Syllables / speaking units per second by display language name.
-fn pace_rate(target_lang: &str) -> f64 {
+pub(crate) fn pace_rate(target_lang: &str) -> f64 {
     match target_lang {
         "Khmer" | "Khmer (ភាសាខ្មែរ)" => 3.6,
         "Chinese (Simplified)" => 4.0,

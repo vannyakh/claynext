@@ -65,7 +65,7 @@
       "name": "VoxCPM2 (2B · Multilingual 48kHz)",
       "category": "tts",
       "size_label": "~4 GB+",
-      "description": "30 languages, voice design and cloning, 48 kHz.",
+      "description": "Default local speech model. 30 languages, voice design and cloning, 48 kHz. Needs the voxcpm 2 package.",
       "backend": "voxcpm",
       "essential_file": "config.json",
       "install": "hf",
@@ -92,6 +92,17 @@
       "essential_file": "config.json",
       "install": "hf",
       "extra": "voxcpm"
+    },
+    {
+      "id": "k2-fsa/OmniVoice",
+      "name": "OmniVoice (600+ languages · 24 kHz)",
+      "category": "tts",
+      "size_label": "large",
+      "description": "Zero-shot speech with voice design and cloning. Needs the omnivoice package.",
+      "backend": "omnivoice",
+      "essential_file": "config.json",
+      "install": "hf",
+      "extra": "omnivoice"
     },
     {
       "id": "Systran/faster-whisper-tiny",

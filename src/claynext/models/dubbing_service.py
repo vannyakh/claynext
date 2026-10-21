@@ -64,6 +64,12 @@ VOICE_PAIRS = {
     "voxcpm-en-male": "voxcpm-en-female",
     "voxcpm-vi-female": "voxcpm-vi-male",
     "voxcpm-vi-male": "voxcpm-vi-female",
+    "omnivoice-khmer-female": "omnivoice-khmer-male",
+    "omnivoice-khmer-male": "omnivoice-khmer-female",
+    "omnivoice-en-female": "omnivoice-en-male",
+    "omnivoice-en-male": "omnivoice-en-female",
+    "omnivoice-vi-female": "omnivoice-vi-male",
+    "omnivoice-vi-male": "omnivoice-vi-female",
 }
 
 
@@ -137,6 +143,8 @@ def analyze_movie_characters(
 
         for s in segments:
             spk = str(s.get("speaker") or "").strip() or "Speaker 1"
+            s.setdefault("speaker_id", spk)
+            s.setdefault("speaker_source", "diarization")
             s["speaker"] = seen_speakers[spk]
             start_sec = timestamp_to_sec(s.get("start", ""))
             end_sec = timestamp_to_sec(s.get("end", ""))
@@ -171,6 +179,8 @@ def analyze_movie_characters(
                 current_char_idx = 2 if current_char_idx == 1 else 1
 
             s["speaker"] = f"Character {current_char_idx}"
+            s.setdefault("speaker_id", f"TURN_{current_char_idx}")
+            s.setdefault("speaker_source", "turn_heuristic")
             s["start_sec"] = start_sec
             s["end_sec"] = end_sec
             s["duration_sec"] = round(dur, 3)
@@ -441,17 +451,19 @@ def _speak_lines(
             control.checkpoint()
         voice = item.get("tts_voice_hint") or voice_id
         text_to_speak = str(item.get("translated_text") or item.get("text") or "")
-        from claynext.models.gender_voices import expression_tag
-        from claynext.models.tts_expression import has_expression_tags
+        performance = item.get("performance") if isinstance(item.get("performance"), dict) else None
+        if performance is None:
+            from claynext.models.gender_voices import expression_tag
+            from claynext.models.tts_expression import has_expression_tags
 
-        expr = str(item.get("expression") or "")
-        if not expr:
-            from claynext.models.gender_voices import delivery_for_intent, detect_line_intent
+            expr = str(item.get("expression") or "")
+            if not expr:
+                from claynext.models.gender_voices import delivery_for_intent, detect_line_intent
 
-            expr = delivery_for_intent(item.get("intent") or detect_line_intent(text_to_speak))
-        tag = expression_tag(expr)
-        if tag and text_to_speak and not has_expression_tags(text_to_speak):
-            text_to_speak = f"{tag} {text_to_speak}"
+                expr = delivery_for_intent(item.get("intent") or detect_line_intent(text_to_speak))
+            tag = expression_tag(expr)
+            if tag and text_to_speak and not has_expression_tags(text_to_speak):
+                text_to_speak = f"{tag} {text_to_speak}"
         raw_mp3 = str(job / f"seg_{idx + 1:04d}.mp3")
         start = float(item.get("start_sec") or timestamp_to_sec(item.get("start", "")))
         end = float(item.get("end_sec") or timestamp_to_sec(item.get("end", "")))
@@ -484,6 +496,8 @@ def _speak_lines(
                     TTSEngine.synthesize(
                         clean_text, try_voice, raw_mp3,
                         pitch=try_pitch, reference_wav=try_ref,
+                        control=control,
+                        performance=performance,
                     )
                     spoken = os.path.isfile(raw_mp3) and os.path.getsize(raw_mp3) > 100
                     if spoken:
@@ -517,6 +531,10 @@ def _speak_lines(
                 min_t, max_t = max(min_t, 0.95), min(max_t, 1.40)
             elif intent in {"plea", "aside"}:
                 min_t, max_t = min_t, min(max_t, 1.25)
+            if performance is not None:
+                from claynext.models.character_intel import tempo_window
+
+                min_t, max_t = tempo_window(item, min_t, max_t)
             try:
                 fit_duration(raw_mp3, fitted, slot, min_tempo=min_t, max_tempo=max_t, pad_or_trim=False, never_trim=True)
             except Exception:
@@ -656,10 +674,34 @@ class DubbingEngine:
             ping(15, "Using full mix for ASR…")
         asr_source = vocals_path or clean_audio or full_wav
 
-        # Step 1: Speech Recognition
+        # Step 1: Speech Recognition. OCR captions are optional and off by default.
         token = resolve_hf_token(hf_token)
         segments: list[dict] = []
-        if whisperx_available() and token:
+        effective_lang = source_lang if source_lang and source_lang != "Auto Detect" else asr_language
+        used_ocr = False
+        try:
+            from claynext.models.features import transcript_ocr_enabled
+
+            if transcript_ocr_enabled():
+                from claynext.models.ocr_service import try_ocr_transcript
+
+                ping(16, "Checking burned-in captions…")
+                ocr_rows = try_ocr_transcript(
+                    video_path,
+                    language=effective_lang,
+                    progress_callback=lambda p, m: ping(16 + int(max(0, min(100, int(p))) * 0.20), m),
+                    control=control,
+                )
+                if ocr_rows:
+                    segments = merge_dialogue_segments(ocr_rows)
+                    used_ocr = bool(segments)
+                    if used_ocr:
+                        ping(37, f"OCR captions used · {len(segments)} line(s)")
+        except Exception:
+            used_ocr = False
+            segments = []
+
+        if not used_ocr and whisperx_available() and token:
             ping(16, "WhisperX + PyAnnote diarization on vocal stem…")
             wx_model = asr_model.replace("whisper-", "").replace("faster-whisper-", "") or "small"
             if wx_model == "cuda":
@@ -678,22 +720,23 @@ class DubbingEngine:
             if not segments:
                 raise RuntimeError("WhisperX produced no dialogue segments.")
         else:
-            effective_lang = source_lang if source_lang and source_lang != "Auto Detect" else asr_language
-            clips = _speech_clip_pairs(asr_source, duration)
-            if clips:
-                chunk_note = f" · {len(clips) // 2} speech turns on the soundtrack"
-            else:
-                chunk_note = " · full track"
-            ping(16, f"Transcribing the source track ({effective_lang}){chunk_note}…")
-            segments = ASREngine.transcribe(
-                asr_source,
-                model_name=asr_model,
-                language=effective_lang,
-                clip_timestamps=clips,
-                vad_filter=not bool(clips),
-                progress_callback=lambda p, m: ping(16 + int(p * 0.22), m),
-            )
-            segments = merge_dialogue_segments(segments)
+            if not used_ocr:
+                clips = _speech_clip_pairs(asr_source, duration)
+                if clips:
+                    chunk_note = f" · {len(clips) // 2} speech turns on the soundtrack"
+                else:
+                    chunk_note = " · full track"
+                ping(16, f"Transcribing the source track ({effective_lang}){chunk_note}…")
+                segments = ASREngine.transcribe(
+                    asr_source,
+                    model_name=asr_model,
+                    language=effective_lang,
+                    clip_timestamps=clips,
+                    vad_filter=not bool(clips),
+                    progress_callback=lambda p, m: ping(16 + int(p * 0.22), m),
+                    control=control,
+                )
+                segments = merge_dialogue_segments(segments)
 
         ping(37, "Fitting each line to the speech on the soundtrack…")
         segments = _fit_segments_to_soundtrack(segments, asr_source)
@@ -783,6 +826,22 @@ class DubbingEngine:
                     seg["translated_text"] = seg.get("text") or ""
             translated = segments
 
+        if auto_chain:
+            from claynext.models.character_intel import planner_enabled, run_character_stage
+
+            if planner_enabled():
+                ping(57, "Planning each line's performance…")
+                run_character_stage(
+                    translated,
+                    media_path=video_path,
+                    audio_path=vocals_path or asr_source,
+                    job_dir=job,
+                    target_lang=target_lang,
+                    source_lang=effective_lang,
+                    base_voice=voice_id,
+                    ping=ping,
+                    share=share,
+                )
         share("translated", [dict(seg) for seg in translated])
         # Step 4: TTS Speech Synthesis & Character Duration Fitting
         workers = _tts_workers(tts_workers)

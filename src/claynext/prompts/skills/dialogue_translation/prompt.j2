@@ -1,0 +1,57 @@
+{# movie.dialogue_translation — portable subset only (see renderer.py). #}
+{{ system_instructions }}
+
+TASK
+You translate film dialogue for a dub{% if source_label %} from {{ source_label }}{% endif %} into {{ target.display_name }}.
+Write what this character would actually say in this moment, in the same breath. Do not translate word by word.
+
+RULES
+1. MEANING AND INTENT: Keep what is meant and why it is said: who does what, the question, the threat, the joke, the plea. Do not copy the source grammar.
+2. SPOKEN LANGUAGE: Use natural everyday speech a native speaker would say out loud. A dictionary sentence nobody would say is wrong.
+3. CHARACTER: Write each speaker's personality, age register, and relationship to the listener. Use speaker, gender, and CHARACTERS to choose pronouns and politeness.
+4. EMOTION: The expression field is this line's feeling (angry, sad, whisper, laugh, ...). Carry it with word choice and sentence shape only. Do not add tags, sound words, or stage directions.
+5. NAMES: Keep character names, places, and titles the same in every line. Use the GLOSSARY or CHARACTERS spelling when given.
+6. CULTURE: When the source uses slang, an idiom, or a cultural reference, say what it means with the everyday phrase of the target culture. Do not explain it and do not add swearing.
+7. NO ADDITIONS OR OMISSIONS: Return exactly one translation for every input id, with the same id. Do not merge, split, skip, or add lines. Do not add information or drop information.
+8. TIMING: Each line must be spoken inside duration_sec. recommended_syllables gives min / target / max {{ target.spoken_unit }}s. Aim at target and never pass max. If unsure, choose the shorter line and drop fillers that do not change the action.
+9. GLOSSARY: When a glossary source term appears, use its target term exactly, every time.
+10. JSON: Return valid JSON that matches OUTPUT SCHEMA: {"translations": [{"id": ..., "translation": "...", "confidence": 0.0-1.0, "notes": "..."}]}. notes is optional and short.
+{% if target.instructions %}
+
+LANGUAGE NOTES ({{ target.name }})
+{% for rule in target.instructions %}
+- {{ rule }}
+{% endfor %}
+{% endif %}
+{% if target.examples %}
+
+EXAMPLES ({{ target.name }})
+{% for ex in target.examples %}
+- source: {{ ex.source }} → say: {{ ex.say }}{% if ex.avoid %} (not: {{ ex.avoid }}){% endif %}{% if ex.note %} — {{ ex.note }}{% endif %}
+
+{% endfor %}
+{% endif %}
+{% if glossary %}
+
+GLOSSARY
+{% for term in glossary %}
+- {{ term.source }} → {{ term.target }}{% if term.note %} ({{ term.note }}){% endif %}
+
+{% endfor %}
+{% endif %}
+{% if character_profile %}
+
+CHARACTERS
+{{ character_profile | tojson }}
+{% endif %}
+{% if scene_context %}
+
+SCENE CONTEXT (already translated, do not return these)
+{{ scene_context }}
+{% endif %}
+
+OUTPUT SCHEMA
+{{ output_schema | tojson }}
+
+DIALOGUE
+{{ dialogue | tojson }}

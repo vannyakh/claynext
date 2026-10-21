@@ -11,10 +11,12 @@ from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDialog,
     QTextEdit, QComboBox, QDialogButtonBox, QSizePolicy, QToolButton, QGridLayout,
-    QFrame,
+    QFrame, QSlider,
 )
 
+from claynext.constants.theme_constants import COLOR_TEXT_MUTED, COLOR_TEXT_SUB
 from claynext.gui.icons import icon
+from claynext.models.character_intel import STYLES, set_line_style
 from claynext.models.tts_service import TTSEngine
 from claynext.models.tts_expression import EXPRESSION_CHIPS
 from claynext.models.dubbing_service import timestamp_to_sec
@@ -40,20 +42,34 @@ class _TagHighlighter(QSyntaxHighlighter):
             self.setFormat(match.start(), match.end() - match.start(), self._fmt)
 
 
-def _preview_cache_path(voice_id: str, text: str) -> str:
+def _preview_cache_path(voice_id: str, text: str, delivery: str = "") -> str:
     folder = CACHE_DIR / "line_preview"
     folder.mkdir(parents=True, exist_ok=True)
     stem = "".join(ch if ch.isalnum() else "_" for ch in voice_id) or "voice"
-    digest = hashlib.sha1(f"{voice_id}\n{text}".encode("utf-8")).hexdigest()[:10]
+    digest = hashlib.sha1(f"{voice_id}\n{text}\n{delivery}".encode("utf-8")).hexdigest()[:10]
     return str(folder / f"{stem}_{digest}.mp3")
 
 
-def _fitted_preview_cache_path(voice_id: str, text: str, slot_dur: float) -> str:
+def _fitted_preview_cache_path(voice_id: str, text: str, slot_dur: float, delivery: str = "") -> str:
     folder = CACHE_DIR / "line_preview"
     folder.mkdir(parents=True, exist_ok=True)
     stem = "".join(ch if ch.isalnum() else "_" for ch in voice_id) or "voice"
-    digest = hashlib.sha1(f"{voice_id}\n{text}\n{slot_dur:.2f}".encode("utf-8")).hexdigest()[:10]
+    digest = hashlib.sha1(f"{voice_id}\n{text}\n{slot_dur:.2f}\n{delivery}".encode("utf-8")).hexdigest()[:10]
     return str(folder / f"{stem}_{digest}_fit.wav")
+
+
+def performance_summary(perf: dict | None) -> str:
+    """One-line delivery read-out for tooltips: style · intensity · confidence."""
+    if not isinstance(perf, dict) or not perf.get("style"):
+        return ""
+    style = str(perf.get("style") or "neutral")
+    intensity = int(round(float(perf.get("intensity") or 0) * 100))
+    conf = perf.get("confidence") or {}
+    if perf.get("manual"):
+        tail = "set by editor"
+    else:
+        tail = f"{int(round(float(conf.get('overall') or conf.get('emotion') or 0) * 100))}% confidence"
+    return f"{style} · {intensity}% · {tail}"
 
 
 class _ChipGrid(QWidget):
@@ -237,6 +253,36 @@ class LineEditDialog(QDialog):
         g_idx = self.gender.findText(str(seg.get("gender") or "Unknown"))
         self.gender.setCurrentIndex(g_idx if g_idx >= 0 else 2)
 
+        perf = seg.get("performance") if isinstance(seg.get("performance"), dict) else {}
+        self._perf_initial = (
+            str(perf.get("style") or "neutral"),
+            int(round(float(perf.get("intensity", 0.5) or 0) * 100)),
+        )
+        perf_label = QLabel("Performance · delivery & intensity")
+        perf_label.setObjectName("asr_field_label")
+        perf_row = QHBoxLayout()
+        perf_row.setSpacing(8)
+        self.perf_style = QComboBox()
+        self.perf_style.setObjectName("asr_option_combo")
+        for style in STYLES:
+            self.perf_style.addItem(style.capitalize(), style)
+        s_idx = self.perf_style.findData(self._perf_initial[0])
+        self.perf_style.setCurrentIndex(s_idx if s_idx >= 0 else 0)
+        self.perf_intensity = QSlider(Qt.Orientation.Horizontal)
+        self.perf_intensity.setRange(0, 100)
+        self.perf_intensity.setValue(self._perf_initial[1])
+        self.perf_intensity.setToolTip("Intensity of the delivery (0–100%)")
+        self.perf_intensity_label = QLabel(f"{self._perf_initial[1]}%")
+        self.perf_intensity_label.setMinimumWidth(34)
+        self.perf_intensity_label.setStyleSheet(f"color: {COLOR_TEXT_SUB}; font-size: 11px;")
+        self.perf_intensity.valueChanged.connect(lambda v: self.perf_intensity_label.setText(f"{v}%"))
+        perf_row.addWidget(self.perf_style, 1)
+        perf_row.addWidget(self.perf_intensity, 2)
+        perf_row.addWidget(self.perf_intensity_label)
+        self.perf_info = QLabel(self._perf_info_text(perf))
+        self.perf_info.setWordWrap(True)
+        self.perf_info.setStyleSheet(f"color: {COLOR_TEXT_MUTED}; font-size: 11px;")
+
         self.preview_status = QLabel("")
         self.preview_status.setObjectName("dub_switch_hint")
         self.preview_status.setWordWrap(True)
@@ -252,6 +298,9 @@ class LineEditDialog(QDialog):
         lay.addLayout(char_row)
         lay.addWidget(gender_label)
         lay.addWidget(self.gender)
+        lay.addWidget(perf_label)
+        lay.addLayout(perf_row)
+        lay.addWidget(self.perf_info)
         lay.addWidget(self.preview_status)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
@@ -269,6 +318,41 @@ class LineEditDialog(QDialog):
 
         self._on_cast_changed()
         self._update_pacing_hud()
+
+    @staticmethod
+    def _perf_info_text(perf: dict) -> str:
+        if not perf:
+            return "No performance plan yet · the planner runs during the dub."
+        parts = [performance_summary(perf)]
+        target = perf.get("target_duration_sec")
+        if target:
+            pauses = float(perf.get("pause_before_sec") or 0), float(perf.get("pause_after_sec") or 0)
+            parts.append(f"target {float(target):.2f}s · pauses {pauses[0]:.2f}s / {pauses[1]:.2f}s")
+        hints = [str(h.get("text") or "") for h in perf.get("pronunciation") or [] if isinstance(h, dict)]
+        if hints:
+            parts.append("pronounce: " + ", ".join(hints[:4]))
+        evidence = [str(e) for e in perf.get("evidence") or []][:2]
+        if evidence:
+            parts.append("why: " + "; ".join(evidence))
+        return "\n".join(p for p in parts if p)
+
+    def _performance_values(self) -> dict | None:
+        """The line's performance, marked manual only when the editor changed it."""
+        style = str(self.perf_style.currentData() or "neutral")
+        level = int(self.perf_intensity.value())
+        current = self._seg.get("performance") if isinstance(self._seg.get("performance"), dict) else None
+        if (style, level) == self._perf_initial and current is not None:
+            return dict(current)
+        if (style, level) == self._perf_initial and current is None:
+            return None
+        probe = {"performance": dict(current or {})}
+        return set_line_style(probe, style, level / 100.0)
+
+    def _preview_performance(self) -> tuple[dict | None, str]:
+        perf = self._performance_values()
+        if not perf:
+            return None, ""
+        return perf, f"{perf.get('style')}:{float(perf.get('intensity') or 0):.2f}"
 
     def _update_pacing_hud(self):
         text = self.dub.toPlainText().strip()
@@ -507,11 +591,12 @@ class LineEditDialog(QDialog):
         self.btn_preview_line.setEnabled(False)
         self.btn_preview_fitted.setEnabled(False)
 
+        perf, perf_key = self._preview_performance() if kind != "voice" else (None, "")
         if kind == "fitted":
-            path = _fitted_preview_cache_path(voice_id, text, self._slot_dur)
+            path = _fitted_preview_cache_path(voice_id, text, self._slot_dur, perf_key)
             self.preview_status.setText("Generating slot-fitted studio preview…")
         elif kind == "line":
-            path = _preview_cache_path(voice_id, text)
+            path = _preview_cache_path(voice_id, text, perf_key)
             self.preview_status.setText("Generating line preview…")
         else:
             path = _preview_cache_path(voice_id, text)
@@ -523,14 +608,15 @@ class LineEditDialog(QDialog):
 
         slot_dur = self._slot_dur
 
-        def _job(vid=voice_id, body=text, out=path, k=kind, dur=slot_dur, progress_callback=None):
+        def _job(vid=voice_id, body=text, out=path, k=kind, dur=slot_dur, plan=perf, key=perf_key,
+                 progress_callback=None):
             if k == "fitted":
-                raw_mp3 = _preview_cache_path(vid, body)
-                TTSEngine.synthesize(body, vid, raw_mp3, progress_callback=progress_callback)
+                raw_mp3 = _preview_cache_path(vid, body, key)
+                TTSEngine.synthesize(body, vid, raw_mp3, progress_callback=progress_callback, performance=plan)
                 fit_wav = out.replace(".wav", "_rawfit.wav")
                 fit_duration(raw_mp3, fit_wav, dur, pad_or_trim=False, never_trim=True)
                 return master_voiceover_track(fit_wav, out, volume_boost=1.15)
-            return TTSEngine.synthesize(body, vid, out, progress_callback=progress_callback)
+            return TTSEngine.synthesize(body, vid, out, progress_callback=progress_callback, performance=plan)
 
         worker = Worker(_job)
         worker.signals.result.connect(lambda p: self._on_preview_ready(p, kind=kind))
@@ -587,7 +673,7 @@ class LineEditDialog(QDialog):
         data = self._cast_data()
         speaker = str(data.get("label") or self.character.currentText() or "").strip() or "Voice"
         voice_id = str(data.get("id") or "")
-        return {
+        out = {
             "original_text": original,
             "text": original,
             "translated_text": self.dub.toPlainText().strip(),
@@ -597,3 +683,7 @@ class LineEditDialog(QDialog):
             "tts_voice_hint": voice_id,
             "voice_id": voice_id,
         }
+        perf = self._performance_values()
+        if perf is not None:
+            out["performance"] = perf
+        return out

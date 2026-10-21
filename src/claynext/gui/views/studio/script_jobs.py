@@ -288,6 +288,7 @@ class ScriptJobTools:
                 "end_sec": seg.get("end_sec"),
                 "reference_wav": ref_wav,
                 "pitch": pitch_val,
+                "performance": seg.get("performance") if isinstance(seg.get("performance"), dict) else None,
             })
         if not work:
             self.log.warn("Retry TTS · no speakable lines")
@@ -328,8 +329,10 @@ class ScriptJobTools:
                 control.checkpoint()
                 if progress_callback:
                     progress_callback(int((i / max(1, total)) * 100), f"TTS {i + 1}/{total}")
+                perf = item.get("performance") or None
+                delivery = f"{perf.get('style')}:{perf.get('intensity')}" if perf else ""
                 digest = hashlib.sha1(
-                    f"{item['voice']}\n{item['text']}\n{item.get('pitch', 0.0)}".encode("utf-8")
+                    f"{item['voice']}\n{item['text']}\n{item.get('pitch', 0.0)}\n{delivery}".encode("utf-8")
                 ).hexdigest()[:10]
                 raw = str(folder / f"row_{item['row']}_{digest}.mp3")
                 fitted = str(folder / f"row_{item['row']}_{digest}_fit.wav")
@@ -339,6 +342,7 @@ class ScriptJobTools:
                     raw,
                     pitch=float(item.get("pitch") or 0.0),
                     reference_wav=str(item.get("reference_wav") or ""),
+                    performance=perf,
                 )
                 control.checkpoint()
                 start = float(item.get("start_sec") or timestamp_to_sec(item.get("start", "")))

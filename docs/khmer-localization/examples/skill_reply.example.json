@@ -1,0 +1,30 @@
+{
+  "lines": [
+    {
+      "id": 1,
+      "source_text": "Sis, I'm hungry.",
+      "localized_text": "បង ញ៉ុំឃ្លានហើយ។",
+      "tts_text": null,
+      "pronouns_used": {"first_person": ["ញ៉ុំ"], "second_person": ["បង"]},
+      "register": "casual",
+      "candidates": [
+        {"text": "បង អូនឃ្លានបាយហើយ។", "register": "neutral", "note": "without the character habit"}
+      ],
+      "confidence": 0.85,
+      "review_flags": [],
+      "notes": ""
+    },
+    {
+      "id": 2,
+      "source_text": "Wait for me, I'll be back soon.",
+      "localized_text": "ចាំបងណា បងមកវិញឆាប់ៗ។",
+      "tts_text": null,
+      "pronouns_used": {"first_person": ["បង"], "second_person": []},
+      "register": "neutral",
+      "candidates": [],
+      "confidence": 0.9,
+      "review_flags": [],
+      "notes": "tts_text is filled by the normalizer: ឆាប់ៗ → ឆាប់ឆាប់"
+    }
+  ]
+}

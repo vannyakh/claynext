@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "claynext://prompts/schemas/dialogue_translation.input",
+  "title": "DialogueTranslationInput",
+  "type": "object",
+  "required": ["source_language", "target_language", "dialogue"],
+  "properties": {
+    "source_language": {"type": "string"},
+    "target_language": {"type": "string", "minLength": 1},
+    "dialogue": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "text"],
+        "properties": {
+          "id": {"type": ["integer", "string"]},
+          "text": {"type": "string"},
+          "speaker": {"type": "string"},
+          "gender": {"type": "string"},
+          "expression": {"type": "string"},
+          "duration_sec": {"type": "number", "minimum": 0},
+          "recommended_syllables": {
+            "type": "object",
+            "properties": {
+              "min": {"type": "integer", "minimum": 0},
+              "target": {"type": "integer", "minimum": 0},
+              "max": {"type": "integer", "minimum": 0}
+            }
+          }
+        }
+      }
+    },
+    "scene_context": {"type": "string"},
+    "character_profile": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "gender": {"type": "string"},
+          "role": {"type": "string"},
+          "personality": {"type": "string"},
+          "notes": {"type": "string"}
+        }
+      }
+    },
+    "glossary": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "target"],
+        "properties": {
+          "source": {"type": "string", "minLength": 1},
+          "target": {"type": "string", "minLength": 1},
+          "note": {"type": "string"}
+        }
+      }
+    }
+  }
+}

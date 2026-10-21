@@ -1,0 +1,71 @@
+# Character-aware Khmer dialogue localization (milestone 1).
+# Pronouns, register, and intensity limits are decided deterministically by
+# claynext.models.khmer_localization before this prompt is rendered; the model
+# writes the line inside those constraints and a post-check verifies them.
+# Changing prompt.j2, this file, a system file, a schema, or khmer.yaml
+# changes the fingerprint: bump `version` and re-pin versions.lock.json.
+id: movie.khmer_natural_dialogue
+version: "0.1.0"
+name: Khmer Natural Dialogue Localizer
+description: >
+  Localizes film dialogue into natural spoken Khmer that keeps meaning,
+  each character's voice, the speaker-listener relationship, and the source
+  intensity, using the pronoun plan and style limits given for every line.
+model_capability: text_generation
+requires: []
+template: prompt.j2
+system:
+  - core
+  - json_output
+inputs:
+  source_language:
+    type: string
+    required: true
+    description: Source language name, or "auto".
+  target_language:
+    type: string
+    required: true
+    description: Must be Khmer.
+  dialogue:
+    type: array
+    required: true
+    description: >
+      Lines with id, text, speaker, listener, expression, duration_sec,
+      recommended_syllables, pronoun_plan (from the Khmer Pronoun Resolver),
+      and style (register, slang_max, profanity_max from the selector).
+  characters:
+    type: object
+    default: {}
+    description: Speaker name to speech profile summary.
+  scene_context:
+    type: string
+    default: ""
+    description: Lines just before this batch, for continuity.
+  glossary:
+    type: array
+    default: []
+    description: Source term to fixed target term, with an optional note.
+input_schema: khmer_natural_dialogue.input
+output:
+  schema: khmer_localization
+  contract: khmer_localization
+  list_key: lines
+  coverage:
+    input: dialogue
+    key: id
+settings:
+  temperature: 0.3
+  max_output_tokens: 4096
+  response_format: json
+backends:
+  - gemini
+  - chat
+  - ollama
+  - sglang-omni
+languages:
+  - khmer
+limits:
+  max_lines_per_call: 12
+changelog:
+  - version: "0.1.0"
+    notes: Milestone 1. Pronoun plan and intensity limits as hard constraints; three-field output.

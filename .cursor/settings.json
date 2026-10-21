@@ -1,0 +1,7 @@
+{
+  "plugins": {
+    "omni-analytics": {
+      "enabled": true
+    }
+  }
+}

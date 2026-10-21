@@ -45,13 +45,13 @@ def collect_job_gaps(
             gaps.append(
                 {
                     "id": "voxcpm",
-                    "label": "VoxCPM TTS",
+                    "label": "VoxCPM2",
                     "kind": "package",
                     "blocking": True,
                     "command": "uv sync --extra voxcpm",
                     "detail": (
-                        "Selected voice needs the VoxCPM package.\n"
-                        "Install it, then restart Claynext."
+                        "Selected voice needs VoxCPM2 (openbmb/VoxCPM2).\n"
+                        "Install the voxcpm extra, then restart Claynext."
                     ),
                     "repo": "",
                 }
@@ -72,6 +72,48 @@ def collect_job_gaps(
                             "detail": (
                                 f"{repo} is not in the local cache yet.\n"
                                 "Download it before the first VoxCPM synthesis, "
+                                "or let the job pull it automatically."
+                            ),
+                            "repo": repo,
+                        }
+                    )
+            except Exception:
+                pass
+
+    needs_omnivoice = any(TTSEngine._is_omnivoice_voice(v) for v in voices)
+    if needs_omnivoice:
+        st = feature_status("omnivoice")
+        if not st.get("installed"):
+            gaps.append(
+                {
+                    "id": "omnivoice",
+                    "label": "OmniVoice",
+                    "kind": "package",
+                    "blocking": True,
+                    "command": "uv sync --extra omnivoice",
+                    "detail": (
+                        "Selected voice needs OmniVoice (k2-fsa/OmniVoice).\n"
+                        "Install the omnivoice extra, then restart Claynext."
+                    ),
+                    "repo": "",
+                }
+            )
+        else:
+            repo = TTSEngine.OMNIVOICE_DEFAULT_MODEL
+            try:
+                from claynext.models.hf_hub import is_model_downloaded
+
+                if not is_model_downloaded(repo):
+                    gaps.append(
+                        {
+                            "id": "omnivoice_weights",
+                            "label": "OmniVoice model weights",
+                            "kind": "model",
+                            "blocking": False,
+                            "command": "",
+                            "detail": (
+                                f"{repo} is not in the local cache yet.\n"
+                                "Download it before the first OmniVoice synthesis, "
                                 "or let the job pull it automatically."
                             ),
                             "repo": repo,

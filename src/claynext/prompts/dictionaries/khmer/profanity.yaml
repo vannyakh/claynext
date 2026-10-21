@@ -1,0 +1,93 @@
+# Intensity lexicon for the Slang and Profanity Selector.
+# Levels: 0 none, 1 mild (insult / mild swear), 2 strong, 3 explicit.
+# Source markers measure how strong the SOURCE line is; the localized line may
+# never go above min(source level, character level, project cap).
+# Khmer terms are used only to DETECT intensity in a localized line so the
+# post-check can flag it. Nothing here is ever inserted into dialogue.
+version: "0.1.0"
+review:
+  status: pending_native_review
+  reviewer: null
+  reviewed_at: null
+
+source_markers:
+  english:
+    - term: damn
+      level: 1
+    - term: hell
+      level: 1
+    - term: crap
+      level: 1
+    - term: idiot
+      level: 1
+    - term: stupid
+      level: 1
+    - term: moron
+      level: 1
+    - term: coward
+      level: 1
+    - term: jerk
+      level: 1
+    - term: shut up
+      level: 1
+    - term: bastard
+      level: 2
+    - term: bitch
+      level: 2
+    - term: shit
+      level: 2
+    - term: asshole
+      level: 2
+    - term: piss off
+      level: 2
+    - term: fuck
+      level: 3
+    - term: fucking
+      level: 3
+    - term: motherfucker
+      level: 3
+
+khmer_terms:
+  - term: ល្ងង់
+    level: 1
+    gloss: stupid
+    verified: false
+  - term: ឆ្កួត
+    level: 1
+    gloss: crazy
+    verified: false
+  - term: កំសាក
+    level: 1
+    gloss: coward
+    verified: false
+  - term: អាចោរ
+    level: 1
+    gloss: thief (insult)
+    verified: false
+  - term: អាឆ្កែ
+    level: 2
+    gloss: dog (insult, male target)
+    verified: false
+  - term: មីឆ្កែ
+    level: 2
+    gloss: dog (insult, female target)
+    verified: false
+  - term: ចង្រៃ
+    level: 2
+    gloss: cursed / damned
+    verified: false
+  - term: អាតិរច្ឆាន
+    level: 2
+    gloss: beast (insult)
+    verified: false
+
+# Slang levels: 0 standard spoken, 1 relaxed everyday, 2 youth / street, 3 heavy street.
+slang_levels:
+  - level: 0
+    label: standard spoken
+  - level: 1
+    label: relaxed everyday
+  - level: 2
+    label: youth or street
+  - level: 3
+    label: heavy street

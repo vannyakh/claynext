@@ -3,6 +3,7 @@ pub mod engine;
 pub mod llm_pool;
 pub mod model_cache;
 pub mod ocr;
+pub mod performance;
 pub mod stems;
 pub mod timing;
 pub mod translation;
@@ -20,6 +21,10 @@ pub use model_cache::{is_model_cached, resolve_model_path};
 pub use ocr::{
     filter_ocr_results, scan_burned_captions, stitch_caption_samples, BurnedCaption, CaptionSample,
     CaptionScanRequest, OcrBox,
+};
+pub use performance::{
+    analyze_prosody, normalize_style, plan_performance, style_parts, LinePlan, PerformanceLine,
+    PerformancePlan, PerformanceRequest, ProsodyFeatures, ProsodySpan, STYLES,
 };
 pub use stems::{calculate_ducked_background_volume, DemucsStemConfig};
 pub use timing::{align_speech_speed, align_speech_speed_result, AlignSpeedResult};

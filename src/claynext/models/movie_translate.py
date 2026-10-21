@@ -53,6 +53,16 @@ _CAST_KEYS = (
     "recommended_syllables",
     "speed_tolerance",
     "segment_id",
+    "speaker_id",
+    "speaker_source",
+    "speaker_label_source",
+    "speaker_manual",
+    "gender_source",
+    "audio_gender",
+    "audio_gender_confidence",
+    "expression_source",
+    "expression_manual",
+    "character_id",
 )
 
 
@@ -64,6 +74,70 @@ class MovieTranslateOptions:
     fit_duration: bool = True
     use_slang: bool = True
     use_expression: bool = True
+    # None follows the studio setting ``skill_dialogue_translation``.
+    prompt_skill: bool | None = None
+    glossary: tuple[dict[str, str], ...] = ()
+    skill_run_dir: str = ""
+
+
+def _open_translation_skill(
+    opts: MovieTranslateOptions,
+    segments: list[dict[str, Any]],
+    source_lang: str,
+    target_lang: str,
+):
+    """``movie.dialogue_translation`` session, or None when the skill is off or fails to load."""
+    if opts.prompt_skill is not False:
+        khmer = _open_khmer_dialogue_skill(opts, segments, source_lang, target_lang)
+        if khmer is not None:
+            return khmer
+    enabled = opts.prompt_skill
+    if enabled is None:
+        try:
+            from claynext.models.features import get_feature_setting
+
+            enabled = get_feature_setting("skill_dialogue_translation", "0") == "1"
+        except Exception:
+            enabled = False
+    if not enabled:
+        return None
+    try:
+        from claynext.models.translate_service import TranslateEngine
+        from claynext.prompts.translation import open_session
+
+        return open_session(
+            segments,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            glossary=opts.glossary,
+            run_dir=opts.skill_run_dir or None,
+            count_units=TranslateEngine.spoken_units_fast,
+        )
+    except Exception:
+        return None
+
+
+def _open_khmer_dialogue_skill(
+    opts: MovieTranslateOptions,
+    segments: list[dict[str, Any]],
+    source_lang: str,
+    target_lang: str,
+):
+    """``movie.khmer_natural_dialogue`` session when ``skill_khmer_natural_dialogue`` is on and the target is Khmer."""
+    try:
+        from claynext.models.khmer_localization.skill import session_if_enabled
+        from claynext.models.translate_service import TranslateEngine
+
+        return session_if_enabled(
+            segments,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            glossary=opts.glossary,
+            run_dir=opts.skill_run_dir or None,
+            count_units=TranslateEngine.spoken_units_fast,
+        )
+    except Exception:
+        return None
 
 
 def _installed_ollama() -> set[str]:
@@ -126,6 +200,8 @@ def resolve_movie_engine_chain(
         _add(f"{spec['label']} · {spec['model']}", engine, spec["model"])
     elif engine == "ollama":
         _add(f"Ollama {model} · cinematic", "ollama", model)
+    elif engine in {"sglang", "sglang-omni"}:
+        _add("SGLang-Omni · cinematic", "sglang-omni")
     elif engine == "nllb":
         _add("NLLB-200 · offline", "nllb")
     elif engine == "google":
@@ -139,6 +215,13 @@ def resolve_movie_engine_chain(
                 _add(f"{spec['label']} · {spec['model']}", pid, spec["model"])
         if TranslateEngine.ollama_available():
             _add(f"Ollama {model} · cinematic", "ollama", model)
+        try:
+            from claynext.models.sglang_omni import can_translate
+
+            if can_translate():
+                _add("SGLang-Omni · cinematic", "sglang-omni")
+        except Exception:
+            pass
         try:
             if TranslateEngine.is_nllb_downloaded():
                 _add("NLLB-200 · offline", "nllb")
@@ -303,6 +386,11 @@ def translate_movie_dialogue(
     if not chain:
         raise RuntimeError("No translation engines available.")
 
+    skill = _open_translation_skill(opts, segments, source_lang, target_lang)
+    skill_kw = {"skill": skill} if skill is not None else {}
+    if skill is not None:
+        ping(3, f"Prompt skill · {skill.skill.id} {skill.skill.version}")
+
     last_err = "Movie translation failed"
     accepted: dict[str, dict[str, Any]] = {}
     order = [str(seg.get("id")) for seg in segments]
@@ -322,6 +410,7 @@ def translate_movie_dialogue(
                     ping,
                     source_lang=source_lang,
                     style=style,
+                    **skill_kw,
                 )
             elif backend == "ollama":
                 rows = TranslateEngine._translate_llm(
@@ -332,6 +421,18 @@ def translate_movie_dialogue(
                     ping,
                     source_lang=source_lang,
                     style=style,
+                    **skill_kw,
+                )
+            elif backend == "sglang-omni":
+                rows = TranslateEngine._translate_llm(
+                    pending,
+                    target_lang,
+                    "sglang-omni",
+                    "",
+                    ping,
+                    source_lang=source_lang,
+                    style=style,
+                    **skill_kw,
                 )
             elif backend == "nllb":
                 rows = TranslateEngine._translate_nllb(
@@ -369,7 +470,11 @@ def translate_movie_dialogue(
                 continue
             if accepted:
                 break
+            if skill is not None:
+                skill.save()
             raise RuntimeError(last_err) from exc
+    if skill is not None:
+        skill.save()
     if not accepted:
         raise RuntimeError(last_err)
     ready = [accepted[key] for key in order if key in accepted]

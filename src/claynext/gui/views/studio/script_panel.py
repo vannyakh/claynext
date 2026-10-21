@@ -101,9 +101,15 @@ def _format_script_error(hint: str) -> str:
     """Turn raw engine errors into short, actionable empty-state copy."""
     text = str(hint or "").strip()
     low = text.lower()
-    if "voxcpm is not installed" in low or "extra voxcpm" in low:
+    if "omnivoice" in low and ("not installed" in low or "extra omnivoice" in low):
         return (
-            "VoxCPM optional pack is missing.\n"
+            "OmniVoice is not installed.\n"
+            "Run: uv sync --extra omnivoice\n"
+            "Or pick Edge / Kitten voices in Settings and retry."
+        )
+    if "voxcpm" in low and ("not installed" in low or "extra voxcpm" in low):
+        return (
+            "VoxCPM2 is not installed.\n"
             "Run: uv sync --extra voxcpm\n"
             "Or pick Edge / Kitten voices in Settings and retry."
         )
@@ -561,6 +567,8 @@ class ScriptPanelTools:
             str(seg.get("end", "")),
             str(seg.get("speaker") or ""),
             str(seg.get("expression") or ""),
+            str((seg.get("performance") or {}).get("style") or ""),
+            str((seg.get("performance") or {}).get("intensity") or ""),
             str(seg.get("gender") or ""),
             bool(seg.get("pending")),
             bool(seg.get("gender_manual")),
@@ -595,11 +603,15 @@ class ScriptPanelTools:
         voice = str(seg.get("tts_voice_hint") or seg.get("voice_id") or "")
         expr = str(seg.get("expression") or "")
         role = str(seg.get("character_role") or "")
+        from claynext.gui.views.studio.script_line import performance_summary
+
+        delivery = performance_summary(seg.get("performance"))
         char_item.setToolTip(
             speaker
             + (f" [{role}]" if role else "")
             + (f"\nVoice: {voice}" if voice else "")
             + (f"\nExpression: {expr}" if expr else "")
+            + (f"\nDelivery: {delivery}" if delivery else "")
         )
         gender = str(seg.get("gender") or "Unknown")
         if gender == "Female":

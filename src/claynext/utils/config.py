@@ -40,6 +40,10 @@ DEFAULT_CONFIG = {
     "demucs_model": "htdemucs",
     "prefer_voxcpm": "0",
     "prefer_whisperx": "1",
+    "transcript_ocr": "0",
+    "sglang_omni_url": "http://127.0.0.1:8000",
+    "skill_dialogue_translation": "0",  # 1 = movie.dialogue_translation prompt skill
+    "skill_khmer_natural_dialogue": "0",  # 1 = movie.khmer_natural_dialogue for Khmer targets
     "ui_language": "English (US)",
     "check_updates": "1",
     "auto_open_exports": "1",

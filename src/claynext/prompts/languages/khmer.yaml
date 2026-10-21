@@ -1,0 +1,52 @@
+# Khmer target profile for prompt skills.
+# Speech units come from the Rust speech-quota tool (syllables for Khmer);
+# spoken_unit only names them in the prompt.
+name: Khmer
+native_name: ភាសាខ្មែរ
+codes:
+  - km
+  - khm
+  - km-KH
+display_name: natural spoken Khmer (ភាសាខ្មែរ)
+spoken_unit: syllable
+instructions:
+  - Write spoken Khmer, not formal written Khmer. Prefer what people say on the street and at home.
+  - "Choose pronouns from the relationship: ខ្ញុំ / អ្នក for polite or strangers, បង / អូន between partners and siblings, ឯង / អញ only for close friends or anger."
+  - Use particles that carry tone (ហ្នឹង, ណា, ទេ, ហើយ, អី) instead of extra words.
+  - "Casual questions do not start with តើ. Say ឯងទៅណា? not តើអ្នកទៅណា?"
+  - Drop បាន, កំពុង, and របស់ when the line is already clear without them; they cost syllables.
+  - Keep foreign names as the Khmer audience hears them, the same spelling every time.
+  - Polite answers use បាទ (male speaker) or ចាស (female speaker).
+examples:
+  - source: piece of cake
+    say: ងាយណាស់
+    avoid: ដុំនំខេក
+    note: say the meaning, not the image
+  - source: What the hell are you doing?
+    say: ឯងធ្វើអីហ្នឹង?
+    avoid: តើអ្នកកំពុងធ្វើអ្វី?
+  - source: then he sent her to her room
+    say: គាត់បានជួននាងទៅបន្ទប់
+    avoid: បន្ទាប់មកគាត់បានបញ្ជូននាងទៅបន្ទប់របស់នាង
+    note: shorter line that fits the slot
+glossary:
+  - source: Mom
+    target: ម៉ាក់
+    note: spoken form
+  - source: Dad
+    target: ប៉ា
+    note: spoken form
+  - source: Sir
+    target: លោក
+  - source: Madam
+    target: លោកស្រី
+  - source: police
+    target: ប៉ូលិស
+  - source: doctor
+    target: ពេទ្យ
+    note: spoken form of គ្រូពេទ្យ
+  - source: boss
+    target: ថៅកែ
+  - source: okay
+    target: អូខេ
+    note: casual agreement; use បាទ / ចាស for polite replies

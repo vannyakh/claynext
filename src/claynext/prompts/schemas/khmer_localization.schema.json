@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "claynext://prompts/schemas/khmer_localization",
+  "title": "KhmerLocalization",
+  "type": "object",
+  "required": ["lines"],
+  "properties": {
+    "lines": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "source_text", "localized_text", "tts_text", "pronouns_used", "register", "confidence"],
+        "properties": {
+          "id": {"type": ["integer", "string"], "description": "Same id as the input line."},
+          "source_text": {"type": "string", "description": "The input text, unchanged."},
+          "localized_text": {"type": "string", "minLength": 1, "pattern": "\\S", "description": "Natural spoken Khmer line for subtitles and dubbing."},
+          "tts_text": {"type": ["string", "null"], "description": "Same line respelled for a voice engine, or null when identical."},
+          "pronouns_used": {
+            "type": "object",
+            "properties": {
+              "first_person": {"type": "array", "items": {"type": "string"}},
+              "second_person": {"type": "array", "items": {"type": "string"}}
+            }
+          },
+          "register": {"enum": ["formal", "neutral", "casual", "street", "regional"]},
+          "candidates": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "required": ["text"],
+              "properties": {
+                "text": {"type": "string", "minLength": 1},
+                "register": {"type": "string"},
+                "note": {"type": "string"}
+              }
+            }
+          },
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+          "review_flags": {
+            "type": "array",
+            "items": {"enum": ["pronoun_uncertain", "register_uncertain", "idiom_uncertain", "intensity_uncertain", "regional_variant", "meaning_uncertain", "timing_tight"]}
+          },
+          "notes": {"type": "string"}
+        }
+      }
+    }
+  }
+}

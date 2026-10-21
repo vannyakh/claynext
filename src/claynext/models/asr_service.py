@@ -383,6 +383,7 @@ class ASREngine:
         "whisper-base",
         "gemini-flash",
         "faster-whisper-cuda",
+        "sglang-omni",
     ]
     LANGUAGES = list(_LANG_CODES.keys())
 
@@ -398,9 +399,48 @@ class ASREngine:
         initial_prompt: str | None = None,
         compute_device: str = "auto",
         clip_timestamps: list[float] | None = None,
+        control: Any = None,
     ) -> List[Dict[str, Any]]:
         if not media_path or not os.path.isfile(media_path):
             raise FileNotFoundError("Media file not found.")
+
+        if (model_name or "").strip().lower() in {"sglang-omni", "sglang"}:
+            try:
+                if progress_callback:
+                    progress_callback(12, "Transcribing with SGLang-Omni…")
+                from claynext.models.sglang_omni import transcribe as sglang_transcribe
+
+                rows = merge_dialogue_segments(
+                    sglang_transcribe(media_path, language, control=control)
+                )
+                if progress_callback:
+                    progress_callback(100, f"SGLang-Omni transcript complete ({len(rows)} lines)")
+                return rows
+            except Exception as exc:
+                if progress_callback:
+                    progress_callback(18, f"SGLang-Omni error: {exc} — falling back to Whisper…")
+                model_name = "whisper-small"
+
+        if os.path.splitext(media_path)[1].lower() in {
+            ".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".ts", ".m2ts",
+        }:
+            try:
+                from claynext.models.features import transcript_ocr_enabled
+
+                if transcript_ocr_enabled():
+                    from claynext.models.ocr_service import try_ocr_transcript
+
+                    ocr_rows = try_ocr_transcript(
+                        media_path,
+                        language=language,
+                        progress_callback=progress_callback,
+                    )
+                    if ocr_rows:
+                        if progress_callback:
+                            progress_callback(100, f"OCR captions used ({len(ocr_rows)} lines)")
+                        return ocr_rows
+            except Exception:
+                pass
 
         # 1. Gemini Cloud AI Transcript
         if "gemini" in (model_name or "").lower():

@@ -105,6 +105,7 @@ _QUICK_ENGINES = [
     ("glm", "GLM", "GLM API"),
     ("xai", "xAI", "xAI API"),
     ("ollama", "Ollama", "Local model from the studio settings"),
+    ("sglang-omni", "SGLang-Omni", "Local SGLang-Omni server for translate, speech, and voices"),
     ("google", "Google", "Fast literal translation"),
 ]
 

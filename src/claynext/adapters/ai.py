@@ -86,6 +86,65 @@ class AiAdapter:
         """Snap transcript lines onto soundtrack speech turns. None if Rust is missing."""
         return RustAiAdapter.fit_speech(lines, turns)
 
+    def decode_mono_pcm(self, media_path: str | Path, sample_rate: int = 8000) -> bytes:
+        """Mono f32le PCM of a media file. Empty bytes when nothing can decode it."""
+        try:
+            from claynext.adapters.ffmpeg_adapter import get_ffmpeg_adapter
+
+            chunk = get_ffmpeg_adapter().decode_audio_pcm_f32(
+                media_path, sample_rate=sample_rate, channels=1
+            )
+            raw = chunk.raw_pcm if chunk else b""
+            if raw:
+                return raw
+        except Exception as exc:
+            logger.debug("Rust PCM decode failed: %s", exc)
+        import os
+        import tempfile
+
+        tmp_path = ""
+        try:
+            from claynext.adapters.ffmpeg_service import run_ffmpeg
+
+            with tempfile.NamedTemporaryFile(suffix=".f32", delete=False) as tmp:
+                tmp_path = tmp.name
+            proc = run_ffmpeg(
+                ["-y", "-i", str(media_path), "-vn", "-ac", "1", "-ar", str(int(sample_rate)),
+                 "-f", "f32le", "-acodec", "pcm_f32le", tmp_path],
+                timeout=600,
+            )
+            if proc.returncode == 0 and Path(tmp_path).is_file():
+                return Path(tmp_path).read_bytes()
+        except Exception as exc:
+            logger.debug("FFmpeg PCM decode failed: %s", exc)
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+        return b""
+
+    def analyze_prosody_pcm(
+        self, pcm: bytes, sample_rate: int, spans: list[dict[str, Any]]
+    ) -> list[dict[str, Any]] | None:
+        """Per-line energy / pitch / voicing from Rust. None when the binary is missing."""
+        if not pcm or not spans or not RustAiAdapter.is_available():
+            return None
+        import os
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".f32", delete=False) as tmp:
+            tmp.write(pcm)
+            tmp_path = tmp.name
+        try:
+            return RustAiAdapter.analyze_prosody_pcm(tmp_path, sample_rate, spans)
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
     def build_translate_prompt(
         self, source_lang: str, target_lang: str, text: str
     ) -> str | None:

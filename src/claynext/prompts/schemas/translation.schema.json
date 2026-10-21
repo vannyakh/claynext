@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "claynext://prompts/schemas/translation",
+  "title": "DialogueTranslation",
+  "type": "object",
+  "required": ["translations"],
+  "properties": {
+    "translations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "translation"],
+        "properties": {
+          "id": {"type": ["integer", "string"], "description": "Same id as the input line."},
+          "translation": {"type": "string", "minLength": 1, "pattern": "\\S", "description": "The spoken line in the target language."},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1, "description": "How sure the translation keeps meaning and intent."},
+          "notes": {"type": "string", "description": "Short reason when a name, idiom, or meaning was uncertain."}
+        }
+      }
+    }
+  }
+}

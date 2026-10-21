@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "claynext://prompts/schemas/khmer_natural_dialogue.input",
+  "title": "KhmerNaturalDialogueInput",
+  "type": "object",
+  "required": ["source_language", "target_language", "dialogue"],
+  "properties": {
+    "source_language": {"type": "string"},
+    "target_language": {"type": "string", "minLength": 1},
+    "dialogue": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "text", "pronoun_plan", "style"],
+        "properties": {
+          "id": {"type": ["integer", "string"]},
+          "text": {"type": "string"},
+          "speaker": {"type": "string"},
+          "listener": {"type": "string"},
+          "gender": {"type": "string"},
+          "expression": {"type": "string"},
+          "duration_sec": {"type": "number", "minimum": 0},
+          "recommended_syllables": {
+            "type": "object",
+            "properties": {
+              "min": {"type": "integer", "minimum": 0},
+              "target": {"type": "integer", "minimum": 0},
+              "max": {"type": "integer", "minimum": 0}
+            }
+          },
+          "pronoun_plan": {
+            "type": "object",
+            "required": ["first_person", "second_person", "forbidden"],
+            "properties": {
+              "first_person": {"type": "string", "minLength": 1},
+              "second_person": {"type": "string", "minLength": 1},
+              "first_alternatives": {"type": "array", "items": {"type": "string"}},
+              "second_alternatives": {"type": "array", "items": {"type": "string"}},
+              "forbidden": {"type": "array", "items": {"type": "string"}},
+              "allow_rough": {"type": "boolean"},
+              "relation": {"type": "string"},
+              "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+              "needs_review": {"type": "boolean"}
+            }
+          },
+          "style": {
+            "type": "object",
+            "required": ["register", "slang_max", "profanity_max"],
+            "properties": {
+              "emotion": {"type": "string"},
+              "intensity": {"enum": ["low", "medium", "high"]},
+              "register": {"enum": ["formal", "neutral", "casual", "street", "regional"]},
+              "slang_max": {"type": "integer", "minimum": 0, "maximum": 3},
+              "profanity_max": {"type": "integer", "minimum": 0, "maximum": 3},
+              "source_profanity": {"type": "integer", "minimum": 0, "maximum": 3},
+              "keep_intensity": {"type": "boolean"},
+              "catchphrases": {"type": "array", "items": {"type": "string"}}
+            }
+          }
+        }
+      }
+    },
+    "characters": {"type": "object"},
+    "scene_context": {"type": "string"},
+    "glossary": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "target"],
+        "properties": {
+          "source": {"type": "string", "minLength": 1},
+          "target": {"type": "string", "minLength": 1},
+          "note": {"type": "string"}
+        }
+      }
+    }
+  }
+}

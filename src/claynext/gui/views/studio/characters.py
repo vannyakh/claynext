@@ -270,9 +270,19 @@ class CharacterTools:
             voice = str(seg.get("tts_voice_hint") or seg.get("voice_id") or "")
             if voice:
                 row["voice_id"] = voice
+            perf = seg.get("performance") if isinstance(seg.get("performance"), dict) else None
+            style = str((perf or {}).get("style") or "")
+            if style and style != "neutral":
+                row.setdefault("_styles", {})
+                row["_styles"][style] = row["_styles"].get(style, 0) + 1
             expr = str(seg.get("expression") or "")
             if expr and not row["expression"]:
                 row["expression"] = expr
+        for row in rows.values():
+            styles = row.pop("_styles", None)
+            if styles:
+                top = sorted(styles.items(), key=lambda kv: -kv[1])[:2]
+                row["expression"] = ", ".join(name for name, _ in top)
         for extra in getattr(self, "_cast_extra", []) or []:
             name = str(extra.get("name") or "").strip()
             if not name or name in rows:
@@ -472,8 +482,36 @@ class CharacterTools:
             self._fill_table(self._segments)
         else:
             self._refresh_character_list()
+        self._save_character_override(name, values)
         if hasattr(self, "log"):
             self.log.info(f"Character · {new_name}")
+
+    def _save_character_override(self, label: str, values: dict) -> None:
+        """Editor choices become registry overrides so the next dub keeps them."""
+        media = str(getattr(self, "selected_file", "") or "")
+        if not media:
+            return
+        from claynext.gui.worker import Worker
+        from claynext.models.character_intel import CharacterRegistry
+        from claynext.models.character_intel.voice_casting import presentation_from_gender
+
+        gender = str(values.get("gender") or "Unknown")
+        fields = {
+            "name": str(values.get("name") or "") or None,
+            "voice_id": str(values.get("voice_id") or "") or None,
+            "presentation": presentation_from_gender(gender) if gender != "Unknown" else None,
+            "role": str(values.get("role") or "") or None,
+        }
+
+        def _job(progress_callback=None):
+            registry = CharacterRegistry.for_media(media)
+            registry.override_by_label(label, **fields)
+            return registry.save()
+
+        worker = Worker(_job)
+        if hasattr(self, "log"):
+            worker.signals.error.connect(lambda msg, _stack="": self.log.warn(f"Character registry · {msg}"))
+        self.thread_pool.start(worker)
 
     def _remove_character(self, name: str) -> None:
         self._cast_extra = [

@@ -101,6 +101,7 @@ class TranslateEngine:
         ("glm", "GLM"),
         ("xai", "xAI"),
         ("ollama", "Ollama · local cinematic"),
+        ("sglang-omni", "SGLang-Omni · local server"),
         ("nllb", "NLLB-200 · offline NMT"),
         ("google", "Google Translate · literal"),
     ]
@@ -670,6 +671,8 @@ class TranslateEngine:
         try:
             if backend == "ollama":
                 mapped = TranslateEngine._ollama_generate(prompt, ollama_model)
+            elif backend == "sglang-omni":
+                mapped = TranslateEngine._sglang_lines(prompt)
             elif backend == "gemini":
                 mapped = TranslateEngine._gemini_batch(prompt, progress_callback)
             else:
@@ -808,18 +811,29 @@ class TranslateEngine:
         progress_callback: Callable = None,
         source_lang: str = "auto",
         style: dict | None = None,
+        skill: Any = None,
     ) -> List[Dict[str, Any]]:
         by_id: dict[Any, dict] = {}
         batches = TranslateEngine._pack_batches(segments)
         style = style or {}
 
         def _run_one(batch: list[dict]) -> dict[Any, dict]:
+            if skill is not None and skill.supports(backend):
+                return TranslateEngine._skill_batch(
+                    batch, target_lang, backend, ollama_model, progress_callback,
+                    source_lang=source_lang, skill=skill, legacy=_run_legacy,
+                )
+            return _run_legacy(batch)
+
+        def _run_legacy(batch: list[dict]) -> dict[Any, dict]:
             payload = TranslateEngine._payload_for(batch, target_lang=target_lang)
             prompt = TranslateEngine._dub_prompt(
                 payload, target_lang, source_lang=source_lang, style=style,
             )
             if backend == "ollama":
                 mapped = TranslateEngine._ollama_generate(prompt, ollama_model)
+            elif backend == "sglang-omni":
+                mapped = TranslateEngine._sglang_lines(prompt)
             elif backend == "gemini":
                 mapped = TranslateEngine._gemini_batch(prompt, progress_callback)
             else:
@@ -828,7 +842,7 @@ class TranslateEngine:
                 batch,
                 mapped,
                 target_lang,
-                fallback_google=backend != "ollama",
+                fallback_google=backend not in {"ollama", "sglang-omni"},
                 source_lang=source_lang,
             )
 
@@ -882,6 +896,95 @@ class TranslateEngine:
         return rows
 
     @staticmethod
+    def _skill_batch(
+        batch: list[dict],
+        target_lang: str,
+        backend: str,
+        ollama_model: str,
+        progress_callback: Callable = None,
+        *,
+        source_lang: str,
+        skill: Any,
+        legacy: Callable[[list[dict]], dict[Any, dict]],
+    ) -> dict[Any, dict]:
+        """Translate through a prompt skill. A chunk that fails its contract uses ``legacy``."""
+        from claynext.models.ai_provider import ProviderError
+
+        rows: dict[Any, dict] = {}
+        for chunk in skill.chunks(batch):
+            payload = TranslateEngine._payload_for(chunk, target_lang=target_lang)
+            prompt = inputs = result = None
+            applied: dict = {}
+            model = ""
+            error = ""
+            try:
+                prompt, inputs = skill.render(payload)
+                reply, applied, model = TranslateEngine._skill_complete(
+                    backend, prompt.text, ollama_model, prompt.settings, progress_callback,
+                )
+                result = skill.check(reply, inputs)
+                if not result.ok:
+                    error = "; ".join(result.errors[:3])
+            except (RateLimitError, InvalidKeyError, ProviderError) as exc:
+                skill.record(
+                    backend=backend, model=model, settings_applied=applied,
+                    inputs=inputs, prompt=prompt, result=None, error=str(exc),
+                )
+                raise
+            except Exception as exc:
+                error = str(exc)
+            skill.record(
+                backend=backend, model=model, settings_applied=applied,
+                inputs=inputs, prompt=prompt, result=result, error=error,
+            )
+            if result is not None and result.ok:
+                rows.update(TranslateEngine._map_batch(
+                    chunk, skill.rows(result), target_lang,
+                    fallback_google=False, source_lang=source_lang,
+                ))
+            else:
+                rows.update(legacy(chunk))
+        return rows
+
+    @staticmethod
+    def _skill_complete(
+        backend: str,
+        prompt: str,
+        ollama_model: str,
+        settings: dict,
+        progress_callback: Callable = None,
+    ) -> tuple[Any, dict, str]:
+        """One skill prompt through the existing backend. Returns (reply, settings applied, model)."""
+        temp = settings.get("temperature")
+        max_out = settings.get("max_output_tokens")
+        if backend == "ollama":
+            opts: dict = {}
+            if temp is not None:
+                opts["temperature"] = float(temp)
+            if max_out:
+                opts["num_predict"] = int(max_out)
+            name = ollama_model or "qwen2.5:7b"
+            return TranslateEngine._ollama_generate(prompt, ollama_model, options=opts), opts, name
+        if backend == "sglang-omni":
+            from claynext.models.sglang_omni import chat as sglang_chat
+
+            return sglang_chat(prompt), {}, "sglang-omni"
+        if backend == "gemini":
+            gen: dict = {}
+            if temp is not None:
+                gen["temperature"] = float(temp)
+            if max_out:
+                gen["maxOutputTokens"] = int(max_out)
+            reply = TranslateEngine._gemini_batch(prompt, progress_callback, generation=gen)
+            return reply, gen, "gemini-3.8-flash|gemini-flash-latest"
+        from claynext.models.llm_chat import chat_text
+        from claynext.models.llm_providers import CHAT_PROVIDERS
+
+        kwargs = {"temperature": float(temp)} if temp is not None else {}
+        text = chat_text(backend, prompt, progress=progress_callback, **kwargs)
+        return text, kwargs, str((CHAT_PROVIDERS.get(backend) or {}).get("model") or backend)
+
+    @staticmethod
     def _pace_gemini(api_key: str = ""):
         """Per-key pacing so rolling keys each keep their own RPM budget."""
         key = (api_key or "_default")[-24:]
@@ -899,7 +1002,13 @@ class TranslateEngine:
 
         if backend in CHAT_PROVIDERS:
             return CHAT_PROVIDERS[backend]["label"]
-        return {"ollama": "Ollama", "gemini": "Gemini Flash"}.get(backend, backend)
+        return {"ollama": "Ollama", "gemini": "Gemini Flash", "sglang-omni": "SGLang-Omni"}.get(backend, backend)
+
+    @staticmethod
+    def _sglang_lines(prompt: str) -> list[dict]:
+        from claynext.models.sglang_omni import chat as sglang_chat
+
+        return TranslateEngine._parse_lines(sglang_chat(prompt))
 
     @staticmethod
     def _chat_batch(provider: str, prompt: str, progress_callback: Callable = None) -> list[dict]:
@@ -909,12 +1018,18 @@ class TranslateEngine:
         return TranslateEngine._parse_lines(json_from_text(text))
 
     @staticmethod
-    def _gemini_batch(prompt: str, progress_callback: Callable = None) -> list[dict]:
+    def _gemini_batch(
+        prompt: str, progress_callback: Callable = None, *, generation: dict | None = None,
+    ) -> list[dict]:
         # 2.5 Flash is closed to new keys. 3.8 Flash is the model Google tells those keys to call.
         models = ["gemini-3.8-flash", "gemini-flash-latest"]
         last_err = "Gemini request failed"
         for model in models:
             try:
+                if generation:
+                    return TranslateEngine._gemini_generate(
+                        model, prompt, progress_callback, generation=generation,
+                    )
                 return TranslateEngine._gemini_generate(model, prompt, progress_callback)
             except RateLimitError as exc:
                 last_err = str(exc)
@@ -926,7 +1041,12 @@ class TranslateEngine:
         raise RuntimeError(last_err)
 
     @staticmethod
-    def _gemini_generate(model: str, prompt: str, progress_callback: Callable = None) -> list[dict]:
+    def _gemini_generate(
+        model: str, prompt: str, progress_callback: Callable = None, *, generation: dict | None = None,
+    ) -> list[dict]:
+        config = {"temperature": 0.4, "responseMimeType": "application/json"}
+        config.update(generation or {})
+
         def _do(api_key: str) -> list[dict]:
             TranslateEngine._pace_gemini(api_key)
             url = (
@@ -935,7 +1055,7 @@ class TranslateEngine:
             )
             body = json.dumps({
                 "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"temperature": 0.4, "responseMimeType": "application/json"},
+                "generationConfig": config,
             }).encode("utf-8")
             req = urllib.request.Request(
                 url,
@@ -969,15 +1089,18 @@ class TranslateEngine:
         )
 
     @staticmethod
-    def _ollama_generate(prompt: str, model: str) -> list[dict]:
+    def _ollama_generate(prompt: str, model: str, *, options: dict | None = None) -> list[dict]:
         host = TranslateEngine.ollama_host()
         name = model or "qwen2.5:7b"
-        body = json.dumps({
+        request = {
             "model": name,
             "prompt": prompt,
             "format": "json",
             "stream": False,
-        }).encode("utf-8")
+        }
+        if options:
+            request["options"] = dict(options)
+        body = json.dumps(request).encode("utf-8")
         req = urllib.request.Request(
             host + "/api/generate",
             data=body,

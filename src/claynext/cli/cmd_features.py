@@ -18,7 +18,7 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     inst = sp.add_parser("install", help="Run uv sync --extra <name>")
     inst.add_argument(
         "extra",
-        help="Extra id or feature id (demucs, demucs-mlx, voxcpm, whisperx, gender)",
+        help="Extra id or feature id (demucs, demucs-mlx, voxcpm, omnivoice, whisperx, gender)",
     )
     inst.add_argument("-q", "--quiet", action="store_true")
     inst.set_defaults(func=run_install)

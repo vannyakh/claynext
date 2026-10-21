@@ -18,6 +18,8 @@ _kitten_lock = threading.Lock()
 _kitten_models: dict[str, Any] = {}
 _voxcpm_lock = threading.Lock()
 _voxcpm_models: dict[str, Any] = {}
+_omnivoice_lock = threading.Lock()
+_omnivoice_models: dict[str, Any] = {}
 _edge_endpoint_ready = False
 
 
@@ -37,6 +39,68 @@ def _seed_voxcpm(seed: int) -> None:
             torch.cuda.manual_seed_all(seed)
     except Exception:
         pass
+
+
+def _voxcpm_runtime() -> dict[str, Any]:
+    """Device and compile flags for the VoxCPM 2 loader.
+
+    ``optimize`` turns on ``torch.compile``, which is aimed at CUDA. CPU and
+    Apple Silicon stay eager so the first synthesis does not fail to compile.
+    """
+    device = "cpu"
+    optimize = False
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            device = "auto"
+            optimize = True
+        elif getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+            device = "mps"
+    except Exception:
+        pass
+    return {"device": device, "optimize": optimize}
+
+
+def _omnivoice_runtime() -> dict[str, Any]:
+    """Device map and dtype for k2-fsa/OmniVoice.
+
+    CUDA, Apple Silicon, and Intel Arc use float16. CPU stays on float32.
+    """
+    device_map = "cpu"
+    dtype_name = "float32"
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            device_map = "cuda:0"
+            dtype_name = "float16"
+        elif getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+            device_map = "mps"
+            dtype_name = "float16"
+        elif getattr(torch, "xpu", None) is not None and torch.xpu.is_available():
+            device_map = "xpu"
+            dtype_name = "float16"
+        dtype = getattr(torch, dtype_name)
+    except Exception:
+        dtype = None
+    runtime: dict[str, Any] = {"device_map": device_map}
+    if dtype is not None:
+        runtime["dtype"] = dtype
+    return runtime
+
+
+def _filter_call(fn: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
+    import inspect
+
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return kwargs
+    if any(item.kind == inspect.Parameter.VAR_KEYWORD for item in params.values()):
+        return kwargs
+    allowed = set(params)
+    return {key: value for key, value in kwargs.items() if key in allowed}
 
 
 def _call_voxcpm(model: Any, **kwargs: Any):
@@ -86,7 +150,7 @@ def voice_display_fallback(voice_id: str) -> str:
         return "Voice"
     stem = voice_id.split("/")[-1].replace("Neural", "")
     skip = {
-        "edge", "kitten", "voxcpm", "eleven", "en", "us", "km", "kh", "vi", "vn",
+        "edge", "kitten", "voxcpm", "omnivoice", "eleven", "en", "us", "km", "kh", "vi", "vn",
         "ja", "jp", "ko", "kr", "zh", "cn", "female", "male",
     }
     for part in reversed(stem.replace("_", "-").split("-")):
@@ -97,12 +161,14 @@ def voice_display_fallback(voice_id: str) -> str:
 
 class TTSEngine:
     """
-    Text-to-Speech engine: KittenTTS (CPU ONNX), Edge TTS (online), VoxCPM (local neural), and ElevenLabs.
+    Text-to-Speech engine: KittenTTS (CPU ONNX), Edge TTS (online), VoxCPM (local neural), OmniVoice, and ElevenLabs.
     """
     PROVIDERS = [
         "KittenTTS (Local CPU/ONNX)",
         "Microsoft Edge TTS (Online Free)",
         "VoxCPM (Local Neural · Multilingual)",
+        "OmniVoice (Local · 600 languages)",
+        "SGLang-Omni (Server)",
         "ElevenLabs (Online)",
     ]
     ELEVEN_MODEL = "eleven_multilingual_v2"
@@ -120,6 +186,12 @@ class TTSEngine:
         ("openbmb/VoxCPM-0.5B", "VoxCPM 0.5B (Lighter · Faster)"),
     ]
     VOXCPM_DEFAULT_MODEL = "openbmb/VoxCPM2"
+
+    OMNIVOICE_MODELS = [
+        ("k2-fsa/OmniVoice", "OmniVoice (600+ languages · 24 kHz)"),
+    ]
+    OMNIVOICE_DEFAULT_MODEL = "k2-fsa/OmniVoice"
+    OMNIVOICE_SAMPLE_RATE = 24000
 
     # ``name`` / ``alias`` = short character label only (no engine/model prefix).
     # Engine lives in ``tag``; language / gender stay as separate fields.
@@ -210,6 +282,103 @@ class TTSEngine:
         },
     ]
 
+    # Voice Design prompts. OmniVoice reads ``instruct`` (gender, pitch, accent).
+    OMNIVOICE_VOICES = [
+        {
+            "id": "omnivoice-khmer-female",
+            "name": "Sophea",
+            "alias": "Sophea",
+            "lang": "Khmer",
+            "tag": "OmniVoice",
+            "gender": "Female",
+            "instruct": "female",
+        },
+        {
+            "id": "omnivoice-khmer-male",
+            "name": "Dara",
+            "alias": "Dara",
+            "lang": "Khmer",
+            "tag": "OmniVoice",
+            "gender": "Male",
+            "instruct": "male",
+        },
+        {
+            "id": "omnivoice-en-female",
+            "name": "Clara",
+            "alias": "Clara",
+            "lang": "English",
+            "tag": "OmniVoice",
+            "gender": "Female",
+            "instruct": "female, american accent",
+        },
+        {
+            "id": "omnivoice-en-male",
+            "name": "Owen",
+            "alias": "Owen",
+            "lang": "English",
+            "tag": "OmniVoice",
+            "gender": "Male",
+            "instruct": "male, american accent",
+        },
+        {
+            "id": "omnivoice-vi-female",
+            "name": "Mai",
+            "alias": "Mai",
+            "lang": "Vietnamese",
+            "tag": "OmniVoice",
+            "gender": "Female",
+            "instruct": "female",
+        },
+        {
+            "id": "omnivoice-vi-male",
+            "name": "Khoa",
+            "alias": "Khoa",
+            "lang": "Vietnamese",
+            "tag": "OmniVoice",
+            "gender": "Male",
+            "instruct": "male",
+        },
+        {
+            "id": "omnivoice-zh-female",
+            "name": "Yue",
+            "alias": "Yue",
+            "lang": "Chinese",
+            "tag": "OmniVoice",
+            "gender": "Female",
+            "instruct": "female",
+        },
+        {
+            "id": "omnivoice-ja-female",
+            "name": "Aoi",
+            "alias": "Aoi",
+            "lang": "Japanese",
+            "tag": "OmniVoice",
+            "gender": "Female",
+            "instruct": "female",
+        },
+    ]
+
+    SGLANG_VOICES = [
+        {
+            "id": "sglang:female",
+            "name": "Aria",
+            "alias": "Aria",
+            "lang": "All",
+            "tag": "SGLang-Omni",
+            "gender": "Female",
+            "voice": "female",
+        },
+        {
+            "id": "sglang:male",
+            "name": "Leo",
+            "alias": "Leo",
+            "lang": "All",
+            "tag": "SGLang-Omni",
+            "gender": "Male",
+            "voice": "male",
+        },
+    ]
+
     EDGE_VOICES = [
         {"id": "km-KH-SreymomNeural", "name": "Sreymom", "alias": "Sreymom", "lang": "Khmer", "tag": "Neural", "gender": "Female"},
         {"id": "km-KH-PisethNeural", "name": "Piseth", "alias": "Piseth", "lang": "Khmer", "tag": "Neural", "gender": "Male"},
@@ -246,7 +415,7 @@ class TTSEngine:
         }
     ]
 
-    VOICE_PRESETS = CLONE_VOICES + KITTEN_VOICES + VOXCPM_VOICES + EDGE_VOICES + ELEVEN_VOICES
+    VOICE_PRESETS = CLONE_VOICES + KITTEN_VOICES + VOXCPM_VOICES + OMNIVOICE_VOICES + SGLANG_VOICES + EDGE_VOICES + ELEVEN_VOICES
 
     @staticmethod
     def _is_clone_voice(voice_id: str) -> bool:
@@ -269,6 +438,18 @@ class TTSEngine:
         if voice_id.startswith("voxcpm-"):
             return True
         return any(v["id"] == voice_id for v in TTSEngine.VOXCPM_VOICES)
+
+    @staticmethod
+    def _is_omnivoice_voice(voice_id: str) -> bool:
+        if not voice_id:
+            return False
+        if voice_id.startswith("omnivoice-"):
+            return True
+        return any(v["id"] == voice_id for v in TTSEngine.OMNIVOICE_VOICES)
+
+    @staticmethod
+    def _is_sglang_voice(voice_id: str) -> bool:
+        return bool(voice_id) and voice_id.startswith("sglang:")
 
     @staticmethod
     def _is_eleven_voice(voice_id: str) -> bool:
@@ -295,6 +476,10 @@ class TTSEngine:
     @staticmethod
     def voxcpm_voices() -> List[Dict[str, Any]]:
         return list(TTSEngine.VOXCPM_VOICES)
+
+    @staticmethod
+    def omnivoice_voices() -> List[Dict[str, Any]]:
+        return list(TTSEngine.OMNIVOICE_VOICES)
 
     @staticmethod
     def edge_voices() -> List[Dict[str, Any]]:
@@ -406,6 +591,8 @@ class TTSEngine:
             TTSEngine.CLONE_VOICES
             + TTSEngine.KITTEN_VOICES
             + TTSEngine.VOXCPM_VOICES
+            + TTSEngine.OMNIVOICE_VOICES
+            + TTSEngine.SGLANG_VOICES
             + TTSEngine.EDGE_VOICES
             + TTSEngine.eleven_voices()
         )
@@ -424,6 +611,7 @@ class TTSEngine:
                 "gender": str(voice.get("gender") or ""),
                 "alias": str(voice.get("alias") or TTSEngine.voice_label(voice)),
                 "design": voice.get("design") or "",
+                "instruct": voice.get("instruct") or "",
             })
         if want and not rows:
             return TTSEngine.list_voices(None)
@@ -445,6 +633,21 @@ class TTSEngine:
         return TTSEngine.VOXCPM_VOICES[0]
 
     @staticmethod
+    def omnivoice_available() -> bool:
+        try:
+            import omnivoice  # noqa: F401
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _omnivoice_voice_meta(voice_id: str) -> dict[str, Any]:
+        for voice in TTSEngine.OMNIVOICE_VOICES:
+            if voice["id"] == voice_id:
+                return voice
+        return TTSEngine.OMNIVOICE_VOICES[0]
+
+    @staticmethod
     def synthesize(
         text: str,
         voice_id: str,
@@ -456,11 +659,15 @@ class TTSEngine:
         reference_wav: str = "",
         progress_callback: Callable | None = None,
         allow_expression_tags: bool = True,
+        control: Any = None,
+        performance: dict[str, Any] | None = None,
     ) -> str:
-        """Route to Kitten / VoxCPM / ElevenLabs / Edge based on voice id.
+        """Route to Kitten / VoxCPM / OmniVoice / ElevenLabs / Edge based on voice id.
 
         When ``allow_expression_tags`` is True (default), inline cues like
         ``[laugh]`` / ``[sigh]`` / ``[excited]`` are expanded before speaking.
+        ``performance`` (style + intensity from the planner) becomes each
+        engine's own controls; the text is spoken unchanged.
         """
         if allow_expression_tags:
             from claynext.models.tts_expression import has_expression_tags, synthesize_with_tags
@@ -475,6 +682,7 @@ class TTSEngine:
                     model_name=model_name,
                     reference_wav=reference_wav,
                     progress_callback=progress_callback,
+                    performance=performance,
                 )
         return TTSEngine._synthesize_plain(
             text,
@@ -485,6 +693,8 @@ class TTSEngine:
             model_name=model_name,
             reference_wav=reference_wav,
             progress_callback=progress_callback,
+            control=control,
+            performance=performance,
         )
 
     @staticmethod
@@ -498,8 +708,19 @@ class TTSEngine:
         model_name: str = "",
         reference_wav: str = "",
         progress_callback: Callable | None = None,
+        control: Any = None,
+        performance: dict[str, Any] | None = None,
     ) -> str:
         """Engine dispatch without expression-tag expansion."""
+        delivery: dict[str, Any] = {}
+        if performance:
+            from claynext.models.character_intel.expression_mapper import map_delivery
+
+            delivery = map_delivery(voice_id, performance, has_reference=bool(reference_wav))
+        perf_speed = float(delivery.get("speed") or 1.0)
+        perf_pitch = float(delivery.get("pitch_hz") or 0.0)
+        perf_volume = float(delivery.get("volume_pct") or 0.0)
+        style_prompt = str(delivery.get("style_prompt") or "")
         if TTSEngine._is_clone_voice(voice_id):
             if reference_wav and os.path.isfile(reference_wav):
                 try:
@@ -509,6 +730,7 @@ class TTSEngine:
                         output_path,
                         model_name=model_name or TTSEngine.VOXCPM_DEFAULT_MODEL,
                         reference_wav=reference_wav,
+                        style_prompt=style_prompt,
                         progress_callback=progress_callback,
                     )
                 except Exception:
@@ -520,8 +742,9 @@ class TTSEngine:
                 text,
                 fallback,
                 output_path,
-                speed=speed,
-                pitch=pitch,
+                speed=speed * perf_speed,
+                pitch=pitch + perf_pitch,
+                volume=perf_volume,
                 progress_callback=progress_callback,
             )
             if reference_wav and os.path.isfile(reference_wav):
@@ -539,14 +762,37 @@ class TTSEngine:
                 output_path,
                 model_name=model_name or TTSEngine.VOXCPM_DEFAULT_MODEL,
                 reference_wav=reference_wav,
+                style_prompt=style_prompt,
                 progress_callback=progress_callback,
             )
+        if TTSEngine._is_omnivoice_voice(voice_id):
+            return TTSEngine.synthesize_omnivoice(
+                text,
+                voice_id,
+                output_path,
+                speed=speed * perf_speed,
+                model_name=model_name or TTSEngine.OMNIVOICE_DEFAULT_MODEL,
+                reference_wav=reference_wav,
+                instruct_extra=str(delivery.get("instruct_extra") or ""),
+                progress_callback=progress_callback,
+            )
+        if TTSEngine._is_sglang_voice(voice_id):
+            return TTSEngine.synthesize_sglang(
+                text,
+                voice_id,
+                output_path,
+                progress_callback=progress_callback,
+                control=control,
+            )
         if TTSEngine._is_eleven_voice(voice_id):
+            eleven = delivery.get("eleven") or {}
             return TTSEngine.synthesize_eleven(
                 text,
                 voice_id,
                 output_path,
-                speed=speed,
+                speed=speed * perf_speed,
+                stability=eleven.get("stability"),
+                style=eleven.get("style"),
                 progress_callback=progress_callback,
             )
         if TTSEngine._is_kitten_voice(voice_id):
@@ -554,7 +800,7 @@ class TTSEngine:
                 text,
                 voice_id,
                 output_path,
-                speed=speed,
+                speed=speed * perf_speed,
                 model_name=model_name or "KittenML/kitten-tts-nano-0.8-fp32",
                 progress_callback=progress_callback,
             )
@@ -562,8 +808,9 @@ class TTSEngine:
             text,
             voice_id,
             output_path,
-            speed=speed,
-            pitch=pitch,
+            speed=speed * perf_speed,
+            pitch=pitch + perf_pitch,
+            volume=perf_volume,
             progress_callback=progress_callback,
         )
 
@@ -623,20 +870,29 @@ class TTSEngine:
         """Lazy-load a VoxCPM model (optional dependency: `uv sync --extra voxcpm`)."""
         if not TTSEngine.voxcpm_available():
             raise RuntimeError(
-                "VoxCPM is not installed. Run: uv sync --extra voxcpm\n"
-                "Requires Python 3.10–3.12, PyTorch ≥ 2.5, and preferably CUDA."
+                "VoxCPM2 is not installed. Run: uv sync --extra voxcpm\n"
+                "Needs the voxcpm 2 package and PyTorch ≥ 2.5 "
+                "(Apple Silicon, Windows, or Linux). "
+                "The speech checkpoint is openbmb/VoxCPM2."
             )
+        repo = (model_name or TTSEngine.VOXCPM_DEFAULT_MODEL).strip() or TTSEngine.VOXCPM_DEFAULT_MODEL
         with _voxcpm_lock:
-            if model_name in _voxcpm_models:
-                return _voxcpm_models[model_name]
+            if repo in _voxcpm_models:
+                return _voxcpm_models[repo]
             if progress_callback:
-                progress_callback(20, f"Loading VoxCPM ({model_name})… first run downloads weights")
+                progress_callback(20, f"Loading VoxCPM2 ({repo})… first run downloads weights")
+            from claynext.utils.paths import MODELS_DIR
             from voxcpm import VoxCPM
 
-            model = VoxCPM.from_pretrained(model_name, load_denoiser=False)
-            _voxcpm_models[model_name] = model
+            load_kwargs = {
+                "load_denoiser": False,
+                "cache_dir": str(MODELS_DIR),
+                **_voxcpm_runtime(),
+            }
+            model = VoxCPM.from_pretrained(repo, **_filter_call(VoxCPM.from_pretrained, load_kwargs))
+            _voxcpm_models[repo] = model
             if progress_callback:
-                progress_callback(45, "VoxCPM model ready")
+                progress_callback(45, "VoxCPM2 ready")
             return model
 
     @staticmethod
@@ -650,16 +906,23 @@ class TTSEngine:
         cfg_value: float = 2.0,
         inference_timesteps: int = 10,
         seed: int = 42,
+        style_prompt: str = "",
         progress_callback: Callable | None = None,
     ) -> str:
-        """Synthesize with VoxCPM Voice Design (or optional reference clone)."""
+        """Synthesize with VoxCPM Voice Design (or optional reference clone).
+
+        ``style_prompt`` (e.g. "shouting with a raised voice") joins the
+        parenthesised design; with a reference clone it is the whole prefix.
+        """
         raw = (text or "").strip()
         if not raw:
             raise RuntimeError("No text to speak.")
 
         meta = TTSEngine._voxcpm_voice_meta(voice_id)
-        design = str(meta.get("design") or "").strip()
-        speak = f"({design}){raw}" if design and not reference_wav else raw
+        design = "" if reference_wav else str(meta.get("design") or "").strip()
+        style = str(style_prompt or "").strip()
+        prefix = ", ".join(part for part in (design, style) if part)
+        speak = f"({prefix}){raw}" if prefix else raw
         label = meta.get("name") or voice_id
 
         if progress_callback:
@@ -712,6 +975,151 @@ class TTSEngine:
         if progress_callback:
             progress_callback(100, f"VoxCPM speech ready [{label}]")
         return actual_path
+
+    @staticmethod
+    def get_omnivoice_model(
+        model_name: str = OMNIVOICE_DEFAULT_MODEL,
+        progress_callback: Callable | None = None,
+    ) -> Any:
+        """Lazy-load OmniVoice (optional dependency: `uv sync --extra omnivoice`)."""
+        if not TTSEngine.omnivoice_available():
+            raise RuntimeError(
+                "OmniVoice is not installed. Run: uv sync --extra omnivoice\n"
+                "Needs the omnivoice package and PyTorch ≥ 2.4 "
+                "(Apple Silicon, Windows, or Linux). "
+                "The speech checkpoint is k2-fsa/OmniVoice."
+            )
+        repo = (model_name or TTSEngine.OMNIVOICE_DEFAULT_MODEL).strip() or TTSEngine.OMNIVOICE_DEFAULT_MODEL
+        with _omnivoice_lock:
+            if repo in _omnivoice_models:
+                return _omnivoice_models[repo]
+            if progress_callback:
+                progress_callback(20, f"Loading OmniVoice ({repo})… first run downloads weights")
+            from claynext.models.hf_hub import get_local_model_path
+            from claynext.utils.paths import MODELS_DIR
+            from omnivoice import OmniVoice
+
+            source = get_local_model_path(repo) or repo
+            load_kwargs = {
+                "cache_dir": str(MODELS_DIR),
+                **_omnivoice_runtime(),
+            }
+            model = OmniVoice.from_pretrained(source, **_filter_call(OmniVoice.from_pretrained, load_kwargs))
+            _omnivoice_models[repo] = model
+            if progress_callback:
+                progress_callback(45, "OmniVoice ready")
+            return model
+
+    @staticmethod
+    def synthesize_omnivoice(
+        text: str,
+        voice_id: str,
+        output_path: str,
+        *,
+        speed: float = 1.0,
+        model_name: str = OMNIVOICE_DEFAULT_MODEL,
+        reference_wav: str = "",
+        num_step: int = 16,
+        instruct_extra: str = "",
+        progress_callback: Callable | None = None,
+    ) -> str:
+        """Synthesize with k2-fsa/OmniVoice voice design, or a reference clone."""
+        raw = (text or "").strip()
+        if not raw:
+            raise RuntimeError("No text to speak.")
+
+        meta = TTSEngine._omnivoice_voice_meta(voice_id)
+        instruct = str(meta.get("instruct") or "").strip()
+        extra = str(instruct_extra or "").strip()
+        if extra and extra not in instruct:
+            instruct = f"{instruct}, {extra}" if instruct else extra
+        label = meta.get("name") or voice_id
+
+        if progress_callback:
+            progress_callback(25, f"Synthesizing with OmniVoice [{label}]…")
+
+        model = TTSEngine.get_omnivoice_model(
+            model_name or TTSEngine.OMNIVOICE_DEFAULT_MODEL,
+            progress_callback,
+        )
+        target = Path(output_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        wav_out = str(target.with_suffix(".wav"))
+
+        if progress_callback:
+            progress_callback(55, "Generating speech (OmniVoice)…")
+
+        kwargs: dict[str, Any] = {
+            "text": raw,
+            "num_step": int(num_step),
+            "speed": float(speed) if speed and speed > 0 else 1.0,
+        }
+        if reference_wav and os.path.isfile(reference_wav):
+            kwargs["ref_audio"] = reference_wav
+        elif instruct:
+            kwargs["instruct"] = instruct
+
+        call = _filter_call(model.generate, kwargs)
+        wav = model.generate(**call)
+        if isinstance(wav, (list, tuple)):
+            wav = wav[0]
+        if hasattr(wav, "detach"):
+            wav = wav.detach().cpu().numpy()
+
+        import soundfile as sf
+
+        sf.write(wav_out, wav, TTSEngine.OMNIVOICE_SAMPLE_RATE)
+
+        if output_path.lower().endswith(".mp3"):
+            if progress_callback:
+                progress_callback(85, "Encoding to MP3…")
+            from claynext.adapters.ffmpeg_adapter import run_ffmpeg
+
+            ok = run_ffmpeg([
+                "-y", "-i", wav_out,
+                "-codec:a", "libmp3lame", "-q:a", "2",
+                output_path,
+            ])
+            if not ok or not os.path.isfile(output_path):
+                raise RuntimeError("Failed to encode OmniVoice speech to MP3.")
+            if os.path.exists(wav_out) and wav_out != output_path:
+                try:
+                    os.remove(wav_out)
+                except Exception:
+                    pass
+            actual_path = output_path
+        else:
+            actual_path = wav_out
+
+        if progress_callback:
+            progress_callback(100, f"OmniVoice speech ready [{label}]")
+        return actual_path
+
+    @staticmethod
+    def synthesize_sglang(
+        text: str,
+        voice_id: str,
+        output_path: str,
+        progress_callback: Callable | None = None,
+        control: Any = None,
+    ) -> str:
+        """Speak one line on the SGLang-Omni server. The dub mix still places it."""
+        raw = (text or "").strip()
+        if not raw:
+            raise RuntimeError("No text to speak.")
+        voice = voice_id.split(":", 1)[1] if ":" in (voice_id or "") else "female"
+        for item in TTSEngine.SGLANG_VOICES:
+            if item["id"] == voice_id:
+                voice = str(item.get("voice") or voice)
+                break
+        if progress_callback:
+            progress_callback(30, f"Synthesizing with SGLang-Omni [{voice}]…")
+        from claynext.models.sglang_omni import synthesize as sglang_speak
+
+        path = sglang_speak(raw, output_path, voice=voice, control=control)
+        if progress_callback:
+            progress_callback(100, "SGLang-Omni speech ready")
+        return path
 
     @staticmethod
     def synthesize_kitten(
@@ -780,6 +1188,7 @@ class TTSEngine:
         speed: float = 1.0,
         pitch: float = 0.0,
         progress_callback: Callable | None = None,
+        volume: float = 0.0,
     ) -> str:
         raw = (text or "").strip()
         if not raw:
@@ -787,14 +1196,17 @@ class TTSEngine:
         if not TTSEngine._is_edge_voice(voice_id):
             raise RuntimeError(f"Voice is not an Edge neural voice: {voice_id}")
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        rate_str = f"{int((speed - 1.0) * 100):+d}%"
-        pitch_str = f"{int(pitch):+d}Hz"
+        rate_str = f"{int(round((speed - 1.0) * 100)):+d}%"
+        pitch_str = f"{int(round(pitch)):+d}Hz"
+        volume_str = f"{int(round(max(-90.0, min(90.0, volume)))):+d}%"
         _ensure_edge_tts_endpoint()
         if progress_callback:
             progress_callback(40, "Streaming Edge TTS…")
 
         async def _run_edge():
-            communicate = edge_tts.Communicate(raw, voice=voice_id, rate=rate_str, pitch=pitch_str)
+            communicate = edge_tts.Communicate(
+                raw, voice=voice_id, rate=rate_str, pitch=pitch_str, volume=volume_str,
+            )
             await communicate.save(output_path)
 
         try:
@@ -827,6 +1239,8 @@ class TTSEngine:
         output_path: str,
         speed: float = 1.0,
         progress_callback: Callable | None = None,
+        stability: float | None = None,
+        style: float | None = None,
     ) -> str:
         """Speak with elevenlabs.io. The key lives in Settings → API Keys, or ELEVENLABS_API_KEY."""
         import json
@@ -855,9 +1269,9 @@ class TTSEngine:
                 "text": raw,
                 "model_id": TTSEngine.ELEVEN_MODEL,
                 "voice_settings": {
-                    "stability": 0.45,
+                    "stability": 0.45 if stability is None else max(0.0, min(1.0, float(stability))),
                     "similarity_boost": 0.75,
-                    "style": 0.0,
+                    "style": 0.0 if style is None else max(0.0, min(1.0, float(style))),
                     "speed": pace,
                     "use_speaker_boost": True,
                 },
@@ -950,15 +1364,19 @@ class TTSEngine:
         reference_wav: str = "",
         progress_callback: Callable | None = None,
     ) -> Dict[str, Any]:
-        """Synthesize text with KittenTTS, VoxCPM, ElevenLabs, or Edge TTS."""
+        """Synthesize text with KittenTTS, VoxCPM, OmniVoice, ElevenLabs, or Edge TTS."""
         if progress_callback:
             progress_callback(10, f"Connecting to {provider} voice '{voice_id}'…")
 
         use_wav = (
             TTSEngine._is_kitten_voice(voice_id)
             or TTSEngine._is_voxcpm_voice(voice_id)
+            or TTSEngine._is_omnivoice_voice(voice_id)
+            or TTSEngine._is_sglang_voice(voice_id)
             or "Kitten" in (provider or "")
             or "VoxCPM" in (provider or "")
+            or "OmniVoice" in (provider or "")
+            or "SGLang" in (provider or "")
         )
         if output_path is None:
             ext = ".wav" if use_wav else ".mp3"
@@ -990,6 +1408,56 @@ class TTSEngine:
             except Exception as exc:
                 if progress_callback:
                     progress_callback(35, f"VoxCPM error: {exc} — trying other engines…")
+
+        if TTSEngine._is_omnivoice_voice(voice_id) or "OmniVoice" in (provider or ""):
+            try:
+                omni_model = model_name if str(model_name).startswith("k2-fsa/") else TTSEngine.OMNIVOICE_DEFAULT_MODEL
+                actual_path = TTSEngine.synthesize_omnivoice(
+                    text,
+                    voice_id,
+                    output_path,
+                    speed=speed,
+                    model_name=omni_model,
+                    reference_wav=reference_wav,
+                    progress_callback=progress_callback,
+                )
+                duration = TTSEngine._probe_duration(actual_path)
+                peaks = TTSEngine._extract_peaks(actual_path)
+                return {
+                    "text": text,
+                    "duration": duration,
+                    "sample_rate": TTSEngine.OMNIVOICE_SAMPLE_RATE,
+                    "wave_peaks": peaks,
+                    "file_path": actual_path,
+                }
+            except Exception as exc:
+                if progress_callback:
+                    progress_callback(38, f"OmniVoice error: {exc} — trying other engines…")
+                if TTSEngine._is_omnivoice_voice(voice_id):
+                    raise
+
+        if TTSEngine._is_sglang_voice(voice_id) or "SGLang" in (provider or ""):
+            try:
+                actual_path = TTSEngine.synthesize_sglang(
+                    text,
+                    voice_id if TTSEngine._is_sglang_voice(voice_id) else TTSEngine.SGLANG_VOICES[0]["id"],
+                    output_path,
+                    progress_callback=progress_callback,
+                )
+                duration = TTSEngine._probe_duration(actual_path)
+                peaks = TTSEngine._extract_peaks(actual_path)
+                return {
+                    "text": text,
+                    "duration": duration,
+                    "sample_rate": 24000,
+                    "wave_peaks": peaks,
+                    "file_path": actual_path,
+                }
+            except Exception as exc:
+                if progress_callback:
+                    progress_callback(40, f"SGLang-Omni error: {exc}")
+                if TTSEngine._is_sglang_voice(voice_id):
+                    raise
 
         # 2. KittenTTS local synthesis
         if TTSEngine._is_kitten_voice(voice_id) or "Kitten" in (provider or ""):

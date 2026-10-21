@@ -22,6 +22,7 @@ def _line_snapshot(seg: dict) -> dict:
         "text": str(seg.get("text") or original),
         "tts_voice_hint": str(seg.get("tts_voice_hint") or voice),
         "voice_id": voice,
+        "performance": dict(seg.get("performance") or {}) or None,
     }
 
 

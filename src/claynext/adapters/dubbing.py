@@ -80,6 +80,10 @@ class DubbingAdapter:
             payload, target_lang, source_lang, style=style
         )
 
+    def plan_performance(self, request: dict[str, Any]) -> dict[str, Any] | None:
+        """Per-line delivery plan from Rust ``plan-performance``. None if the binary is missing."""
+        return RustAiAdapter.plan_performance(request)
+
     def ducked_volume(self, base_volume: float = 1.0, attenuation_db: float = -12.0) -> float:
         """Linear bed volume after dB duck (Rust core, Python fallback)."""
         rust = RustAiAdapter.ducked_volume(base_volume, attenuation_db)

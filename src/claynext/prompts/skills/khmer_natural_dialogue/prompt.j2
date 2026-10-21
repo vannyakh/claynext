@@ -1,0 +1,45 @@
+{# movie.khmer_natural_dialogue — portable subset only (see renderer.py). #}
+{{ system_instructions }}
+
+TASK
+You localize film dialogue{% if source_label %} from {{ source_label }}{% endif %} into {{ target.display_name }} for subtitles and dubbing.
+Write what this character would actually say out loud to this listener, in this scene, in this moment. Do not translate word by word and do not write formal written Khmer unless the line's register is formal.
+
+RULES
+1. MEANING FIRST: Keep who does what, the question, the threat, the joke, the plea. Do not add or drop information. A natural line that changes the meaning is wrong.
+2. PRONOUN PLAN: Every line has pronoun_plan, decided from the speaker, the listener, and their relationship. When the line needs "I" use first_person; when it needs "you" use second_person. Natural Khmer often drops pronouns; dropping them is fine. Use an alternative only when it is clearly more natural, list it in pronouns_used, and lower confidence.
+3. FORBIDDEN FORMS: Never write a form listed in pronoun_plan.forbidden.
+4. ញ៉ុំ: Write ញ៉ុំ only when pronoun_plan.first_person is ញ៉ុំ. Never swap ខ្ញុំ for ញ៉ុំ on your own.
+5. ROUGH FORMS: អញ, ឯង, and ហ្អែង are intimate or rude. Use them only when the plan lists them. Anger alone is not a reason to switch to them.
+6. INTENSITY: Keep the source's anger, insult, humor, and affection at the same strength. style.profanity_max is the strongest wording allowed (0 none, 1 mild insult, 2 strong, 3 explicit). Never go above it and never above the source. Do not add swearing because a character is angry.
+7. REGISTER: style.register and style.slang_max set how casual the line is (0 standard spoken, 1 relaxed, 2 youth or street, 3 heavy street). Do not use regional words; regional vocabulary is applied later from a verified dictionary.
+8. SPOKEN KHMER: Prefer particles that carry tone (ហ្នឹង, ណា, ទេ, ហើយ, អី) over extra words. Casual questions do not start with តើ. Polite replies use បាទ for a male speaker and ចាស for a female speaker.
+9. TIMING: Each line must be spoken inside duration_sec. recommended_syllables gives min / target / max {{ target.spoken_unit }}s. Aim at target and never pass max.
+10. THREE FIELDS: source_text is the input text unchanged. localized_text is the Khmer line for subtitles. tts_text is the same line respelled only where a voice engine would misread colloquial spelling; otherwise null. Never put different meaning in tts_text.
+11. CANDIDATES: When the wording is a judgment call, give up to 3 other phrasings in candidates with register and a short note.
+12. REVIEW: Add review_flags when unsure (pronoun_uncertain, register_uncertain, idiom_uncertain, intensity_uncertain, regional_variant, meaning_uncertain, timing_tight) and explain briefly in notes. Lines whose pronoun_plan.needs_review is true should usually carry pronoun_uncertain unless the line has no pronoun.
+13. JSON: Return one object matching OUTPUT SCHEMA with exactly one entry in lines for every input id, same id, same order.
+{% if glossary %}
+
+GLOSSARY
+{% for term in glossary %}
+- {{ term.source }} → {{ term.target }}{% if term.note %} ({{ term.note }}){% endif %}
+
+{% endfor %}
+{% endif %}
+{% if characters %}
+
+CHARACTERS
+{{ characters | tojson }}
+{% endif %}
+{% if scene_context %}
+
+SCENE CONTEXT (already localized, do not return these)
+{{ scene_context }}
+{% endif %}
+
+OUTPUT SCHEMA
+{{ output_schema | tojson }}
+
+DIALOGUE
+{{ dialogue | tojson }}

@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "project_key": "example-project",
+  "updated_at": "2026-10-21T14:00:00+00:00",
+  "config": {
+    "profanity_cap": 1,
+    "slang_cap": 2,
+    "default_register": "neutral",
+    "allow_regional": false,
+    "review_confidence": 0.6,
+    "scenes": {
+      "wedding": {"scene_id": "wedding", "register": "formal", "formality": "formal", "slang_cap": 0, "profanity_cap": 0, "note": "Ceremony; everyone polite"},
+      "street_fight": {"scene_id": "street_fight", "register": "street", "formality": "informal", "slang_cap": 3, "profanity_cap": 2, "note": ""}
+    },
+    "scene_overrides": [
+      {"scene_id": "wedding", "speaker": "CHAR_001", "listener": "CHAR_002", "first": "ខ្ញុំ", "second": "លោក", "note": "Groom addresses his boss formally at the wedding"}
+    ]
+  },
+  "profiles": {
+    "CHAR_001": {
+      "character_id": "CHAR_001",
+      "name": "Dara",
+      "gender": "male",
+      "age_group": "adult",
+      "register": "casual",
+      "slang_level": 1,
+      "profanity_level": 0,
+      "habitual_first_person": [],
+      "habitual_second_person": [],
+      "pronoun_overrides": [
+        {"listener": "CHAR_003", "first": "បង", "second": "អូន", "note": "Calls his cousin អូន"}
+      ],
+      "catchphrases": ["អត់អីទេ"],
+      "region": null,
+      "region_source": "",
+      "social_role": "son",
+      "evidence": [{"source": "character_registry", "character_id": "CHAR_001"}],
+      "confidence": 0.7,
+      "overrides": {"register": "casual"},
+      "updated_at": "2026-10-21T14:00:00+00:00"
+    },
+    "CHAR_004": {
+      "character_id": "CHAR_004",
+      "name": "Pich",
+      "gender": "female",
+      "age_group": "teen",
+      "register": "casual",
+      "slang_level": 2,
+      "profanity_level": 0,
+      "habitual_first_person": ["ញ៉ុំ"],
+      "habitual_second_person": [],
+      "pronoun_overrides": [],
+      "catchphrases": [],
+      "region": null,
+      "region_source": "",
+      "social_role": "younger sister",
+      "evidence": [{"source": "editor", "text": "Says ញ៉ុំ to family in episode 1"}],
+      "confidence": 0.8,
+      "overrides": {},
+      "updated_at": "2026-10-21T14:00:00+00:00"
+    }
+  },
+  "relationships": [
+    {"speaker": "CHAR_001", "listener": "CHAR_002", "relation": "employee_to_boss", "hostility": 0, "intimacy": 0, "source": "editor", "confidence": 1.0, "evidence": []},
+    {"speaker": "CHAR_002", "listener": "CHAR_001", "relation": "boss_to_employee", "hostility": 0, "intimacy": 0, "source": "editor", "confidence": 1.0, "evidence": [{"source": "inverse_of", "relation": "employee_to_boss"}]},
+    {"speaker": "CHAR_004", "listener": "CHAR_001", "relation": "younger_to_older_sibling", "hostility": 0, "intimacy": 2, "source": "project_config", "confidence": 1.0, "evidence": []},
+    {"speaker": "CHAR_001", "listener": "CHAR_004", "relation": "older_to_younger_sibling", "hostility": 0, "intimacy": 2, "source": "project_config", "confidence": 1.0, "evidence": [{"source": "inverse_of", "relation": "younger_to_older_sibling"}]}
+  ]
+}

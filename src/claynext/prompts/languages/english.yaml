@@ -1,0 +1,31 @@
+# English target profile for prompt skills.
+name: English
+native_name: English
+codes:
+  - en
+  - eng
+  - en-US
+display_name: natural spoken English
+spoken_unit: syllable
+instructions:
+  - Use contractions and everyday phrasing (I'm, don't, gonna only when the character is casual).
+  - Match the register of the speaker. Do not make rough characters sound polite or polite ones sound rough.
+  - Keep sentences short enough to say in one breath. Drop fillers that do not change the action.
+  - Keep kinship and address terms that carry meaning (for example Khmer បង) as a name or a natural English address, the same way every time.
+examples:
+  - source: ងាយណាស់
+    say: Piece of cake.
+    avoid: It is very easy.
+  - source: ឯងធ្វើអីហ្នឹង?
+    say: What are you doing?
+    avoid: What are you doing this?
+glossary:
+  - source: ម៉ាក់
+    target: Mom
+  - source: ប៉ា
+    target: Dad
+  - source: លោក
+    target: Sir
+    note: when used as direct address
+  - source: ថៅកែ
+    target: boss

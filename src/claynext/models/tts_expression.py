@@ -207,12 +207,16 @@ def synthesize_with_tags(
     model_name: str = "",
     reference_wav: str = "",
     progress_callback: Callable | None = None,
+    performance: dict[str, Any] | None = None,
 ) -> str:
     """
     Synthesize ``text``, honouring inline ``[tag]`` / ``{tag}`` cues.
 
-    Falls back to plain TTS when no tags are present.
+    Falls back to plain TTS when no tags are present. ``performance`` is the
+    planned line delivery; tag styles add on top of it.
     """
+    from functools import partial
+
     from claynext.adapters.ffmpeg_adapter import make_silence
     from claynext.models.tts_service import TTSEngine
 
@@ -220,7 +224,7 @@ def synthesize_with_tags(
     if not raw:
         raise RuntimeError("No text to speak.")
 
-    plain = TTSEngine._synthesize_plain
+    plain = partial(TTSEngine._synthesize_plain, performance=performance)
     if not has_expression_tags(raw):
         return plain(
             raw,

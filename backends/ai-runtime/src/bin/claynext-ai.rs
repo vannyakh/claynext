@@ -1,4 +1,5 @@
 use claynext_ai_runtime::{
+    analyze_prosody, plan_performance, PerformanceRequest, ProsodySpan,
     align_speech_speed_result, build_dubbing_llm_prompt_from_request, build_fit_rewrite_prompt,
     build_llm_translation_prompt, calculate_ducked_background_volume,
     chunk_subtitles_for_translation, energy_vad_chunking, estimate_speech_quota, filter_ocr_results,
@@ -76,6 +77,42 @@ fn main() {
             let req: FitSpeechRequest = serde_json::from_str(&text).unwrap_or_default();
             let fitted = fit_lines_to_speech(&req.lines, &req.turns);
             println!("{}", serde_json::to_string(&fitted).unwrap_or_default());
+        }
+        "analyze-prosody" => {
+            // Args: pcm_f32_path sample_rate spans(JSON | file | "-")
+            let path = args.get(2).map(|s| s.as_str()).unwrap_or("");
+            let sample_rate: u32 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(16000);
+            let raw = json_arg(args.get(4).map(|s| s.as_str()).unwrap_or("[]"));
+            let spans: Vec<ProsodySpan> = match serde_json::from_str(&raw) {
+                Ok(spans) => spans,
+                Err(e) => {
+                    eprintln!("Invalid prosody spans JSON: {e}");
+                    std::process::exit(2);
+                }
+            };
+            match read_pcm_f32(path) {
+                Ok(samples) => {
+                    let feats = analyze_prosody(&samples, sample_rate, &spans);
+                    println!("{}", serde_json::to_string(&feats).unwrap_or_default());
+                }
+                Err(e) => {
+                    eprintln!("analyze-prosody failed: {e}");
+                    std::process::exit(2);
+                }
+            }
+        }
+        "plan-performance" => {
+            let raw = json_arg(args.get(2).map(|s| s.as_str()).unwrap_or("-"));
+            match serde_json::from_str::<PerformanceRequest>(&raw) {
+                Ok(req) => {
+                    let plan = plan_performance(&req);
+                    println!("{}", serde_json::to_string(&plan).unwrap_or_default());
+                }
+                Err(e) => {
+                    eprintln!("Invalid PerformanceRequest JSON: {e}");
+                    std::process::exit(2);
+                }
+            }
         }
         "llm-parse-retry" => {
             let status: u16 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(200);
@@ -237,10 +274,23 @@ fn main() {
                  llm-parse-retry | llm-acquire | llm-soonest-cooldown | parse-expression-tags | \
                  chunk-subtitles | filter-ocr | scan-captions | speech-quota | spoken-units | \
                  build-dub-prompt | build-fit-prompt | build-translate-prompt | \
-                 ducked-volume | align-speed]"
+                 ducked-volume | align-speed | analyze-prosody | plan-performance]"
             );
             std::process::exit(1);
         }
+    }
+}
+
+/// JSON from stdin ("-"), a file path, or the argument itself.
+fn json_arg(raw: &str) -> String {
+    if raw == "-" {
+        let mut buf = String::new();
+        io::stdin().read_to_string(&mut buf).ok();
+        buf
+    } else if Path::new(raw).is_file() {
+        std::fs::read_to_string(raw).unwrap_or_default()
+    } else {
+        raw.to_string()
     }
 }
 

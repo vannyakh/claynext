@@ -63,12 +63,34 @@ class ProjectTools:
             "timeline": self.timeline.export_state() if hasattr(self.timeline, "export_state") else {},
             "segments": list(self._segments),
             "characters": [dict(row) for row in getattr(self, "_cast_extra", []) or []],
+            "character_registry": self._character_registry_payload(),
             "output": self._output_path,
             "stems": self._current_stems(),
             "footage": self.timeline.export_footage(),
             "takes": self.timeline.export_takes(),
             "project": dict(self._project),
         }
+
+    def _character_registry_payload(self) -> dict:
+        media = str(getattr(self, "selected_file", "") or "")
+        if not media:
+            return {}
+        try:
+            from claynext.models.character_intel import CharacterRegistry
+
+            registry = CharacterRegistry.for_media(media)
+            return registry.to_dict() if registry.characters else {}
+        except Exception:
+            return {}
+
+    def _restore_character_registry(self, media: str, data: dict) -> None:
+        from claynext.gui.worker import Worker
+        from claynext.models.character_intel import CharacterRegistry
+
+        def _job(progress_callback=None):
+            return len(CharacterRegistry.restore_for_media(media, data).characters)
+
+        self.thread_pool.start(Worker(_job))
 
     def _current_stems(self) -> dict:
         comps = getattr(self, "_compositions", [])
@@ -161,6 +183,9 @@ class ProjectTools:
                     if isinstance(row, dict) and str(row.get("name") or "").strip()
                 ]
                 self._cast_signature = None
+            saved_registry = data.get("character_registry")
+            if isinstance(saved_registry, dict) and media and os.path.isfile(media):
+                self._restore_character_registry(media, saved_registry)
             segments = data.get("segments")
             if isinstance(segments, list) and segments:
                 if has_saved_timeline:

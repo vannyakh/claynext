@@ -557,3 +557,99 @@ class OCREngine:
 
         _ping(100, f"Frame OCR finished! Extracted {len(segments)} subtitle lines.")
         return segments
+
+
+_CAPTION_ZONE = {"x": 0.05, "y": 0.72, "w": 0.90, "h": 0.20}
+_VIDEO_SUFFIXES = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".ts", ".m2ts"}
+
+
+def try_ocr_transcript(
+    video_path: str,
+    *,
+    language: str = "Auto",
+    progress_callback: Callable | None = None,
+    control: Any = None,
+) -> list[dict[str, Any]] | None:
+    """Read burned-in captions when that transcript option is on.
+
+    Returns None when the option is off, the file has no picture, the caption
+    band has no text, or the scan cannot produce a usable script. Callers then
+    keep the normal speech transcript.
+    """
+    from claynext.models.features import transcript_ocr_enabled
+
+    if not transcript_ocr_enabled():
+        return None
+    path = str(video_path or "")
+    if not path or not os.path.isfile(path):
+        return None
+    suffix = os.path.splitext(path)[1].lower()
+    if suffix not in _VIDEO_SUFFIXES:
+        return None
+    if not OCREngine.reader_available():
+        return None
+
+    def _ping(pct: int, msg: str) -> None:
+        if control is not None and hasattr(control, "checkpoint"):
+            control.checkpoint()
+        if progress_callback:
+            try:
+                progress_callback(pct, msg)
+            except Exception:
+                pass
+
+    try:
+        from claynext.adapters.media import get_media_adapter
+
+        duration = float(get_media_adapter().probe(path).get("duration") or 0.0)
+    except Exception:
+        duration = 0.0
+    if duration < 1.0:
+        return None
+
+    _ping(4, "Checking the caption band…")
+    hits = 0
+    for index, mark in enumerate((0.12, 0.28, 0.44, 0.60, 0.76, 0.90)):
+        img = OCREngine.extract_frame_image(path, duration * mark, roi=_CAPTION_ZONE)
+        if img is None:
+            continue
+        text = OCREngine.ocr_image(img, lang=language or "Auto", min_conf=0.45)
+        if len("".join(str(text or "").split())) >= 2:
+            hits += 1
+        _ping(6 + index * 3, "Checking the caption band…")
+    if hits < 2:
+        return None
+
+    try:
+        rows = OCREngine.extract_subtitles_from_video(
+            path,
+            _CAPTION_ZONE,
+            sample_interval=0.5,
+            lang=language or "Auto",
+            min_confidence=0.45,
+            progress_callback=progress_callback,
+            control=control,
+        )
+    except Exception as exc:
+        logger.debug("OCR transcript scan failed: %s", exc)
+        return None
+
+    cleaned: list[dict[str, Any]] = []
+    for seg in rows or []:
+        text = " ".join(str(seg.get("text") or "").split()).strip()
+        if len(text) < 2:
+            continue
+        start = str(seg.get("start") or "00:00:00.000").replace(".", ",", 1)
+        end = str(seg.get("end") or "00:00:01.000").replace(".", ",", 1)
+        cleaned.append({
+            "id": len(cleaned) + 1,
+            "start": start,
+            "end": end,
+            "speaker": "",
+            "text": text,
+            "confidence": 0.9,
+            "source": "ocr",
+        })
+    if len(cleaned) < 3:
+        return None
+    return cleaned

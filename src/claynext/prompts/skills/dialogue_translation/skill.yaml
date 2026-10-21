@@ -1,0 +1,67 @@
+# Cinematic dialogue translation for dubbing.
+# Changing prompt.j2, this file, a system file, a schema, or a language file
+# changes the fingerprint: bump `version` and re-pin versions.lock.json.
+id: movie.dialogue_translation
+version: "1.0.0"
+name: Cinematic Dialogue Translator
+description: >
+  Translates film dialogue into natural spoken lines that keep meaning,
+  intent, character voice, and emotion, and fit each line's speech slot.
+model_capability: text_generation
+requires: []
+template: prompt.j2
+system:
+  - core
+  - json_output
+inputs:
+  source_language:
+    type: string
+    required: true
+    description: Source language name, or "auto".
+  target_language:
+    type: string
+    required: true
+    description: Target language name (Khmer, English, ...).
+  dialogue:
+    type: array
+    required: true
+    description: >
+      Lines with id, text, speaker, gender, expression, duration_sec, and
+      recommended_syllables (min / target / max spoken units from the speech-quota tool).
+  scene_context:
+    type: string
+    default: ""
+    description: Lines just before this batch, for continuity.
+  character_profile:
+    type: object
+    default: {}
+    description: Speaker name to gender / role / personality / notes.
+  glossary:
+    type: array
+    default: []
+    description: Source term to fixed target term, with an optional note.
+input_schema: dialogue_translation.input
+output:
+  schema: translation
+  contract: translation
+  list_key: translations
+  coverage:
+    input: dialogue
+    key: id
+settings:
+  temperature: 0.2
+  max_output_tokens: 2048
+  response_format: json
+backends:
+  - gemini
+  - chat
+  - ollama
+  - sglang-omni
+languages:
+  - khmer
+  - english
+limits:
+  max_lines_per_call: 16
+changelog:
+  - version: "1.0.0"
+    notes: First versioned skill. Mirrors the legacy dub prompt rules without TTS tags.

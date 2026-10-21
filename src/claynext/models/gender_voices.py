@@ -689,6 +689,7 @@ def assign_gender_and_voices(
     # Rename cast to TTS voice names (Sreymom, Piseth, …) instead of Character N.
     used_labels: set[str] = set()
     rename: dict[str, str] = {}
+    voice_labelled: set[str] = set()
     for name in order:
         voice = char_voice.get(name) or primary_voice
         # Keep a custom name if the user already set a non-generic speaker.
@@ -700,12 +701,15 @@ def assign_gender_and_voices(
         )
         if generic:
             rename[name] = _unique_cast_name(voice_display_name(voice), used_labels)
+            voice_labelled.add(name)
         else:
             rename[name] = _unique_cast_name(name, used_labels)
 
     for seg in segments:
         old = str(seg.get("speaker") or "").strip() or "Character 1"
         name = rename.get(old, old)
+        if old in voice_labelled and not seg.get("speaker_manual"):
+            seg["speaker_label_source"] = "voice"
         g = char_gender.get(old, "Unknown")
         if not seg.get("gender_manual"):
             seg["gender"] = g

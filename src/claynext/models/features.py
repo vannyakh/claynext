@@ -1,7 +1,7 @@
 """
 Optional Claynext studio features (uv extras) and persisted studio prefs.
 
-Registry covers Demucs / Demucs-MLX stem beds, VoxCPM TTS, and WhisperX ASR.
+Registry covers Demucs / Demucs-MLX stem beds, VoxCPM2, OmniVoice, and WhisperX ASR.
 Settings live under Store tool ``studio``.
 """
 from __future__ import annotations
@@ -20,6 +20,10 @@ FEATURE_SETTING_KEYS = (
     "demucs_model",
     "prefer_voxcpm",
     "prefer_whisperx",
+    "transcript_ocr",
+    "sglang_omni_url",
+    "skill_dialogue_translation",
+    "skill_khmer_natural_dialogue",
 )
 
 STEM_MODES = ("auto", "demucs", "ffmpeg")
@@ -49,6 +53,10 @@ def _detect_demucs() -> bool:
 
 def _detect_voxcpm() -> bool:
     return _package_present("voxcpm")
+
+
+def _detect_omnivoice() -> bool:
+    return _package_present("omnivoice")
 
 
 def _detect_whisperx() -> bool:
@@ -144,11 +152,20 @@ FEATURE_REGISTRY: list[dict[str, Any]] = [
     },
     {
         "id": "voxcpm",
-        "label": "VoxCPM TTS",
+        "label": "VoxCPM2",
         "category": "tts",
         "extra": "voxcpm",
-        "hint": "Local multilingual neural TTS. uv sync --extra voxcpm",
+        "hint": "Local speech with openbmb/VoxCPM2. uv sync --extra voxcpm",
         "detect": _detect_voxcpm,
+        "supported": torch_wheels_available,
+    },
+    {
+        "id": "omnivoice",
+        "label": "OmniVoice",
+        "category": "tts",
+        "extra": "omnivoice",
+        "hint": "Local speech with k2-fsa/OmniVoice. uv sync --extra omnivoice",
+        "detect": _detect_omnivoice,
         "supported": torch_wheels_available,
     },
     {
@@ -263,6 +280,11 @@ def stem_separation_mode() -> str:
 def demucs_model_name() -> str:
     name = (get_feature_setting("demucs_model") or "htdemucs").strip()
     return name if name in DEMUCS_MODELS else "htdemucs"
+
+
+def transcript_ocr_enabled() -> bool:
+    """Burned-in caption check before speech transcription. Off keeps normal ASR."""
+    return get_feature_setting("transcript_ocr", "0") == "1"
 
 
 def prefer_demucs_bed() -> bool:

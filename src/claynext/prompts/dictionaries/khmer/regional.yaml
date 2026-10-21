@@ -1,0 +1,32 @@
+# Curated regional vocabulary for the Regional Dialect Adapter.
+# An entry is applied automatically only when ALL of these hold:
+#   - the character's region was set by the editor or project config,
+#   - the project enables regional vocabulary,
+#   - the entry has verified: true and at least one evidence row
+#     (source, example sentence, reviewer).
+# Otherwise matches are returned as review suggestions only.
+#
+# No entries ship yet: none have verified examples. Entry shape:
+#   - region: battambang
+#     standard: <standard spoken form>
+#     regional: <regional form>
+#     verified: false
+#     evidence: []
+#     note: <short note>
+version: "0.1.0"
+review:
+  status: pending_native_review
+  reviewer: null
+  reviewed_at: null
+regions:
+  - id: phnom_penh
+    label: Phnom Penh
+  - id: battambang
+    label: Battambang
+  - id: takeo
+    label: Takeo
+  - id: northern_khmer
+    label: Northern Khmer (Surin)
+  - id: khmer_krom
+    label: Khmer Krom
+entries: []

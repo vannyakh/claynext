@@ -550,8 +550,17 @@ class SettingsDialog(QDialog):
 
         self.chk_prefer_whisperx, whisper_row = self._toggle_row("Prefer WhisperX for dubbing ASR")
         self.chk_prefer_voxcpm, vox_row = self._toggle_row("Prefer VoxCPM voices in TTS Studio")
+        self.chk_transcript_ocr, ocr_row = self._toggle_row(
+            "Check burned-in captions before transcription"
+        )
         lay.addWidget(whisper_row)
         lay.addWidget(vox_row)
+        lay.addWidget(ocr_row)
+
+        self.txt_sglang_url = QLineEdit()
+        self.txt_sglang_url.setFixedHeight(28)
+        self.txt_sglang_url.setPlaceholderText("http://127.0.0.1:8000")
+        lay.addWidget(self._setting_row("SGLang-Omni", self.txt_sglang_url, grow=True))
 
         self._populate_features_cards()
         lay.addStretch(1)
@@ -898,6 +907,13 @@ class SettingsDialog(QDialog):
         self.chk_prefer_voxcpm.setChecked(
             get_feature_setting("prefer_voxcpm", DEFAULT_CONFIG["prefer_voxcpm"]) == "1"
         )
+        self.chk_transcript_ocr.setChecked(
+            get_feature_setting("transcript_ocr", DEFAULT_CONFIG["transcript_ocr"]) == "1"
+        )
+        self.txt_sglang_url.setText(
+            get_feature_setting("sglang_omni_url", DEFAULT_CONFIG["sglang_omni_url"])
+            or DEFAULT_CONFIG["sglang_omni_url"]
+        )
         self._refresh_stem_status_label()
         self._populate_features_cards()
 
@@ -930,6 +946,8 @@ class SettingsDialog(QDialog):
         self._set_combo_data(self.combo_demucs_model, DEFAULT_CONFIG["demucs_model"])
         self.chk_prefer_whisperx.setChecked(DEFAULT_CONFIG["prefer_whisperx"] == "1")
         self.chk_prefer_voxcpm.setChecked(DEFAULT_CONFIG["prefer_voxcpm"] == "1")
+        self.chk_transcript_ocr.setChecked(DEFAULT_CONFIG["transcript_ocr"] == "1")
+        self.txt_sglang_url.setText(DEFAULT_CONFIG["sglang_omni_url"])
         self._refresh_stem_status_label()
         self._populate_features_cards()
         self._set_combo_data(self.combo_device, DEFAULT_CONFIG["device"])
@@ -953,6 +971,11 @@ class SettingsDialog(QDialog):
         set_feature_setting("demucs_model", self.combo_demucs_model.currentData() or "htdemucs")
         set_feature_setting("prefer_whisperx", "1" if self.chk_prefer_whisperx.isChecked() else "0")
         set_feature_setting("prefer_voxcpm", "1" if self.chk_prefer_voxcpm.isChecked() else "0")
+        set_feature_setting("transcript_ocr", "1" if self.chk_transcript_ocr.isChecked() else "0")
+        set_feature_setting(
+            "sglang_omni_url",
+            self.txt_sglang_url.text().strip() or DEFAULT_CONFIG["sglang_omni_url"],
+        )
 
         store.set_setting("studio", "device", str(self.combo_device.currentData() or "best"))
         store.set_setting("studio", "worker_threads", str(self.spin_threads.value()))

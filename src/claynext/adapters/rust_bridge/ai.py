@@ -163,6 +163,57 @@ class RustAiAdapter:
         return None
 
     @classmethod
+    def _json_file_call(cls, command: str, payload: Any, *head: str) -> Any:
+        """Run ``claynext-ai <command> *head <json file>``; None when Rust cannot answer."""
+        if not _find_binary("claynext-ai"):
+            return None
+        tmp_path: str | None = None
+        try:
+            import tempfile
+
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as tmp:
+                json.dump(payload, tmp, ensure_ascii=False)
+                tmp_path = tmp.name
+            res = cls._ai(command, *head, tmp_path, check=False)
+            if res and res.returncode == 0 and res.stdout.strip():
+                return json.loads(res.stdout.strip())
+            if res is not None and res.returncode != 0:
+                logger.debug("Rust %s: %s", command, (res.stderr or "").strip())
+        except Exception as exc:
+            logger.debug(f"Rust {command} failed: {exc}")
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+        return None
+
+    @classmethod
+    def analyze_prosody_pcm(
+        cls, pcm_path: str | Path, sample_rate: int, spans: list[dict[str, Any]]
+    ) -> list[dict[str, Any]] | None:
+        """Per-span energy / pitch / voicing via ``analyze-prosody`` on mono f32 PCM."""
+        payload = [
+            {
+                "index": int(item.get("index") or 0),
+                "start_sec": float(item.get("start_sec") or 0),
+                "end_sec": float(item.get("end_sec") or 0),
+            }
+            for item in spans
+        ]
+        data = cls._json_file_call("analyze-prosody", payload, str(pcm_path), str(int(sample_rate)))
+        return data if isinstance(data, list) else None
+
+    @classmethod
+    def plan_performance(cls, request: dict[str, Any]) -> dict[str, Any] | None:
+        """Dialogue performance plan via ``plan-performance``."""
+        data = cls._json_file_call("plan-performance", request)
+        if isinstance(data, dict) and isinstance(data.get("lines"), list):
+            return data
+        return None
+
+    @classmethod
     def parse_retry_after(cls, status: int, header: str | None = None, body: str = "") -> tuple[bool, float]:
         try:
             res = cls._ai("llm-parse-retry", str(status), header or "", body or "")

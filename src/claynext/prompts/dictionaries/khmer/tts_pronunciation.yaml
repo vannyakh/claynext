@@ -1,0 +1,44 @@
+# TTS Pronunciation Normalizer lexicon: localized_text -> tts_text.
+# The localized subtitle line is never changed; only the copy sent to a voice engine.
+# Entries with standard: true are orthographic conventions and apply by default.
+# Entries with verified: false apply only when the caller opts in.
+version: "0.1.0"
+review:
+  status: pending_native_review
+  reviewer: null
+  reviewed_at: null
+
+# Khmer repetition mark ៗ repeats the preceding word. Without word segmentation
+# the preceding word is only known for these listed words.
+repeat_mark: ៗ
+repeat_words:
+  - ឆាប់
+  - យឺត
+  - តិច
+  - ថ្មី
+  - ល្អ
+  - ស្រាល
+  - ញាប់
+  - ក្មេង
+  - ផ្សេង
+  - រៀង
+  - ធំ
+  - តូច
+  - ជិត
+  - ឆ្ងាយ
+  - យូរ
+  - ស្ងាត់
+
+abbreviations:
+  - written: គ.ស.
+    spoken: គ្រិស្តសករាជ
+    standard: true
+  - written: ព.ស.
+    spoken: ពុទ្ធសករាជ
+    standard: true
+
+respellings:
+  - written: ញុំ
+    spoken: ញ៉ុំ
+    verified: false
+    note: Spelling variant without the muusikatoan.

@@ -1,0 +1,764 @@
+# Khmer pronoun inventory and relationship rules for the Khmer Pronoun Resolver.
+# Must stay inside the mini-YAML subset of claynext.prompts.loader (no flow maps).
+# Every rule here is a draft from general knowledge, not native-speaker reviewed.
+#
+# register_locked: a formal register / scene does not swap in polite forms
+# (kinship, religious, royal, and household hierarchy terms stay as they are).
+#
+# Slots (first / second / first_alt / second_alt) are mappings whose keys are
+# picked in this order: the age key (older / younger / peer) or gender key
+# (male / female), depending on `prefer`, then `default`.
+# For `first` the keys describe the speaker; for `second` they describe the listener.
+version: "0.1.0"
+language: khmer
+review:
+  status: pending_native_review
+  reviewer: null
+  reviewed_at: null
+
+forms:
+  - form: ខ្ញុំ
+    person: first
+    tone: neutral
+    note: Default neutral / polite "I".
+  - form: ញ៉ុំ
+    person: first
+    tone: colloquial
+    habit_gated: true
+    variants: [ញុំ]
+    note: Colloquial reduced ខ្ញុំ. Only chosen when the character's own habit supports it.
+  - form: ខ្ញុំបាទ
+    person: first
+    tone: formal
+    gender: male
+  - form: នាងខ្ញុំ
+    person: first
+    tone: formal
+    gender: female
+  - form: យើង
+    person: first
+    tone: neutral
+    note: We; also a softened or royal I.
+  - form: គ្នា
+    person: first
+    tone: intimate
+    note: Casual I / we between close peers.
+  - form: អញ
+    person: first
+    tone: rough
+    rough: true
+    note: Intimate between close peers, or contemptuous / hostile.
+  - form: អ្នក
+    person: second
+    tone: neutral
+  - form: លោក
+    person: second
+    tone: formal
+    gender: male
+  - form: លោកស្រី
+    person: second
+    tone: formal
+    gender: female
+  - form: អ្នកស្រី
+    person: second
+    tone: formal
+    gender: female
+  - form: ឯង
+    person: second
+    tone: rough
+    rough: true
+    note: Intimate between close peers or to someone younger; rude otherwise.
+  - form: ហ្អែង
+    person: second
+    tone: rough
+    rough: true
+    note: Rough street variant of ឯង.
+  - form: បង
+    person: both
+    tone: kin
+    note: Older sibling / older peer / male partner; used as I and you.
+  - form: អូន
+    person: both
+    tone: kin
+    note: Younger sibling / younger peer / female partner; used as I and you.
+  - form: ប្អូន
+    person: second
+    tone: kin
+  - form: កូន
+    person: both
+    tone: kin
+  - form: ម៉ាក់
+    person: both
+    tone: kin
+    gender: female
+  - form: ប៉ា
+    person: both
+    tone: kin
+    gender: male
+    boundary: word
+  - form: ម្ដាយ
+    person: both
+    tone: kin
+    gender: female
+  - form: ឪពុក
+    person: both
+    tone: kin
+    gender: male
+  - form: ម៉ែ
+    person: both
+    tone: kin
+    gender: female
+    boundary: word
+  - form: ពុក
+    person: both
+    tone: kin
+    gender: male
+    boundary: word
+  - form: យាយ
+    person: both
+    tone: kin
+    gender: female
+    boundary: word
+  - form: តា
+    person: both
+    tone: kin
+    gender: male
+    boundary: word
+  - form: ចៅ
+    person: both
+    tone: kin
+    boundary: word
+  - form: ពូ
+    person: both
+    tone: kin
+    gender: male
+    boundary: word
+  - form: មីង
+    person: both
+    tone: kin
+    gender: female
+    boundary: word
+  - form: អ៊ំ
+    person: both
+    tone: kin
+    boundary: word
+  - form: ក្មួយ
+    person: both
+    tone: kin
+  - form: គ្រូ
+    person: both
+    tone: kin
+    boundary: word
+  - form: ថៅកែ
+    person: second
+    tone: title
+  - form: លោកម្ចាស់
+    person: second
+    tone: humble
+  - form: ចៅហ្វាយ
+    person: second
+    tone: humble
+  - form: ខ្ញុំម្ចាស់
+    person: first
+    tone: humble
+  - form: ព្រះអង្គ
+    person: second
+    tone: religious
+  - form: ព្រះតេជគុណ
+    person: second
+    tone: religious
+  - form: ខ្ញុំព្រះករុណា
+    person: first
+    tone: religious
+  - form: កូនករុណា
+    person: first
+    tone: religious
+  - form: អាត្មា
+    person: first
+    tone: religious
+  - form: អាត្មាភាព
+    person: first
+    tone: religious
+  - form: ញោម
+    person: second
+    tone: religious
+  - form: ទូលបង្គំ
+    person: first
+    tone: royal
+  - form: ព្រះករុណា
+    person: second
+    tone: royal
+
+# Words that contain a pronoun form but are not that pronoun.
+compounds_not_pronoun:
+  - ខ្លួនឯង
+  - ម្នាក់ឯង
+  - គ្នាឯង
+  - បងប្អូន
+  - កូនក្មេង
+  - កូនសោ
+  - កូនចៅ
+  - កូនសិស្ស
+  - ពិភពលោក
+  - អ្នកណា
+  - ជួបគ្នា
+  - ជាមួយគ្នា
+  - ទាំងអស់គ្នា
+  - ដូចគ្នា
+  - គ្នាយើង
+
+defaults:
+  first: ខ្ញុំ
+  second: អ្នក
+  confidence: 0.4
+
+formal_second:
+  male: [លោក]
+  female: [លោកស្រី]
+  default: [អ្នក]
+
+formal_first_alt:
+  male: [ខ្ញុំបាទ]
+  female: [នាងខ្ញុំ]
+  default: []
+
+review_confidence: 0.6
+
+# Fallback when the relationship is unknown. Age keys describe the speaker
+# relative to the listener. Always flagged for review.
+age_fallback:
+  older:
+    first: [ខ្ញុំ]
+    second: [អូន, ប្អូន]
+    second_alt: [ក្មួយ, អ្នក]
+  younger:
+    first: [ខ្ញុំ]
+    second: [បង]
+    second_alt:
+      male: [ពូ, លោក, អ្នក]
+      female: [មីង, លោកស្រី, អ្នក]
+      default: [អ្នក]
+  peer:
+    first: [ខ្ញុំ]
+    second: [អ្នក]
+    second_alt: [បង, ឯង]
+  unknown:
+    first: [ខ្ញុំ]
+    second: [អ្នក]
+    second_alt: [បង]
+
+relations:
+  child_to_parent:
+    description: Child speaking to their mother or father.
+    inverse: parent_to_child
+    register_locked: true
+    respect: true
+    first:
+      default: [កូន]
+    first_alt:
+      default: [ខ្ញុំ, ញ៉ុំ]
+    second:
+      female: [ម៉ាក់]
+      male: [ប៉ា]
+      default: [ម៉ាក់, ប៉ា]
+    second_alt:
+      female: [ម្ដាយ, ម៉ែ]
+      male: [ឪពុក, ពុក]
+      default: []
+    forbidden: [អញ, ឯង, ហ្អែង, អ្នក]
+    confidence: 0.85
+    variants:
+      - when:
+          emotion: [angry, furious, resentful]
+        first_alt: [ខ្ញុំ]
+        review: Angry child to parent; check whether the speaker keeps កូន or distances with ខ្ញុំ.
+  parent_to_child:
+    description: Mother or father speaking to their child.
+    inverse: child_to_parent
+    register_locked: true
+    allow_rough: true
+    first:
+      female: [ម៉ាក់]
+      male: [ប៉ា]
+      default: [ម៉ាក់, ប៉ា]
+    first_alt:
+      female: [ម្ដាយ, ម៉ែ]
+      male: [ឪពុក, ពុក]
+      default: []
+    second:
+      default: [កូន]
+    second_alt:
+      default: [ឯង]
+    forbidden: [ហ្អែង, លោក, លោកស្រី]
+    confidence: 0.85
+  grandchild_to_grandparent:
+    inverse: grandparent_to_grandchild
+    register_locked: true
+    respect: true
+    first:
+      default: [ចៅ]
+    first_alt:
+      default: [ខ្ញុំ, ញ៉ុំ]
+    second:
+      female: [យាយ]
+      male: [តា]
+      default: [យាយ, តា]
+    forbidden: [អញ, ឯង, ហ្អែង, អ្នក]
+    confidence: 0.85
+  grandparent_to_grandchild:
+    inverse: grandchild_to_grandparent
+    register_locked: true
+    allow_rough: true
+    first:
+      female: [យាយ]
+      male: [តា]
+      default: [យាយ, តា]
+    second:
+      default: [ចៅ]
+    second_alt:
+      default: [ឯង, កូន]
+    forbidden: [ហ្អែង, លោក, លោកស្រី]
+    confidence: 0.85
+  younger_to_older_sibling:
+    inverse: older_to_younger_sibling
+    register_locked: true
+    respect: true
+    first:
+      default: [អូន]
+    first_alt:
+      default: [ខ្ញុំ, ញ៉ុំ]
+    second:
+      default: [បង]
+    forbidden: [អញ, ឯង, ហ្អែង]
+    confidence: 0.85
+  older_to_younger_sibling:
+    inverse: younger_to_older_sibling
+    register_locked: true
+    allow_rough: true
+    first:
+      default: [បង]
+    first_alt:
+      default: [ខ្ញុំ, អញ]
+    second:
+      default: [អូន]
+    second_alt:
+      default: [ប្អូន, ឯង]
+    forbidden: [ហ្អែង, លោក, លោកស្រី]
+    confidence: 0.85
+  aunt_uncle_to_niece_nephew:
+    inverse: niece_nephew_to_aunt_uncle
+    register_locked: true
+    first:
+      female: [មីង]
+      male: [ពូ]
+      default: [ពូ, មីង]
+    first_alt:
+      default: [អ៊ំ]
+    second:
+      default: [ក្មួយ]
+    second_alt:
+      default: [ចៅ, កូន]
+    forbidden: [ហ្អែង, លោក, លោកស្រី]
+    confidence: 0.75
+  niece_nephew_to_aunt_uncle:
+    inverse: aunt_uncle_to_niece_nephew
+    register_locked: true
+    respect: true
+    first:
+      default: [ក្មួយ]
+    first_alt:
+      default: [ខ្ញុំ, ញ៉ុំ]
+    second:
+      female: [មីង]
+      male: [ពូ]
+      default: [ពូ, មីង]
+    second_alt:
+      default: [អ៊ំ]
+    forbidden: [អញ, ឯង, ហ្អែង]
+    confidence: 0.75
+  romantic:
+    description: Couple or spouses. Convention follows gender, then age.
+    inverse: romantic
+    prefer: gender
+    register_locked: true
+    reciprocal: [បង, អូន]
+    first:
+      male: [បង]
+      female: [អូន]
+      older: [បង]
+      younger: [អូន]
+      default: [បង, អូន]
+    second:
+      male: [បង]
+      female: [អូន]
+      older: [បង]
+      younger: [អូន]
+      default: [អូន, បង]
+    first_alt:
+      default: [ខ្ញុំ]
+    forbidden: [អញ, ហ្អែង]
+    confidence: 0.8
+  friends_close:
+    description: Close friends of about the same age.
+    inverse: friends_close
+    allow_rough: true
+    first:
+      default: [ខ្ញុំ]
+    first_alt:
+      default: [អញ, គ្នា, យើង]
+    second:
+      default: [ឯង]
+    second_alt:
+      default: [ហ្អែង]
+    forbidden: [លោក, លោកស្រី, ព្រះអង្គ]
+    confidence: 0.7
+    variants:
+      - when:
+          register: [street]
+        first: [អញ]
+        second: [ឯង]
+        second_alt: [ហ្អែង]
+      - when:
+          age: [older]
+        first_alt: [បង]
+        second_alt: [អូន]
+      - when:
+          age: [younger]
+        first_alt: [អូន]
+        second_alt: [បង]
+  friends:
+    description: Acquaintances, classmates, or coworkers who are not close.
+    inverse: friends
+    first:
+      default: [ខ្ញុំ]
+    second:
+      default: [អ្នក]
+    second_alt:
+      default: [ឯង, បង]
+    forbidden: [ហ្អែង, អញ]
+    confidence: 0.65
+    variants:
+      - when:
+          age: [younger]
+        second: [បង]
+        second_alt: [អ្នក]
+      - when:
+          age: [older]
+        second: [អូន]
+        second_alt: [អ្នក, ប្អូន]
+  boss_to_employee:
+    inverse: employee_to_boss
+    first:
+      default: [ខ្ញុំ]
+    first_alt:
+      default: [បង, យើង]
+    second:
+      default: [អ្នក]
+    second_alt:
+      default: [អូន, ប្អូន, ឯង]
+    forbidden: [ហ្អែង, អញ]
+    confidence: 0.7
+    variants:
+      - when:
+          register: [casual, street]
+          age: [older]
+        first: [បង]
+        second: [អូន]
+        second_alt: [ប្អូន, អ្នក]
+  employee_to_boss:
+    inverse: boss_to_employee
+    respect: true
+    first:
+      default: [ខ្ញុំ]
+    first_alt:
+      male: [ខ្ញុំបាទ]
+      female: [នាងខ្ញុំ]
+      default: []
+    second:
+      male: [លោក]
+      female: [លោកស្រី]
+      default: [លោក, លោកស្រី]
+    second_alt:
+      default: [ថៅកែ, បង, អ្នកស្រី]
+    forbidden: [អញ, ឯង, ហ្អែង]
+    confidence: 0.75
+    variants:
+      - when:
+          emotion: [angry, furious]
+        review: Angry employee to boss; keep deference unless the scene shows a break.
+  teacher_to_student:
+    inverse: student_to_teacher
+    first:
+      default: [គ្រូ]
+    first_alt:
+      default: [ខ្ញុំ]
+    second:
+      default: [ប្អូន]
+    second_alt:
+      default: [កូន, អូន, ឯង]
+    forbidden: [ហ្អែង]
+    confidence: 0.65
+  student_to_teacher:
+    inverse: teacher_to_student
+    respect: true
+    first:
+      default: [ខ្ញុំ]
+    first_alt:
+      default: [កូន, ខ្ញុំបាទ, នាងខ្ញុំ]
+    second:
+      default: [គ្រូ]
+    second_alt:
+      default: [លោក, អ្នកស្រី]
+    forbidden: [អញ, ឯង, ហ្អែង]
+    confidence: 0.7
+  lay_to_monk:
+    description: Lay person speaking to a Buddhist monk.
+    inverse: monk_to_lay
+    register_locked: true
+    respect: true
+    first:
+      default: [ខ្ញុំព្រះករុណា]
+    first_alt:
+      default: [កូនករុណា, ខ្ញុំ]
+    second:
+      default: [ព្រះអង្គ]
+    second_alt:
+      default: [លោកម្ចាស់, ព្រះតេជគុណ]
+    forbidden: [អញ, ឯង, ហ្អែង, អ្នក, បង, អូន]
+    confidence: 0.75
+  monk_to_lay:
+    inverse: lay_to_monk
+    register_locked: true
+    first:
+      default: [អាត្មា]
+    first_alt:
+      default: [អាត្មាភាព]
+    second:
+      default: [ញោម]
+    second_alt:
+      default: [ក្មួយ, កូន]
+    forbidden: [អញ, ឯង, ហ្អែង, បង, អូន]
+    confidence: 0.75
+  younger_to_elder:
+    description: Younger person to an unrelated elder (kin terms used socially).
+    inverse: elder_to_younger
+    register_locked: true
+    respect: true
+    first:
+      default: [ខ្ញុំ]
+    first_alt:
+      default: [ក្មួយ, ចៅ, ញ៉ុំ]
+    second:
+      male: [ពូ]
+      female: [មីង]
+      default: [ពូ, មីង]
+    second_alt:
+      male: [តា, អ៊ំ, លោក]
+      female: [យាយ, អ៊ំ, លោកស្រី]
+      default: [អ៊ំ]
+    forbidden: [អញ, ឯង, ហ្អែង]
+    confidence: 0.7
+    variants:
+      - when:
+          listener_age: [elder]
+        second:
+          male: [តា]
+          female: [យាយ]
+          default: [តា, យាយ]
+  elder_to_younger:
+    inverse: younger_to_elder
+    register_locked: true
+    first:
+      male: [ពូ]
+      female: [មីង]
+      default: [ពូ, មីង]
+    first_alt:
+      male: [តា, ខ្ញុំ]
+      female: [យាយ, ខ្ញុំ]
+      default: [ខ្ញុំ]
+    second:
+      default: [ក្មួយ]
+    second_alt:
+      default: [ចៅ, កូន, អូន]
+    forbidden: [ហ្អែង]
+    confidence: 0.7
+  strangers:
+    description: Adults who do not know each other.
+    inverse: strangers
+    first:
+      default: [ខ្ញុំ]
+    first_alt:
+      male: [ខ្ញុំបាទ]
+      female: [នាងខ្ញុំ]
+      default: []
+    second:
+      default: [អ្នក]
+    second_alt:
+      male: [លោក, បង]
+      female: [លោកស្រី, បង]
+      default: [បង]
+    forbidden: [អញ, ហ្អែង]
+    confidence: 0.7
+    variants:
+      - when:
+          age: [younger]
+        second: [បង]
+        second_alt: [អ្នក]
+      - when:
+          age: [older]
+        second_alt: [អូន, ប្អូន]
+  enemies:
+    description: Open hostility. Rough forms only with hostility evidence (level 2+).
+    inverse: enemies
+    first:
+      default: [ខ្ញុំ]
+    first_alt:
+      default: [យើង]
+    second:
+      default: [អ្នក]
+    second_alt:
+      default: [ឯង]
+    forbidden: [បង, អូន, លោកម្ចាស់]
+    confidence: 0.65
+    variants:
+      - when:
+          hostility_min: 2
+        first: [អញ]
+        second: [ឯង]
+        second_alt: [ហ្អែង]
+        allow_rough: true
+        confidence: 0.75
+  servant_to_master:
+    inverse: master_to_servant
+    register_locked: true
+    respect: true
+    first:
+      default: [ខ្ញុំ]
+    first_alt:
+      male: [ខ្ញុំបាទ]
+      female: [ខ្ញុំម្ចាស់]
+      default: []
+    second:
+      default: [លោកម្ចាស់]
+    second_alt:
+      male: [លោក, ចៅហ្វាយ]
+      female: [លោកស្រី]
+      default: [លោក]
+    forbidden: [អញ, ឯង, ហ្អែង, អ្នក]
+    confidence: 0.7
+  master_to_servant:
+    description: Historical or household hierarchy; ឯង is common in drama but rude.
+    inverse: servant_to_master
+    register_locked: true
+    first:
+      default: [ខ្ញុំ]
+    first_alt:
+      default: [យើង]
+    second:
+      default: [អ្នក]
+    second_alt:
+      default: [ឯង]
+    forbidden: [ហ្អែង, លោក, លោកស្រី]
+    confidence: 0.55
+  subject_to_royalty:
+    inverse: royalty_to_subject
+    register_locked: true
+    respect: true
+    first:
+      default: [ទូលបង្គំ]
+    first_alt:
+      default: [ខ្ញុំព្រះករុណា]
+    second:
+      default: [ព្រះករុណា]
+    second_alt:
+      default: [ព្រះអង្គ]
+    forbidden: [អញ, ឯង, ហ្អែង, អ្នក, បង, អូន]
+    confidence: 0.6
+  royalty_to_subject:
+    inverse: subject_to_royalty
+    register_locked: true
+    first:
+      default: [យើង]
+    second:
+      default: [អ្នក]
+    second_alt:
+      default: [ឯង]
+    forbidden: [ហ្អែង]
+    confidence: 0.5
+  police_to_civilian:
+    inverse: civilian_to_police
+    first:
+      default: [ខ្ញុំ]
+    first_alt:
+      default: [យើង]
+    second:
+      default: [អ្នក]
+    second_alt:
+      male: [លោក, បង]
+      female: [លោកស្រី, បង]
+      default: [ឯង]
+    forbidden: [ហ្អែង, អញ]
+    confidence: 0.7
+    variants:
+      - when:
+          hostility_min: 2
+        second_alt: [ឯង]
+  civilian_to_police:
+    inverse: police_to_civilian
+    respect: true
+    first:
+      default: [ខ្ញុំ]
+    first_alt:
+      male: [ខ្ញុំបាទ]
+      female: [នាងខ្ញុំ]
+      default: []
+    second:
+      default: [លោក]
+    second_alt:
+      default: [បង, អ្នក]
+    forbidden: [អញ, ឯង, ហ្អែង]
+    confidence: 0.7
+
+aliases:
+  spouses: romantic
+  lovers: romantic
+  husband_wife: romantic
+  wife_husband: romantic
+  rivals: enemies
+  colleagues: friends
+  coworkers: friends
+  acquaintances: friends
+
+# English vocatives that hint at a relationship. Heuristic evidence only:
+# a hint never outranks an editor or project relationship and is reviewed.
+vocative_cues:
+  - pattern: "\\b(mom|mommy|mum|mother|mama)\\b"
+    relation: child_to_parent
+    listener_gender: female
+  - pattern: "\\b(dad|daddy|father|papa)\\b"
+    relation: child_to_parent
+    listener_gender: male
+  - pattern: "\\b(grandma|granny|grandmother)\\b"
+    relation: grandchild_to_grandparent
+    listener_gender: female
+  - pattern: "\\b(grandpa|grandfather)\\b"
+    relation: grandchild_to_grandparent
+    listener_gender: male
+  - pattern: "\\b(honey|darling|sweetheart|babe)\\b"
+    relation: romantic
+  - pattern: "\\b(bro|dude)\\b"
+    relation: friends_close
+  - pattern: "\\b(boss)\\b"
+    relation: employee_to_boss
+  - pattern: "\\b(venerable)\\b"
+    relation: lay_to_monk
+  - pattern: "\\byour (majesty|highness)\\b"
+    relation: subject_to_royalty
+  - pattern: "\\b(officer)\\b"
+    relation: civilian_to_police
+  - pattern: "\\b(uncle)\\b"
+    relation: younger_to_elder
+    listener_gender: male
+  - pattern: "\\b(auntie|aunty|aunt)\\b"
+    relation: younger_to_elder
+    listener_gender: female
