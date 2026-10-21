@@ -312,7 +312,7 @@ def _transcribe_gemini(
         )
 
         def _call_gemini(secret: str):
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={secret}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={secret}"
             payload = {
                 "contents": [
                     {
@@ -336,7 +336,7 @@ def _transcribe_gemini(
                 with urllib.request.urlopen(req, timeout=120) as resp:
                     resp_data = json.loads(resp.read().decode("utf-8"))
                     from claynext.models.llm_keys import note_llm_usage
-                    note_llm_usage("gemini-2.0-flash", resp_data)
+                    note_llm_usage("gemini-3.8-flash", resp_data)
                     cand_text = resp_data["candidates"][0]["content"]["parts"][0]["text"]
                     return json.loads(cand_text)
             except urllib.error.HTTPError as err:

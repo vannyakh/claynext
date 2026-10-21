@@ -31,7 +31,7 @@ _ENV_KEYS = {
 
 # Free-tier speed each key is held to. Rotation moves on before the provider returns 429.
 PROVIDER_LIMITS = {
-    "gemini": {"rpm": 15, "rpd": 1500, "model": "gemini-2.0-flash"},
+    "gemini": {"rpm": 15, "rpd": 1500, "model": "gemini-3.8-flash"},
     "huggingface": {"rpm": 30, "rpd": 1000, "model": ""},
     "elevenlabs": {"rpm": 20, "rpd": 10000, "model": "eleven_multilingual_v2"},
     **{

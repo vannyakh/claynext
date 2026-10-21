@@ -861,7 +861,7 @@ def llm_analyze_cast_and_gender(
                 pass
 
         def _do_gemini(api_key: str) -> dict:
-            models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+            models = ["gemini-3.8-flash", "gemini-flash-latest"]
             last_err = None
             for model in models:
                 url = (

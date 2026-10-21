@@ -910,8 +910,8 @@ class TranslateEngine:
 
     @staticmethod
     def _gemini_batch(prompt: str, progress_callback: Callable = None) -> list[dict]:
-        # Prefer Flash 2.0; only drop to 1.5 after the whole key pool fails that model.
-        models = ["gemini-2.0-flash", "gemini-1.5-flash"]
+        # 2.5 Flash is closed to new keys. 3.8 Flash is the model Google tells those keys to call.
+        models = ["gemini-3.8-flash", "gemini-flash-latest"]
         last_err = "Gemini request failed"
         for model in models:
             try:

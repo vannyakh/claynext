@@ -221,7 +221,7 @@ class OCREngine:
             "If no clear subtitle text is present, reply with nothing."
         )
         url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent"
             f"?key={urllib.parse.quote(api_key)}"
         )
         payload = {

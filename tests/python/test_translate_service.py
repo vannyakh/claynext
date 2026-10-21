@@ -12,11 +12,12 @@ def test_translate_constants_and_models():
     assert BATCH_SIZE >= 40
     assert 2.0 <= GEMINI_MIN_INTERVAL <= 6.0
 
-    # Ensure gemini-2.5-flash is NOT used since it generates 404 on Google AI Studio
+    # New Google keys are told to call gemini-3.8-flash. 1.5, 2.0, and 2.5 return 404.
     import inspect
     lines = inspect.getsource(TranslateEngine._gemini_batch)
+    assert "gemini-3.8-flash" in lines
     assert "gemini-2.5-flash" not in lines
-    assert "gemini-2.0-flash" in lines
+    assert "gemini-1.5-flash" not in lines
 
 
 def test_pack_batches_respects_char_budget():
