@@ -2,14 +2,18 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
+from pathlib import Path
+
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPushButton,
     QVBoxLayout,
 )
 
@@ -129,3 +133,111 @@ class ApiKeysDialog(QDialog):
             return
         self._pool.add_key(self.provider_id(), secret, label)
         self.accept()
+
+
+class ExportKeysDialog(QDialog):
+    """Choose which API keys to write, then pick the file."""
+
+    def __init__(self, parent=None, provider: str = "gemini"):
+        super().__init__(parent)
+        self.setObjectName("apiKeysDialog")
+        self.setWindowTitle("Export API keys")
+        self.setFixedWidth(420)
+        self.setModal(True)
+        self._provider = provider if provider in {pid for pid, _name in PROVIDERS} else "gemini"
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(8)
+
+        layout.addWidget(self._field_label("Keys"))
+        self.combo_scope = QComboBox()
+        self.combo_scope.setObjectName("api_keys_combo")
+        self.combo_scope.setFixedHeight(28)
+        current = next((name for pid, name in PROVIDERS if pid == self._provider), "This provider")
+        self.combo_scope.addItem(current, self._provider)
+        self.combo_scope.addItem("All providers", "")
+        layout.addWidget(self.combo_scope)
+
+        layout.addWidget(self._field_label("Include"))
+        self.combo_status = QComboBox()
+        self.combo_status.setObjectName("api_keys_combo")
+        self.combo_status.setFixedHeight(28)
+        self.combo_status.addItem("Enabled keys", "enabled")
+        self.combo_status.addItem("Enabled and disabled", "all")
+        layout.addWidget(self.combo_status)
+
+        layout.addWidget(self._field_label("Save to"))
+        path_row = QHBoxLayout()
+        path_row.setSpacing(8)
+        self.edit_path = QLineEdit(str(Path.home() / "claynext-api-keys.json"))
+        self.edit_path.setObjectName("api_keys_input")
+        self.edit_path.setFixedHeight(28)
+        browse = QPushButton("Browse")
+        browse.setObjectName("btn_secondary")
+        browse.setCursor(Qt.CursorShape.PointingHandCursor)
+        browse.setFixedHeight(28)
+        browse.clicked.connect(self._browse)
+        path_row.addWidget(self.edit_path, 1)
+        path_row.addWidget(browse)
+        layout.addLayout(path_row)
+
+        note = QLabel("The file contains the full secrets.")
+        note.setObjectName("settings_field_label")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok
+        )
+        btn_ok = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        btn_cancel = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        btn_ok.setText("Export")
+        btn_ok.setObjectName("btn_primary")
+        btn_cancel.setObjectName("btn_secondary")
+        for btn in (btn_ok, btn_cancel):
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFixedHeight(28)
+        buttons.accepted.connect(self._accept_export)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    @staticmethod
+    def _field_label(text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setObjectName("settings_field_label")
+        return lbl
+
+    def _browse(self):
+        current = self.edit_path.text().strip() or str(Path.home() / "claynext-api-keys.json")
+        path, _selected = QFileDialog.getSaveFileName(
+            self,
+            "Export API keys",
+            current,
+            "JSON (*.json)",
+        )
+        if path:
+            dest = Path(path)
+            if dest.suffix.lower() != ".json":
+                dest = dest.with_suffix(".json")
+            self.edit_path.setText(str(dest))
+
+    def _accept_export(self):
+        if not self.edit_path.text().strip():
+            QMessageBox.information(self, "Export keys", "Choose a file to save.")
+            self.edit_path.setFocus()
+            return
+        self.accept()
+
+    def chosen(self) -> dict[str, str]:
+        path = self.edit_path.text().strip()
+        dest = Path(path)
+        if dest.suffix.lower() != ".json":
+            dest = dest.with_suffix(".json")
+        return {
+            "provider": str(self.combo_scope.currentData() or ""),
+            "status": str(self.combo_status.currentData() or "enabled"),
+            "path": str(dest),
+        }

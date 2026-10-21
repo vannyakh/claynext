@@ -84,7 +84,9 @@ class SettingsDialog(QDialog):
         self.thread_pool = QThreadPool.globalInstance()
         self._feature_cards: list[QFrame] = []
         self._feature_controls: dict[str, dict] = {}
-        self._feature_installing: str | None = None
+        self._feature_active: str | None = None
+        self._feature_queue: list[tuple[str, str, str]] = []
+        self._feature_pct: dict[str, int] = {}
         self.init_ui()
         self._load_from_store()
 
@@ -256,12 +258,12 @@ class SettingsDialog(QDialog):
             self.combo_api_provider.addItem(name, pid)
         self.combo_api_provider.currentIndexChanged.connect(self._reload_api_keys)
         head.addWidget(self.combo_api_provider, 1)
-        btn_add = QPushButton("Add key")
-        btn_add.setObjectName("btn_primary")
-        btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_add.setFixedHeight(28)
+        btn_import = self._api_key_button("Import", self._import_api_keys)
+        btn_export = self._api_key_button("Export", self._export_api_keys)
+        btn_add = self._api_key_button("Add key", self._open_add_api_key, primary=True)
         btn_add.setMinimumWidth(84)
-        btn_add.clicked.connect(self._open_add_api_key)
+        head.addWidget(btn_import, 0, Qt.AlignmentFlag.AlignVCenter)
+        head.addWidget(btn_export, 0, Qt.AlignmentFlag.AlignVCenter)
         head.addWidget(btn_add, 0, Qt.AlignmentFlag.AlignVCenter)
         lay.addLayout(head)
 
@@ -338,6 +340,9 @@ class SettingsDialog(QDialog):
             menu.addSeparator()
         act_clear = menu.addAction("Clear cooldown")
         act_clear.triggered.connect(self._clear_api_cooldowns)
+        menu.addSeparator()
+        menu.addAction("Import keys…").triggered.connect(self._import_api_keys)
+        menu.addAction("Export keys…").triggered.connect(self._export_api_keys)
         menu.exec(self.api_keys_table.viewport().mapToGlobal(pos))
 
     def _reload_api_keys(self, *_args):
@@ -413,6 +418,91 @@ class SettingsDialog(QDialog):
         self._api_key_pool.remove_key(key_id)
         self._reload_api_keys()
 
+    def _api_key_button(self, text: str, slot, *, primary: bool = False) -> QPushButton:
+        button = QPushButton(text)
+        button.setObjectName("btn_primary" if primary else "btn_secondary")
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setFixedHeight(28)
+        button.clicked.connect(slot)
+        return button
+
+    def _export_api_keys(self):
+        import json
+        import os
+        from pathlib import Path
+
+        from claynext.gui.dialogs.api_keys_dialog import ExportKeysDialog
+        from claynext.models.llm_keys import export_api_keys_payload
+
+        dialog = ExportKeysDialog(self, provider=self._api_provider_id())
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        choice = dialog.chosen()
+        rows = self._api_key_pool.list_keys(choice["provider"] or None)
+        if choice["status"] != "all":
+            rows = [row for row in rows if int(row.get("enabled") or 0) == 1]
+        payload = export_api_keys_payload(rows)
+        count = len(payload["keys"])
+        if count == 0:
+            QMessageBox.information(self, "Export keys", "There are no keys for that choice.")
+            return
+        dest = Path(choice["path"])
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        try:
+            os.chmod(dest, 0o600)
+        except OSError:
+            pass
+        QMessageBox.information(self, "Export keys", f"Saved {count} key(s) to {dest.name}.")
+
+    def _import_api_keys(self):
+        import json
+        from pathlib import Path
+
+        from claynext.models.llm_keys import parse_api_keys_payload
+
+        path, _selected = QFileDialog.getOpenFileName(
+            self,
+            "Import API keys",
+            str(Path.home()),
+            "JSON (*.json)",
+        )
+        if not path:
+            return
+        try:
+            incoming = parse_api_keys_payload(json.loads(Path(path).read_text(encoding="utf-8")))
+        except Exception as exc:
+            QMessageBox.warning(self, "Import keys", str(exc) or "Could not read that file.")
+            return
+        existing = {
+            (str(row.get("provider") or ""), str(row.get("secret") or "").strip())
+            for row in self._api_key_pool.list_keys()
+        }
+        added = 0
+        for row in incoming:
+            identity = (row["provider"], row["secret"])
+            if identity in existing:
+                continue
+            key_id = self._api_key_pool.add_key(row["provider"], row["secret"], row["label"])
+            if not row["enabled"]:
+                self._api_key_pool.set_enabled(key_id, False)
+            existing.add(identity)
+            added += 1
+        if added:
+            current = self._api_provider_id()
+            providers = [row["provider"] for row in incoming]
+            show = current if current in providers else providers[0]
+            idx = self.combo_api_provider.findData(show)
+            if idx >= 0 and idx != self.combo_api_provider.currentIndex():
+                self.combo_api_provider.setCurrentIndex(idx)
+        self._reload_api_keys()
+        skipped = len(incoming) - added
+        if skipped:
+            message = f"Added {added} key(s). {skipped} already saved."
+        else:
+            message = f"Added {added} key(s)."
+        QMessageBox.information(self, "Import keys", message)
+
     def _clear_api_cooldowns(self):
         store = get_store()
         for rec in self._api_key_pool.list_keys(self._api_provider_id()):
@@ -482,9 +572,12 @@ class SettingsDialog(QDialog):
             card = self._make_feature_card(item, last=(i == len(rows) - 1))
             self._features_lay.addWidget(card)
 
-        # Restore in-progress install chrome after a rebuild
-        if self._feature_installing:
-            self._set_feature_row_progress(self._feature_installing, None, busy=True)
+        if self._feature_active:
+            self._set_feature_row_progress(
+                self._feature_active, self._feature_pct.get(self._feature_active), busy=True,
+            )
+        for feature_id, _extra, _label in self._feature_queue:
+            self._set_feature_row_progress(feature_id, None, busy=True, queued=True)
 
     def _make_feature_card(self, item: dict, *, last: bool = False) -> QFrame:
         row = QFrame()
@@ -564,7 +657,7 @@ class SettingsDialog(QDialog):
         return row
 
     def _install_feature(self, feature_id: str, extra: str, label: str):
-        if self._feature_installing:
+        if feature_id == self._feature_active or any(fid == feature_id for fid, _e, _n in self._feature_queue):
             return
         from claynext.models.features import feature_status
 
@@ -572,7 +665,15 @@ class SettingsDialog(QDialog):
         if not current.get("supported"):
             QMessageBox.information(self, "Unsupported", current.get("hint") or f"{label} cannot be installed on this Mac.")
             return
-        self._feature_installing = feature_id
+        if self._feature_active:
+            self._feature_queue.append((feature_id, extra, label))
+            self._set_feature_row_progress(feature_id, None, busy=True, queued=True)
+            return
+        self._start_feature_install(feature_id, extra, label)
+
+    def _start_feature_install(self, feature_id: str, extra: str, label: str):
+        self._feature_active = feature_id
+        self._feature_pct[feature_id] = 0
         self._set_feature_row_progress(feature_id, 0, busy=True)
 
         def _task(progress_callback=None):
@@ -580,7 +681,7 @@ class SettingsDialog(QDialog):
 
         worker = Worker(_task)
         worker.signals.progress.connect(
-            lambda v, _m, fid=feature_id: self._set_feature_row_progress(fid, v, busy=True)
+            lambda v, _m, fid=feature_id: self._on_feature_progress(fid, v)
         )
         worker.signals.result.connect(
             lambda _r, fid=feature_id, n=label: self._on_feature_install_done(fid, n)
@@ -590,7 +691,19 @@ class SettingsDialog(QDialog):
         )
         self.thread_pool.start(worker)
 
-    def _set_feature_row_progress(self, feature_id: str, percent: int | None, *, busy: bool):
+    def _pump_feature_queue(self):
+        if self._feature_active or not self._feature_queue:
+            return
+        feature_id, extra, label = self._feature_queue.pop(0)
+        self._start_feature_install(feature_id, extra, label)
+
+    def _on_feature_progress(self, feature_id: str, percent: int):
+        self._feature_pct[feature_id] = max(0, min(100, int(percent)))
+        self._set_feature_row_progress(feature_id, self._feature_pct[feature_id], busy=True)
+
+    def _set_feature_row_progress(
+        self, feature_id: str, percent: int | None, *, busy: bool, queued: bool = False,
+    ):
         ctrl = self._feature_controls.get(feature_id)
         if not ctrl:
             return
@@ -598,35 +711,39 @@ class SettingsDialog(QDialog):
         pill: QLabel = ctrl["pill"]
         action = ctrl.get("action")
         if busy:
-            val = 0 if percent is None else max(0, min(100, int(percent)))
-            pct_lbl.setText(f"{val}%")
-            pct_lbl.show()
-            pill.setText("Installing")
+            if queued:
+                pct_lbl.setText("")
+                pct_lbl.hide()
+                pill.setText("Queued")
+            else:
+                val = 0 if percent is None else max(0, min(100, int(percent)))
+                pct_lbl.setText(f"{val}%")
+                pct_lbl.show()
+                pill.setText("Installing")
             pill.setProperty("tone", "missing")
             pill.style().unpolish(pill)
             pill.style().polish(pill)
             if isinstance(action, QPushButton):
                 action.setEnabled(False)
                 action.setText("…")
-            # Disable other Install buttons while one job runs
-            for fid, other in self._feature_controls.items():
-                if fid == feature_id:
-                    continue
-                btn = other.get("action")
-                if isinstance(btn, QPushButton):
-                    btn.setEnabled(False)
         else:
             pct_lbl.hide()
             pct_lbl.setText("")
 
     def _on_feature_install_done(self, feature_id: str, label: str):
-        self._feature_installing = None
+        self._feature_pct.pop(feature_id, None)
+        if self._feature_active == feature_id:
+            self._feature_active = None
+        self._pump_feature_queue()
         self._populate_features_cards()
         self._refresh_stem_status_label()
         QMessageBox.information(self, "Installed", f"{label} is ready.")
 
     def _on_feature_install_error(self, feature_id: str, err_msg: str):
-        self._feature_installing = None
+        self._feature_pct.pop(feature_id, None)
+        if self._feature_active == feature_id:
+            self._feature_active = None
+        self._pump_feature_queue()
         self._populate_features_cards()
         QMessageBox.critical(self, "Install failed", str(err_msg or "uv sync failed."))
 

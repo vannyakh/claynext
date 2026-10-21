@@ -167,6 +167,13 @@ def describe_plan(plan: dict[str, Any] | None = None) -> str:
     )
 
 
+def download_slots() -> int:
+    """How many model downloads may run together. One lane per usable core, capped at four."""
+    plan = resource_plan()
+    cores = max(1, int(plan.get("usable") or plan.get("threads") or 1))
+    return max(1, min(cores, 4))
+
+
 def video_encode_args(*, quality: str = "finish", force_cpu: bool = False) -> list[str]:
     """FFmpeg video-encoder flags for the current plan."""
     plan = resource_plan()
@@ -204,6 +211,8 @@ def apply_process_threads(plan: dict[str, Any] | None = None) -> dict[str, Any]:
     n = max(1, int(row["threads"]))
     os.environ["CLAYNEXT_WORKER_THREADS"] = str(n)
     os.environ["OMP_NUM_THREADS"] = str(n)
+    # Must be set before PyTorch or Faster-Whisper loads OpenMP, or macOS aborts the process.
+    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
     try:
         import torch
 

@@ -57,7 +57,7 @@ class ModelsTable(QTableWidget):
     def button(self, repo_id: str) -> QPushButton | None:
         return self._buttons.get(repo_id)
 
-    def fill(self, models: list[dict], installing: str | None, percent: int) -> None:
+    def fill(self, models: list[dict], jobs: dict[str, int] | None = None) -> None:
         self.setRowCount(0)
         self._buttons = {}
         for row, item in enumerate(models):
@@ -76,9 +76,14 @@ class ModelsTable(QTableWidget):
 
             repo_id = item["id"]
             action = str(item.get("action") or "install")
-            installing_row = installing == repo_id
+            running = jobs or {}
+            job_pct = running.get(repo_id)
+            installing_row = job_pct is not None and job_pct >= 0
+            queued_row = job_pct is not None and job_pct < 0
             if installing_row:
                 status_text, status_color = "Installing", "#6366f1"
+            elif queued_row:
+                status_text, status_color = "Queued", "#6366f1"
             elif action == "unsupported":
                 status_text, status_color = "Unsupported", "#f59e0b"
             elif action == "cloud":
@@ -100,14 +105,16 @@ class ModelsTable(QTableWidget):
             btn.setProperty("tone", "ready" if action in {"ready", "cloud", "unsupported"} else "install")
             btn.style().unpolish(btn)
             btn.style().polish(btn)
-            btn.setEnabled(action == "install" and not installing)
+            btn.setEnabled(action == "install" and not installing_row and not queued_row)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setFixedHeight(24)
             btn.setMinimumWidth(78)
             if item.get("hint"):
                 btn.setToolTip(str(item["hint"]))
-            if installing_row:
-                paint_progress(btn, percent)
+            if queued_row:
+                btn.setText("Queued")
+            elif installing_row:
+                paint_progress(btn, int(job_pct or 0))
             btn.clicked.connect(lambda _=False, rid=repo_id: self.install_requested.emit(rid))
             self._buttons[repo_id] = btn
             wrap = QWidget()

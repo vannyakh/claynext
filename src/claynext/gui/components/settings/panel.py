@@ -18,7 +18,6 @@ class ModelsPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._pct = 0
         self._job = ModelInstall(self)
         self._job.progress.connect(self._on_progress)
         self._job.finished.connect(self._on_done)
@@ -75,7 +74,7 @@ class ModelsPanel(QWidget):
         models = get_model_registry()
         if kind:
             models = [row for row in models if str(row.get("category", "")).lower() == kind]
-        self.table.fill(models, self._job.repo_id, self._pct)
+        self.table.fill(models, self._job.jobs)
 
     def _install_custom(self) -> None:
         repo_id = self.custom.text().strip()
@@ -87,31 +86,36 @@ class ModelsPanel(QWidget):
     def install(self, repo_id: str) -> None:
         if not self._job.start(repo_id):
             return
-        self._pct = 0
-        self.custom_btn.setEnabled(False)
+        if self.custom.text().strip() == repo_id:
+            self.custom_btn.setEnabled(False)
         self.reload()
 
-    def _on_progress(self, val: int, msg: str) -> None:
-        self._pct = max(0, min(99, int(val)))
-        btn = self.table.button(self._job.repo_id or "") or self.custom_btn
-        paint_progress(btn, self._pct)
+    def _on_progress(self, repo_id: str, val: int, msg: str) -> None:
+        btn = self.table.button(repo_id)
+        if btn is None and self.custom.text().strip() == repo_id:
+            btn = self.custom_btn
+        if btn is None:
+            return
+        paint_progress(btn, val)
         if msg:
             btn.setToolTip(msg)
 
-    def _reset_custom(self) -> None:
+    def _reset_custom(self, repo_id: str) -> None:
+        if self.custom.text().strip() != repo_id:
+            return
+        if repo_id in self._job.jobs:
+            return
         self.custom_btn.setEnabled(True)
         self.custom_btn.setText("Install")
         self.custom_btn.setStyleSheet("")
 
-    def _on_done(self, _path: str) -> None:
-        self._pct = 0
-        self._reset_custom()
+    def _on_done(self, repo_id: str, _path: str) -> None:
+        self._reset_custom(repo_id)
         self.reload()
         self.installed.emit()
-        QMessageBox.information(self, "Installed", "Model installed into the local cache.")
+        QMessageBox.information(self, "Installed", f"{repo_id} is in the local cache.")
 
-    def _on_error(self, err_msg: str) -> None:
-        self._pct = 0
-        self._reset_custom()
+    def _on_error(self, repo_id: str, err_msg: str) -> None:
+        self._reset_custom(repo_id)
         self.reload()
-        QMessageBox.critical(self, "Install failed", f"Could not install model:\n{err_msg}")
+        QMessageBox.critical(self, "Install failed", f"Could not install {repo_id}:\n{err_msg}")

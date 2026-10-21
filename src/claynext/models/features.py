@@ -7,6 +7,7 @@ Settings live under Store tool ``studio``.
 from __future__ import annotations
 
 import platform
+import threading
 from typing import Any
 
 from claynext.utils.config import DEFAULT_CONFIG
@@ -284,6 +285,10 @@ def save_feature_defaults() -> None:
         set_feature_setting(key, str(DEFAULT_CONFIG.get(key, "")))
 
 
+# One uv sync at a time. Parallel syncs rewrite the same environment and fail.
+_UV_SYNC = threading.Lock()
+
+
 def install_uv_extra(extra: str, progress_callback=None) -> dict[str, Any]:
     """
     Run ``uv sync --extra <extra>`` from the project root (background-safe).
@@ -316,39 +321,41 @@ def install_uv_extra(extra: str, progress_callback=None) -> dict[str, Any]:
         except Exception:
             pass
 
-    _progress(2, f"Starting {extra}…")
-    cmd = [uv, "sync", "--extra", extra]
-    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-    proc = subprocess.Popen(
-        cmd,
-        cwd=str(BASE_DIR),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        creationflags=creationflags,
-    )
-    assert proc.stdout is not None
-    lines = 0
-    last_msg = f"Installing {extra}…"
-    ansi = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
-    pct_re = re.compile(r"(\d{1,3})\s*%")
-    for raw in proc.stdout:
-        line = ansi.sub("", raw).strip()
-        if not line:
-            continue
-        lines += 1
-        last_msg = line[:120]
-        pct = min(92, 4 + lines * 3)
-        m = pct_re.search(line)
-        if m:
-            pct = max(pct, min(95, int(m.group(1))))
-        _progress(pct, last_msg)
+    _progress(2, f"Waiting to install {extra}…")
+    with _UV_SYNC:
+        _progress(4, f"Starting {extra}…")
+        cmd = [uv, "sync", "--extra", extra]
+        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(BASE_DIR),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            creationflags=creationflags,
+        )
+        assert proc.stdout is not None
+        lines = 0
+        last_msg = f"Installing {extra}…"
+        ansi = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+        pct_re = re.compile(r"(\d{1,3})\s*%")
+        for raw in proc.stdout:
+            line = ansi.sub("", raw).strip()
+            if not line:
+                continue
+            lines += 1
+            last_msg = line[:120]
+            pct = min(92, 8 + lines * 3)
+            m = pct_re.search(line)
+            if m:
+                pct = max(pct, min(95, int(m.group(1))))
+            _progress(pct, last_msg)
 
-    code = proc.wait()
-    if code != 0:
-        raise RuntimeError(f"uv sync --extra {extra} failed (exit {code}): {last_msg}")
+        code = proc.wait()
+        if code != 0:
+            raise RuntimeError(f"uv sync --extra {extra} failed (exit {code}): {last_msg}")
     _progress(100, "Installed")
     return {"extra": extra, "ok": True}
 

@@ -40,7 +40,66 @@ PROVIDER_LIMITS = {
     },
 }
 
+KEY_EXPORT_FORMAT = "claynext-api-keys"
+KEY_EXPORT_VERSION = 1
+
 _usage_local = threading.local()
+
+
+def export_api_keys_payload(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """JSON document of provider keys. Secrets are included in full."""
+    keys: list[dict[str, Any]] = []
+    for row in rows:
+        secret = str(row.get("secret") or "").strip()
+        provider = str(row.get("provider") or "").strip()
+        if not secret or not provider:
+            continue
+        enabled = row.get("enabled", 1)
+        keys.append({
+            "provider": provider,
+            "label": str(row.get("label") or "").strip(),
+            "secret": secret,
+            "enabled": bool(int(enabled)) if str(enabled).isdigit() else bool(enabled),
+        })
+    return {"format": KEY_EXPORT_FORMAT, "version": KEY_EXPORT_VERSION, "keys": keys}
+
+
+def parse_api_keys_payload(data: Any) -> list[dict[str, Any]]:
+    """Read an export file, or a list of {provider, secret, label}."""
+    if isinstance(data, list):
+        raw = data
+    elif isinstance(data, dict) and isinstance(data.get("keys"), list):
+        raw = data["keys"]
+    elif isinstance(data, dict) and (data.get("secret") or data.get("key") or data.get("api_key")):
+        raw = [data]
+    else:
+        raise ValueError("This file is not a Claynext key export.")
+    known = {pid for pid, _name in PROVIDERS}
+    by_label = {name.lower(): pid for pid, name in PROVIDERS}
+    out: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        secret = str(item.get("secret") or item.get("key") or item.get("api_key") or "").strip()
+        if not secret:
+            continue
+        provider = str(item.get("provider") or item.get("provider_id") or "").strip()
+        if provider not in known:
+            provider = by_label.get(provider.lower(), "")
+        if provider not in known:
+            continue
+        enabled = item.get("enabled", True)
+        if isinstance(enabled, str):
+            enabled = enabled.strip().lower() not in {"0", "false", "no", "off"}
+        out.append({
+            "provider": provider,
+            "label": str(item.get("label") or "").strip(),
+            "secret": secret,
+            "enabled": bool(enabled),
+        })
+    if not out:
+        raise ValueError("This file has no keys.")
+    return out
 
 
 class RateLimitError(Exception):

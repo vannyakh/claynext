@@ -1,6 +1,9 @@
 import sys
 import os
 
+# PyTorch and Faster-Whisper each ship an OpenMP runtime. The second one aborts the process.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 # Add src to pythonpath
 src_dir = os.path.join(os.path.dirname(__file__), "src")
 if src_dir not in sys.path:
