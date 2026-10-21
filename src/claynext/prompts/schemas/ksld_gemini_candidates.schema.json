@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "KSLD Gemini Candidates",
+  "type": "object",
+  "required": ["candidates"],
+  "additionalProperties": true,
+  "properties": {
+    "candidates": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["text"],
+        "additionalProperties": true,
+        "properties": {
+          "text": { "type": "string", "minLength": 1 },
+          "style": { "type": "string" },
+          "register": { "type": "string" },
+          "emotion": { "type": "string" },
+          "notes": { "type": "string" }
+        }
+      }
+    }
+  }
+}

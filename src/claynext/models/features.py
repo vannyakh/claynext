@@ -24,6 +24,8 @@ FEATURE_SETTING_KEYS = (
     "sglang_omni_url",
     "skill_dialogue_translation",
     "skill_khmer_natural_dialogue",
+    "voice_training_enabled",
+    "khmer_spoken_enabled",
 )
 
 STEM_MODES = ("auto", "demucs", "ffmpeg")

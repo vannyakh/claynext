@@ -222,6 +222,16 @@ def _speech_device() -> str:
         return "cpu"
 
 
+_WHISPER_SIZE_REPOS = {
+    "tiny": "Systran/faster-whisper-tiny",
+    "base": "Systran/faster-whisper-base",
+    "small": "Systran/faster-whisper-small",
+    "medium": "Systran/faster-whisper-medium",
+    "large-v3": "Systran/faster-whisper-large-v3",
+    "large": "Systran/faster-whisper-large-v3",
+}
+
+
 def _resolve_model(model_name: str, device_override: str = "auto") -> tuple[str, str]:
     raw = (model_name or "whisper-small").strip()
     lower = raw.lower()
@@ -243,6 +253,20 @@ def _resolve_model(model_name: str, device_override: str = "auto") -> tuple[str,
         "medium": "medium",
     }
     return aliases.get(size, "small"), device
+
+
+def _local_whisper_source(size: str) -> str:
+    """Prefer a cached snapshot path so Whisper does not re-hit Hugging Face."""
+    repo = _WHISPER_SIZE_REPOS.get(size) or f"Systran/faster-whisper-{size}"
+    try:
+        from claynext.models.hf_hub import get_local_model_path
+
+        local = get_local_model_path(repo)
+        if local:
+            return local
+    except Exception:
+        pass
+    return size
 
 
 def _transcribe_gemini(
@@ -464,10 +488,13 @@ class ASREngine:
             ) from exc
 
         size, device = _resolve_model(model_name, device_override=compute_device)
+        model_source = _local_whisper_source(size)
         lang = _LANG_CODES.get(language, None)
+        local_only = os.path.isdir(model_source)
 
         if progress_callback:
-            progress_callback(8, f"Loading Whisper {size} ({device})…")
+            where = "cache" if local_only else "hub"
+            progress_callback(8, f"Loading Whisper {size} ({device}, {where})…")
 
         if compute_device == "float16" and device == "cuda":
             compute = "float16"
@@ -486,22 +513,24 @@ class ASREngine:
                 cpu_threads = 4
         try:
             model = WhisperModel(
-                size,
+                model_source,
                 device=device,
                 compute_type=compute,
                 cpu_threads=cpu_threads,
                 num_workers=1,
+                local_files_only=local_only,
             )
         except Exception:
             if device != "cpu":
                 if progress_callback:
                     progress_callback(10, "GPU unavailable — using CPU…")
                 model = WhisperModel(
-                    size,
+                    model_source,
                     device="cpu",
                     compute_type="int8",
                     cpu_threads=cpu_threads,
                     num_workers=1,
+                    local_files_only=local_only,
                 )
             else:
                 raise RuntimeError(f"Could not load Whisper model '{size}'.") from None

@@ -105,6 +105,12 @@ class WorkspaceTools:
             tools_menu.addAction(act_preset)
 
             tools_menu.addSeparator()
+            act_voice_train = QAction("Khmer &Voice Training…", self)
+            act_voice_train.triggered.connect(self._open_voice_training)
+            tools_menu.addAction(act_voice_train)
+            act_ksld = QAction("Khmer &Spoken Dataset…", self)
+            act_ksld.triggered.connect(self._open_khmer_spoken)
+            tools_menu.addAction(act_ksld)
             act_features = QAction("Feature &settings…", self)
             act_features.triggered.connect(self._open_feature_settings)
             tools_menu.addAction(act_features)
@@ -208,6 +214,18 @@ class WorkspaceTools:
             if dialog.tabs.tabText(i).replace("&", "").lower() == "features":
                 dialog.tabs.setCurrentIndex(i)
                 break
+        dialog.exec()
+
+    def _open_voice_training(self):
+        from claynext.gui.dialogs.voice_training_dialog import VoiceTrainingDialog
+
+        dialog = VoiceTrainingDialog(self)
+        dialog.exec()
+
+    def _open_khmer_spoken(self):
+        from claynext.gui.dialogs.khmer_spoken_dialog import KhmerSpokenDialog
+
+        dialog = KhmerSpokenDialog(self)
         dialog.exec()
 
     def _set_preview_tool(self, tool: str):

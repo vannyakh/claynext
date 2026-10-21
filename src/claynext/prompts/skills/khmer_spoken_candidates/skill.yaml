@@ -1,0 +1,49 @@
+# Gemini teacher skill for KSLD candidate generation (milestone 1).
+# AI Studio only — does not submit Vertex tuning jobs.
+# Synthetic output must stay pending_native_review until human gold promotion.
+id: ksld.gemini_candidates
+version: "0.1.0"
+name: KSLD Gemini Khmer Candidates
+description: >
+  Produces three spoken-Khmer translation candidates (natural, slang, character)
+  for one source dialogue line. Candidates are synthetic and require native
+  Khmer human review before gold dataset promotion.
+model_capability: text_generation
+requires: []
+template: prompt.j2
+system:
+  - core
+  - json_output
+inputs:
+  source_language:
+    type: string
+    required: true
+  source_text:
+    type: string
+    required: true
+  emotion:
+    type: string
+    default: neutral
+  register:
+    type: string
+    default: neutral
+  speaker_id:
+    type: string
+    default: ""
+  listener_id:
+    type: string
+    default: ""
+output:
+  schema: ksld_gemini_candidates
+  list_key: candidates
+settings:
+  temperature: 0.4
+  max_output_tokens: 1024
+  response_format: json
+backends:
+  - gemini
+languages:
+  - khmer
+changelog:
+  - version: "0.1.0"
+    notes: Milestone 1 teacher skill for KSLD Gemini candidates.

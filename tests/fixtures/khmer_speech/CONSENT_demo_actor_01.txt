@@ -1,0 +1,4 @@
+TEST FIXTURE ONLY — not a real performer.
+Synthetic placeholder audio for Claynext Voice Training unit tests.
+permitted_uses: voice_model_training, tts_synthesis
+restrictions: tests_only; no commercial use of this fixture as a voice product

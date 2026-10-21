@@ -44,6 +44,8 @@ DEFAULT_CONFIG = {
     "sglang_omni_url": "http://127.0.0.1:8000",
     "skill_dialogue_translation": "0",  # 1 = movie.dialogue_translation prompt skill
     "skill_khmer_natural_dialogue": "0",  # 1 = movie.khmer_natural_dialogue for Khmer targets
+    "voice_training_enabled": "1",  # 1 = Tools → Voice Training prototype
+    "khmer_spoken_enabled": "1",  # 1 = Tools → Khmer Spoken Dataset / Gemini Teacher
     "ui_language": "English (US)",
     "check_updates": "1",
     "auto_open_exports": "1",

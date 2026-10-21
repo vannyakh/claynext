@@ -2,6 +2,7 @@
   "comment": "Bump the skill version in skill.yaml before re-pinning a changed prompt.",
   "skills": {
     "movie.dialogue_translation@1.0.0": "sha256:e6726ad661237e10d89289724969b8b089026c4f540ffa90618c820c63a5ef1c",
-    "movie.khmer_natural_dialogue@0.1.0": "sha256:2589e9a345b74699c877503771ec727374542da4ccc7079a4ba1d25c9061352f"
+    "movie.khmer_natural_dialogue@0.1.0": "sha256:2589e9a345b74699c877503771ec727374542da4ccc7079a4ba1d25c9061352f",
+    "ksld.gemini_candidates@0.1.0": "sha256:ab64f4a75a7bc017d9c35fab095e8af10fb16ef1485a43ff67636edf10c4ba67"
   }
 }

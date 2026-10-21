@@ -7,6 +7,7 @@ import sys
 from claynext import APP_NAME, APP_VERSION
 from claynext.cli import (
     cmd_asr,
+    cmd_dataset,
     cmd_dub,
     cmd_features,
     cmd_gui,
@@ -35,6 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
     cmd_translate.add_parser(sub)
     cmd_plan.add_parser(sub)
     cmd_features.add_parser(sub)
+    cmd_dataset.add_parser(sub)
 
     return parser
 

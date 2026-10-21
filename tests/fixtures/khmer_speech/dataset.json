@@ -1,0 +1,127 @@
+{
+  "dataset_id": "demo_consented_km",
+  "name": "Demo Consented Khmer Speech (fixture)",
+  "version": "0.1.0",
+  "language": "km",
+  "created_at": "2026-10-21T14:50:17+00:00",
+  "notes": "Synthetic/short placeholder for tests only. Not a real actor voice.",
+  "language_dataset_ref": "claynext.models.datasets / Khmer Spoken Language Dataset (what to say)",
+  "sessions": [
+    {
+      "source_id": "src_demo_booth_01",
+      "title": "Demo booth — neutral line",
+      "owner": "Claynext Test Fixtures",
+      "license_type": "internal_test_fixture",
+      "license_doc_path": "data/voice_datasets/demo_consented/docs/CONSENT_demo_actor_01.txt",
+      "performers": [
+        {
+          "name": "Demo Actor 01",
+          "consent_id": "consent_demo_actor_01",
+          "consent_doc_path": "data/voice_datasets/demo_consented/docs/CONSENT_demo_actor_01.txt",
+          "permitted_uses": [
+            "voice_model_training",
+            "tts_synthesis"
+          ],
+          "restrictions": [
+            "tests_only"
+          ],
+          "expires_at": "2027-10-21T14:50:17+00:00",
+          "revocable": true,
+          "revoked_at": null
+        }
+      ],
+      "imported_at": "2026-10-21T14:50:17+00:00",
+      "session_id": "sess_demo_01",
+      "media_path": "data/voice_datasets/demo_consented/audio/demo_spk01_neutral.wav",
+      "notes": "Clean isolated synthetic tone; prefer real consented booth recordings in production.",
+      "catalog_role": "training_source"
+    },
+    {
+      "source_id": "src_demo_booth_01",
+      "title": "Demo booth — val holdout session",
+      "owner": "Claynext Test Fixtures",
+      "license_type": "internal_test_fixture",
+      "license_doc_path": "data/voice_datasets/demo_consented/docs/CONSENT_demo_actor_01.txt",
+      "performers": [
+        {
+          "name": "Demo Actor 01",
+          "consent_id": "consent_demo_actor_01",
+          "consent_doc_path": "data/voice_datasets/demo_consented/docs/CONSENT_demo_actor_01.txt",
+          "permitted_uses": [
+            "voice_model_training",
+            "tts_synthesis"
+          ],
+          "restrictions": [
+            "tests_only"
+          ],
+          "expires_at": "2027-10-21T14:50:17+00:00",
+          "revocable": true,
+          "revoked_at": null
+        }
+      ],
+      "imported_at": "2026-10-21T14:50:17+00:00",
+      "session_id": "sess_demo_val",
+      "media_path": "data/voice_datasets/demo_consented/audio/demo_spk01_neutral.wav",
+      "notes": "Separate session for val split",
+      "catalog_role": "training_source"
+    }
+  ],
+  "segments": [
+    {
+      "segment_id": "seg_demo_001",
+      "audio_path": "data/voice_datasets/demo_consented/audio/demo_spk01_neutral.wav",
+      "start_sec": 0.05,
+      "end_sec": 1.15,
+      "speaker_id": "spk_demo_01",
+      "transcript_display": "ខ្ញុំទៅផ្ទះហើយ។",
+      "transcript_spoken": "ញ៉ុមទៅផ្ទះហើយ។",
+      "tts_pronunciation": "ខ្ញុំទៅផ្ទះហើយ។",
+      "emotion": "neutral",
+      "speaking_style": "spoken",
+      "quality_score": 0.72,
+      "verified_by": "fixture",
+      "verified_at": "2026-10-21T14:50:17+00:00",
+      "train_split": "train",
+      "session_id": "sess_demo_01",
+      "source_id": "src_demo_booth_01",
+      "dialect": "standard_khmer",
+      "slang_level": 0.35,
+      "rudeness_level": 0.0,
+      "prosody": {
+        "duration_sec": 1.1,
+        "source": "fixture"
+      },
+      "meta": {
+        "fixture": true
+      }
+    },
+    {
+      "segment_id": "seg_demo_002",
+      "audio_path": "data/voice_datasets/demo_consented/audio/demo_spk01_neutral.wav",
+      "start_sec": 0.05,
+      "end_sec": 1.15,
+      "speaker_id": "spk_demo_01",
+      "transcript_display": "អរគុណច្រើន។",
+      "transcript_spoken": "អរគុណច្រើន។",
+      "tts_pronunciation": "អរគុណច្រើន។",
+      "emotion": "excited",
+      "speaking_style": "spoken",
+      "quality_score": 0.7,
+      "verified_by": "fixture",
+      "verified_at": "2026-10-21T14:50:17+00:00",
+      "train_split": "val",
+      "session_id": "sess_demo_val",
+      "source_id": "src_demo_booth_01",
+      "dialect": "standard_khmer",
+      "slang_level": 0.2,
+      "rudeness_level": 0.0,
+      "prosody": {
+        "duration_sec": 1.1,
+        "source": "fixture"
+      },
+      "meta": {
+        "fixture": true
+      }
+    }
+  ]
+}
