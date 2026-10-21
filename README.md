@@ -11,6 +11,8 @@ uv run main.py --project file.claynext.json
 uv run claynext --help                      # headless tools + gui
 ```
 
+**Apple Silicon (M4 Mac Mini):** see [docs/guides/m4-mac-mini-start.md](docs/guides/m4-mac-mini-start.md) for pull → sync → first-run Features / API keys → smoke test.
+
 ## Layout
 
 ```
