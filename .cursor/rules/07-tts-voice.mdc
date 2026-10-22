@@ -1,0 +1,13 @@
+---
+description: TTS, dubbing, and voice inference — consent and a free UI thread
+globs: src/claynext/models/tts_service.py,src/claynext/models/tts_expression.py,src/claynext/models/dubbing_service.py,src/claynext/models/voice_clone.py,src/claynext/voice_training/inference/**/*.py,src/claynext/models/khmer_localization/tts_normalizer.py,src/claynext/gui/dialogs/voice_training_dialog.py
+alwaysApply: false
+---
+
+# TTS and voice
+
+- Dubbing: `DubbingEngine` in `src/claynext/models/dubbing_service.py`. Quota, align speed, and duck volume go through `get_dubbing_adapter()`.
+- TTS SDKs stay in Python (`tts_service.py`). Khmer pronunciation text: `khmer_localization/tts_normalizer.py`.
+- Voice clone and training audio need performer consent and a licence. Do not synthesize a real person from uncleared audio.
+- GUI entry `gui/dialogs/voice_training_dialog.py` uses `Worker` / `QThreadPool`. Never run TTS, separation, or training on the Qt UI thread.
+- Fine-tune stays dry-run until the owner approves a training job.

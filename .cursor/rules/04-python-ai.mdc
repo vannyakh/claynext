@@ -1,0 +1,15 @@
+---
+description: Python models, LLM gateway, and key handling
+globs: src/claynext/models/**/*.py
+alwaysApply: false
+---
+
+# Python AI layer
+
+Models orchestrate. Call `get_ai_adapter()`, `get_dubbing_adapter()`, or `get_ffmpeg_adapter()`. Do not import `rust_bridge`.
+
+- Gateway: `src/claynext/models/llm_gateway/`. Chat entry: `chat_text` / `chat_through` in `src/claynext/models/llm_chat.py`. Traces must not contain API keys.
+- Keys: `src/claynext/models/llm_keys.py` and environment variables. Do not hardcode keys or invent prices.
+- `AiProvider` (`models/ai_provider.py`) and the gateway provider are not unified yet (JOB-007). Do not add a third client.
+- Khmer translation still goes through `translate_service.TranslateEngine` and `movie_translate.py`. Extend them.
+- Edge-TTS, Whisper, Gemini, and Ollama stay in Python unless a Rust command already exists.

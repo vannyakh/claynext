@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import json
 
+from claynext.models.llm_chat import chat_through, last_chat
+from claynext.models.llm_keys import InvalidKeyError
 from claynext.models.llm_gateway import (
     ChatMessage,
     ChatRequest,
@@ -169,6 +171,29 @@ def test_cancellation_before_and_during_backoff():
         raise AssertionError("expected JobCancelled")
     except JobCancelled:
         assert len(t.calls) == 1
+
+
+def test_chat_through_returns_text_and_trace():
+    t = FakeTransport(_ok("ទៅផ្ទះ"))
+    provider = _provider(t)
+    text = chat_through(provider, "Go home.", temperature=0.2)
+    assert text == "ទៅផ្ទះ"
+    last = last_chat()
+    assert last is not None and last.trace_id
+    assert t.calls[0]["body"]["temperature"] == 0.2
+    assert t.calls[0]["body"]["messages"][0]["content"] == "Go home."
+
+
+def test_chat_through_maps_auth_to_invalid_key():
+    class Boom:
+        def complete(self, request, control=None):
+            raise ProviderError("no key", code="auth", provider="openai")
+
+    try:
+        chat_through(Boom(), "x")
+        raise AssertionError("expected InvalidKeyError")
+    except InvalidKeyError as exc:
+        assert "no key" in str(exc)
 
 
 def test_other_providers_use_json_object_mode():

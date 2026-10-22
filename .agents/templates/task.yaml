@@ -1,0 +1,19 @@
+# Copy into .agents/jobs/backlog.yaml or active.yaml. Scope paths must exist in this repo.
+id: JOB-000
+title: ""
+epic: ""
+priority: P2
+assigned_by: cto
+owner: ""
+reviewer: ""
+status: BACKLOG
+dependencies: []
+skills: []
+scope: []
+requirements: []
+acceptance_criteria: []
+deliverables: []
+# status: BACKLOG | READY | IN_PROGRESS | REVIEW | QA | DONE | BLOCKED | FAILED | CANCELLED
+# owner: a file stem under .cursor/agents/ (cto, architecture-lead, rust-lead, ai-lead,
+#   khmer-linguist, dataset-engineer, model-training, tts-engineer, ui-engineer,
+#   qa-engineer, devops-engineer)

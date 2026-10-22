@@ -1,0 +1,22 @@
+---
+description: How Claynext tests run — do not invent results
+globs: tests/**/*.py
+alwaysApply: false
+---
+
+# Testing
+
+pytest is not a project dependency. `tests/python/test_translate_service.py` imports pytest and does not run in the default venv (JOB-009).
+
+Most suites are scripts. The file header is the command:
+
+```bash
+PYTHONPATH=src .venv/bin/python tests/python/<file>.py
+```
+
+Example: `tests/python/test_datasets.py`.
+
+- Do not fabricate pass/fail output. If you did not run it, say so.
+- Do not add pytest just to make one file import. That choice is JOB-009 and needs a deliberate `uv` change.
+- Rust: `cargo test -p <crate>` from the repo. Do not claim a pass without the log.
+- Qt smoke: `QT_QPA_PLATFORM=offscreen`. Steps: `.agents/skills/claynext-dev-workflow/SKILL.md`.

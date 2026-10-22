@@ -1,0 +1,11 @@
+---
+description: API keys, redacted traces, and content licences
+alwaysApply: true
+---
+
+# Security and licensing
+
+- Never commit API keys, tokens, `.env` files, or key databases. Providers read env names in `llm_keys._ENV_KEYS` (including `GEMINI_API_KEY`, `HF_TOKEN`, `ELEVENLABS_API_KEY`).
+- Redact keys in traces, exceptions, eval JSON, and handoffs. Gateway tests use fakes.
+- Dataset and voice rows need a licence. Promote and training export refuse unlicensed records.
+- Do not add a built-in price list. Cost uses a user-supplied config (JOB-008) or the cost already on a provider trace.

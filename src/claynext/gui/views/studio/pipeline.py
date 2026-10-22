@@ -740,6 +740,11 @@ class PipelineTools:
             f"{int(val)}% · {text}" if text else f"{int(val)}%",
             int(val),
         )
+        from claynext.utils.console_noise import status_worth_logging
+
+        if status_worth_logging(str(getattr(self, "_progress_logged", "") or ""), text):
+            self._progress_logged = text
+            self.log.info(text)
 
     def _on_complete(self, res: dict):
         if not res:
@@ -896,7 +901,7 @@ class PipelineTools:
             if output:
                 self.log.success(f"Dubbed {count} line(s) → {os.path.basename(output)}")
             else:
-                self.log.success(f"{count} voice clip(s) on the master sequence")
+                self.log.success(f"{count} voice clip(s) from this movie on the master sequence")
         except Exception as exc:
             task = self._task_by_id(self._active_task) if getattr(self, "_active_task", -1) >= 0 else None
             if task and task.get("status") in {"running", "paused"}:
@@ -1080,7 +1085,7 @@ class PipelineTools:
         self.timeline.rail.rebuild(canvas.tracks)
         self._sync_preview_overlays(force=True)
         look = style.get("name") or "Caption"
-        self.log.info(f"Auto captions · {len(segments)} segment(s) · {look}")
+        self.log.info(f"Auto captions · {len(segments)} segment(s) on the timeline · {look}")
 
     def _apply_caption_picture(self) -> None:
         """Place one effect, one filter, and source-cut transitions chosen with captions."""

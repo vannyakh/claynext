@@ -911,31 +911,49 @@ class TranslateEngine:
         from claynext.models.ai_provider import ProviderError
 
         rows: dict[Any, dict] = {}
+        TranslateEngine._attach_khmer_gateway(skill, backend)
         for chunk in skill.chunks(batch):
             payload = TranslateEngine._payload_for(chunk, target_lang=target_lang)
             prompt = inputs = result = None
             applied: dict = {}
             model = ""
             error = ""
+            trace_id = ""
             try:
                 prompt, inputs = skill.render(payload)
-                reply, applied, model = TranslateEngine._skill_complete(
-                    backend, prompt.text, ollama_model, prompt.settings, progress_callback,
-                )
+                if getattr(skill, "provider", None) is not None and hasattr(skill, "translate_chunk"):
+                    done = skill.translate_chunk(
+                        prompt.text,
+                        temperature=float((prompt.settings or {}).get("temperature") or 0.3),
+                    )
+                    reply = done["text"]
+                    applied = {"temperature": done.get("temperature")}
+                    model = str(done.get("model") or "")
+                    trace_id = str(done.get("trace_id") or "")
+                else:
+                    reply, applied, model = TranslateEngine._skill_complete(
+                        backend, prompt.text, ollama_model, prompt.settings, progress_callback,
+                    )
+                    from claynext.models.llm_chat import last_chat
+                    from claynext.models.llm_providers import CHAT_PROVIDERS
+
+                    if backend in CHAT_PROVIDERS:
+                        last = last_chat()
+                        trace_id = last.trace_id if last is not None else ""
                 result = skill.check(reply, inputs)
                 if not result.ok:
                     error = "; ".join(result.errors[:3])
             except (RateLimitError, InvalidKeyError, ProviderError) as exc:
                 skill.record(
                     backend=backend, model=model, settings_applied=applied,
-                    inputs=inputs, prompt=prompt, result=None, error=str(exc),
+                    inputs=inputs, prompt=prompt, result=None, error=str(exc), trace_id=trace_id,
                 )
                 raise
             except Exception as exc:
                 error = str(exc)
             skill.record(
                 backend=backend, model=model, settings_applied=applied,
-                inputs=inputs, prompt=prompt, result=result, error=error,
+                inputs=inputs, prompt=prompt, result=result, error=error, trace_id=trace_id,
             )
             if result is not None and result.ok:
                 rows.update(TranslateEngine._map_batch(
@@ -945,6 +963,22 @@ class TranslateEngine:
             else:
                 rows.update(legacy(chunk))
         return rows
+
+    @staticmethod
+    def _attach_khmer_gateway(skill: Any, backend: str) -> None:
+        """Opt-in: Khmer skill chunks for a chat provider go through the gateway."""
+        if getattr(skill, "provider", None) is not None or not hasattr(skill, "translate_chunk"):
+            return
+        from claynext.models.features import get_feature_setting
+        from claynext.models.llm_providers import CHAT_PROVIDERS
+
+        if backend not in CHAT_PROVIDERS:
+            return
+        if get_feature_setting("skill_khmer_gateway", "0") != "1":
+            return
+        from claynext.models.llm_gateway import get_provider
+
+        skill.provider = get_provider(backend)
 
     @staticmethod
     def _skill_complete(

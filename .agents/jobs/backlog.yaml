@@ -1,0 +1,249 @@
+# Ready and blocked work. DONE jobs are in completed.yaml.
+# Nothing here is in progress. See active.yaml.
+jobs:
+  - id: JOB-001
+    title: Architecture map of the current call path
+    epic: agent-foundation
+    priority: P1
+    assigned_by: project-owner
+    owner: architecture-lead
+    reviewer: cto
+    status: READY
+    dependencies: []
+    skills:
+      - repository-audit
+      - claynext-rust-core
+    scope:
+      - docs/khmer-platform/01-current-architecture.md
+      - .agents/reports/
+    requirements:
+      - Short map of GUI/CLI to models to adapters to rust_bridge to backends and crates.
+      - Cite modules that already exist. Do not propose apps/, python-ai/, or a PyO3 rewrite.
+      - Update or supplement the Oct 2026 architecture note only where it still says the dataset layer and gateway are missing.
+    acceptance_criteria:
+      - A short doc or .agents/reports note lists the real call path and the shipped modules.
+      - No product code changes required for this job.
+    deliverables:
+      - docs/khmer-platform/01-current-architecture.md or .agents/reports/JOB-001.md
+
+  - id: JOB-004
+    title: Rust/Python boundary note
+    epic: agent-foundation
+    priority: P1
+    assigned_by: cto
+    owner: architecture-lead
+    reviewer: rust-lead
+    status: READY
+    dependencies:
+      - JOB-001
+    skills:
+      - rust-development
+      - claynext-rust-core
+    scope:
+      - src/claynext/adapters/
+      - backends/
+      - crates/
+      - .cursor/rules/rust-python-architecture.mdc
+    requirements:
+      - One short note of what stays in Rust versus Python, pointing at existing rules.
+      - Do not move code in this job.
+    acceptance_criteria:
+      - Note names get_ai_adapter, get_dubbing_adapter, get_ffmpeg_adapter and the binaries they wrap.
+      - States there is no PyO3 requirement.
+    deliverables:
+      - .agents/reports/JOB-004.md
+
+  - id: JOB-005
+    title: Few-shot retrieval from reviewed Khmer records
+    epic: khmer-platform
+    priority: P1
+    assigned_by: cto
+    owner: khmer-linguist
+    reviewer: dataset-engineer
+    status: READY
+    dependencies: []
+    skills:
+      - khmer-localization
+      - dataset-engineering
+    scope:
+      - src/claynext/models/khmer_localization/
+      - src/claynext/models/datasets/
+      - src/claynext/prompts/skills/khmer_natural_dialogue/
+    requirements:
+      - Retrieve few-shot lines from reviewed or gold dataset records by relationship and emotion.
+      - Do not invent dialect, slang, or profanity for examples.
+    acceptance_criteria:
+      - Unreviewed and rejected rows are not retrieved.
+      - Examples cite record ids from the dataset store.
+    deliverables:
+      - Retrieval helper under models/khmer_localization/ or models/datasets/
+      - tests/python/test_khmer_localization.py or test_datasets.py extended only if the helper exists
+
+  - id: JOB-006
+    title: GUI dataset review queue (read-only first)
+    epic: khmer-platform
+    priority: P1
+    assigned_by: cto
+    owner: ui-engineer
+    reviewer: qa-engineer
+    status: READY
+    dependencies: []
+    skills:
+      - claynext-ui-component
+      - dataset-engineering
+    scope:
+      - src/claynext/gui/
+      - src/claynext/models/datasets/report.py
+      - src/claynext/models/datasets/review.py
+    requirements:
+      - Read-only dataset report and review queue page.
+      - Load data on Worker / QThreadPool. Use theme tokens. Do not rewrite the shell.
+    acceptance_criteria:
+      - No dataset scan on the Qt UI thread.
+      - Page does not promote records or set gold.
+    deliverables:
+      - New or extended view under src/claynext/gui/
+
+  - id: JOB-007
+    title: Unify AiProvider and the LLM gateway
+    epic: khmer-platform
+    priority: P1
+    assigned_by: cto
+    owner: ai-lead
+    reviewer: architecture-lead
+    status: READY
+    dependencies: []
+    skills:
+      - repository-audit
+      - code-review
+    scope:
+      - src/claynext/models/ai_provider.py
+      - src/claynext/models/llm_gateway/
+      - src/claynext/models/llm_chat.py
+    requirements:
+      - One provider path for chat. Keep chat_text usable for current callers.
+      - Do not add a third client. Do not import rust_bridge from models.
+    acceptance_criteria:
+      - Call sites of AiProvider.complete and the gateway are documented in the handoff.
+      - Keys stay out of traces.
+    deliverables:
+      - Updated models/ai_provider.py and llm_gateway usage
+      - tests/python/test_llm_gateway.py still runnable as a script
+
+  - id: JOB-008
+    title: User-supplied pricing config for cost tracking
+    epic: khmer-platform
+    priority: P1
+    assigned_by: cto
+    owner: ai-lead
+    reviewer: qa-engineer
+    status: READY
+    dependencies: []
+    skills:
+      - code-review
+    scope:
+      - src/claynext/models/llm_gateway/
+      - src/claynext/models/evaluation/runner.py
+    requirements:
+      - Cost uses a config the user supplies. No built-in price list.
+      - If the config is missing, cost stays unset rather than a guessed number.
+    acceptance_criteria:
+      - runner.py still records only cost already on the provider trace or from that config.
+      - No API prices committed in source.
+    deliverables:
+      - Pricing config loader next to llm_gateway
+      - Example file that contains no real prices (schema or empty template only)
+
+  - id: JOB-009
+    title: Baseline test runner note and pytest decision
+    epic: khmer-platform
+    priority: P2
+    assigned_by: cto
+    owner: qa-engineer
+    reviewer: devops-engineer
+    status: READY
+    dependencies: []
+    skills:
+      - release-validation
+    scope:
+      - tests/python/test_translate_service.py
+      - tests/python/
+      - pyproject.toml
+    requirements:
+      - Document that most tests run as PYTHONPATH=src .venv/bin/python tests/python/<file>.py.
+      - Decide whether to port test_translate_service.py off pytest or add pytest to the uv dev group. Do not change dependencies until the owner accepts the decision.
+    acceptance_criteria:
+      - A short note lists which files are scripts and which import pytest.
+      - pyproject.toml is unchanged unless a follow-up job says to add pytest.
+    deliverables:
+      - .agents/reports/JOB-009.md
+
+  - id: JOB-010
+    title: Plan tts_text into DubbingEngine for Khmer
+    epic: khmer-platform
+    priority: P2
+    assigned_by: cto
+    owner: tts-engineer
+    reviewer: khmer-linguist
+    status: READY
+    dependencies:
+      - JOB-005
+    skills:
+      - expressive-tts
+      - khmer-localization
+    scope:
+      - src/claynext/models/dubbing_service.py
+      - src/claynext/models/khmer_localization/tts_normalizer.py
+      - src/claynext/models/tts_service.py
+    requirements:
+      - Plan only. Do not implement in this job.
+      - Show where DubbingEngine would speak tts_text instead of localized_text, and where get_dubbing_adapter still owns quota and align.
+    acceptance_criteria:
+      - Plan cites DubbingEngine and tts_normalizer line areas.
+      - No behavior change in dubbing_service.py for this job.
+    deliverables:
+      - .agents/reports/JOB-010.md
+
+  - id: JOB-011
+    title: Hosted fine-tune runner
+    epic: voice-training
+    priority: P2
+    assigned_by: project-owner
+    owner: model-training
+    reviewer: cto
+    status: BLOCKED
+    dependencies: []
+    skills:
+      - model-training
+    scope:
+      - src/claynext/voice_training/training/
+      - src/claynext/models/khmer_spoken/training/
+    requirements:
+      - Blocked until the Project Owner approves a training spend and a licensed gold set exists.
+      - Dry-run scaffolding already exists. Do not call a hosted tuning API before approval.
+    acceptance_criteria:
+      - Status stays BLOCKED until an owner decision is filed under .agents/decisions/.
+    deliverables: []
+
+  - id: JOB-012
+    title: Rust near-dup MinHash behind the AI adapter
+    epic: khmer-platform
+    priority: P2
+    assigned_by: cto
+    owner: rust-lead
+    reviewer: dataset-engineer
+    status: BACKLOG
+    dependencies: []
+    skills:
+      - rust-development
+      - dataset-engineering
+    scope:
+      - backends/ai-runtime/
+      - src/claynext/adapters/
+      - src/claynext/models/datasets/dedupe.py
+    requirements:
+      - Later. Python dedupe is enough until datasets are large or dedupe is slow.
+      - When started, add claynext-ai near-dups and keep the Python fallback in the adapter.
+    acceptance_criteria:
+      - Not scheduled while dedupe of current sets stays fast.
+    deliverables: []

@@ -1,0 +1,15 @@
+---
+description: Rust backends and editor crates — no new hot-path logic in Python
+globs: backends/**/*,crates/**/*
+alwaysApply: false
+---
+
+# Rust engine
+
+Follow `.cursor/rules/rust-python-architecture.mdc` and `.cursor/rules/rust-backends-crates.mdc`. Procedure: `.agents/skills/claynext-rust-core/SKILL.md`.
+
+- Binaries: `backends/ai-runtime` (`claynext-ai`), `backends/ffmpeg` (`claynext-ffmpeg`), `backends/cpu`, `backends/hardware-codecs`, `backends/wgpu`.
+- Shared domain: `crates/editor-*` (dubbing plan, alignment, types).
+- Timing, speech quota, prompts, VAD, OCR filter, burned-in caption scan, PCM decode, tempo align, ducking, probe/export: extend Rust, then `rust_bridge`, then the domain adapter.
+- Do not copy that logic into Python. Do not add PyO3. Adapters keep a Python fallback when the binary is missing.
+- Build into repo `target/debug` or `target/release`.

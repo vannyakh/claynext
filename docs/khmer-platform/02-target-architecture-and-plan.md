@@ -49,11 +49,11 @@ Why `models/datasets` and not top-level `datasets/`: domain packages already liv
 | `tests/python/test_datasets.py` | 19 tests incl. real KSLD import | 1 | done |
 | `models/llm_gateway/*` | Gateway + OpenAI-compatible provider | 2 | done |
 | `tests/python/test_llm_gateway.py` | 10 tests, fake transport | 2 | done |
-| `models/llm_chat.py` | Re-implement `chat_text` on the gateway (same signature) | 2 | backlog |
-| `models/translate_service.py` | `_chat_batch` → gateway; keep Gemini/Ollama paths until they have providers | 2 | backlog |
-| `models/khmer_localization/skill.py` | Accept a gateway provider; record trace ids in the run log | 3 | backlog |
-| `models/khmer_localization/evaluator.py` | Accept dataset records (test split) as cases, not only the 100 JSONL cases | 3 | backlog |
-| `models/evaluation/` | Batch eval runner: dataset version × provider × prompt version → scores + cost | 3 | backlog |
+| `models/llm_chat.py` | Re-implement `chat_text` on the gateway (same signature) | 2 | done |
+| `models/translate_service.py` | `_chat_batch` → gateway; keep Gemini/Ollama paths until they have providers | 2 | done (`chat_text`) |
+| `models/khmer_localization/skill.py` | Accept a gateway provider; record trace ids in the run log | 3 | done |
+| `models/khmer_localization/evaluator.py` | Accept dataset records (test split) as cases, not only the 100 JSONL cases | 3 | done (`record_to_case`) |
+| `models/evaluation/` | Batch eval runner: dataset version × provider × prompt version → scores + cost | 3 | done |
 | `models/dubbing_service.py` | Use `normalize_for_tts` / stored `tts_text` for Khmer | 4 | backlog |
 | `gui/views/…` dataset page | Read-only report + review queue via `Worker`/`QThreadPool`, theme tokens | 4 | backlog |
 

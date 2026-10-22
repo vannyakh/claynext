@@ -1,19 +1,26 @@
-"""One chat call through a stored provider key, with the same rotation as Gemini."""
+"""One chat call through a stored provider key, with the same rotation as Gemini.
+
+The call goes through the provider gateway (retries, schema checks, traces). The
+return value is still the reply text. ``last_chat()`` is the gateway response for
+the call on this thread, including its trace id.
+"""
 from __future__ import annotations
 
+import contextvars
 import json
-import urllib.error
-import urllib.request
 
 from claynext.models.llm_keys import (
     InvalidKeyError,
     RateLimitError,
     get_key_pool,
-    is_rate_limit,
-    note_llm_usage,
-    parse_retry_after,
 )
-from claynext.models.llm_providers import CHAT_PROVIDERS
+
+_LAST: contextvars.ContextVar = contextvars.ContextVar("claynext_last_chat", default=None)
+
+
+def last_chat():
+    """Gateway response from the latest ``chat_text`` on this thread, or None."""
+    return _LAST.get()
 
 
 def json_from_text(text: str):
@@ -27,45 +34,37 @@ def json_from_text(text: str):
     return json.loads(raw)
 
 
+def chat_through(gateway, prompt: str, *, temperature: float = 0.4) -> str:
+    """One prompt through an existing gateway provider. Same text result as ``chat_text``."""
+    from claynext.models.llm_gateway import ChatMessage, ChatRequest
+    from claynext.models.llm_gateway.base import ProviderError
+
+    request = ChatRequest(
+        messages=[ChatMessage("user", prompt)],
+        temperature=temperature,
+    )
+    try:
+        response = gateway.complete(request)
+    except ProviderError as exc:
+        raise _legacy_error(exc) from exc
+    _LAST.set(response)
+    return response.text
+
+
 def chat_text(provider: str, prompt: str, *, progress=None, temperature: float = 0.4) -> str:
-    """Send one prompt. The pool rotates keys and logs the model and tokens."""
-    spec = CHAT_PROVIDERS.get(provider)
-    if not spec:
-        raise RuntimeError(f"Unknown LLM provider: {provider}")
-    model = str(spec["model"])
-    url = str(spec["base"]).rstrip("/") + "/chat/completions"
+    """Send one prompt. The pool rotates keys; the gateway retries and records a trace."""
+    from claynext.models.llm_gateway import get_provider
 
-    def _do(api_key: str) -> str:
-        body = {
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": temperature,
-        }
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(body).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}",
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=90) as resp:
-                raw = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            if exc.code in (401, 403):
-                raise InvalidKeyError(f"{model}: {exc.code}") from exc
-            if is_rate_limit(exc.code, detail):
-                raise RateLimitError(
-                    f"{model}: rate limited", parse_retry_after(exc.headers, detail)
-                ) from exc
-            raise RuntimeError(f"{model}: {exc.code} {detail[:400]}") from exc
-        note_llm_usage(model, raw if isinstance(raw, dict) else None)
-        try:
-            return str(raw["choices"][0]["message"]["content"] or "")
-        except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError(f"{model} returned no text.") from exc
+    def runner(provider_id: str, fn):
+        return get_key_pool().call_with_rotation(provider_id, fn, progress=progress)
 
-    return get_key_pool().call_with_rotation(provider, _do, progress=progress)
+    return chat_through(get_provider(provider, key_runner=runner), prompt, temperature=temperature)
+
+
+def _legacy_error(exc) -> Exception:
+    """Map a gateway error back to the exceptions ``chat_text`` callers already catch."""
+    if exc.code == "rate_limit":
+        return RateLimitError(str(exc), exc.retry_after)
+    if exc.code == "auth":
+        return InvalidKeyError(str(exc))
+    return RuntimeError(str(exc))

@@ -1,0 +1,204 @@
+# Shipped work and this foundation pass. Evidence is file paths, not a test log from this session.
+jobs:
+  - id: JOB-101
+    title: Dialogue dataset manager
+    epic: khmer-platform
+    priority: P0
+    assigned_by: project-owner
+    owner: dataset-engineer
+    reviewer: qa-engineer
+    status: DONE
+    dependencies: []
+    skills:
+      - dataset-engineering
+    scope:
+      - src/claynext/models/datasets/
+      - src/claynext/cli/cmd_dataset.py
+    requirements:
+      - Import, validate, dedupe, split, version, review sheet, promote, SFT export.
+    acceptance_criteria:
+      - Modules exist. Backlog doc marks the matching acceptance tests pass.
+    deliverables:
+      - src/claynext/models/datasets/
+      - src/claynext/cli/cmd_dataset.py
+      - docs/khmer-platform/03-backlog-and-acceptance.md
+    evidence:
+      - src/claynext/models/datasets/store.py
+      - src/claynext/models/datasets/promote.py
+      - src/claynext/cli/cmd_dataset.py
+      - tests/python/test_datasets.py
+    notes: This setup session did not re-run the test script.
+
+  - id: JOB-102
+    title: LLM gateway and chat_text
+    epic: khmer-platform
+    priority: P0
+    assigned_by: project-owner
+    owner: ai-lead
+    reviewer: qa-engineer
+    status: DONE
+    dependencies: []
+    skills:
+      - code-review
+    scope:
+      - src/claynext/models/llm_gateway/
+      - src/claynext/models/llm_chat.py
+    requirements:
+      - Structured chat with retries and traces. chat_text stays the caller entry.
+    acceptance_criteria:
+      - Gateway package and chat_text exist. Backlog items 1 and 3 marked done.
+    deliverables:
+      - src/claynext/models/llm_gateway/
+      - src/claynext/models/llm_chat.py
+    evidence:
+      - src/claynext/models/llm_gateway/base.py
+      - src/claynext/models/llm_chat.py
+      - tests/python/test_llm_gateway.py
+    notes: This setup session did not re-run the test script.
+
+  - id: JOB-103
+    title: Khmer localization skill
+    epic: khmer-platform
+    priority: P0
+    assigned_by: project-owner
+    owner: khmer-linguist
+    reviewer: ai-lead
+    status: DONE
+    dependencies: []
+    skills:
+      - khmer-localization
+    scope:
+      - src/claynext/models/khmer_localization/
+      - src/claynext/prompts/dictionaries/khmer/
+    requirements:
+      - Pronouns, post-check, evaluator, and tts_normalizer on the gateway path when opted in.
+    acceptance_criteria:
+      - Skill package exists. Dictionaries remain pending native review.
+    deliverables:
+      - src/claynext/models/khmer_localization/skill.py
+      - docs/khmer-localization/DESIGN.md
+    evidence:
+      - src/claynext/models/khmer_localization/skill.py
+      - src/claynext/prompts/dictionaries/khmer/pronouns.yaml
+      - tests/python/test_khmer_localization.py
+    notes: This setup session did not re-run the test script.
+
+  - id: JOB-104
+    title: Evaluation runner
+    epic: khmer-platform
+    priority: P0
+    assigned_by: project-owner
+    owner: ai-lead
+    reviewer: khmer-linguist
+    status: DONE
+    dependencies: []
+    skills:
+      - khmer-localization
+    scope:
+      - src/claynext/models/evaluation/runner.py
+    requirements:
+      - Score a dataset test split and write a report under data/outputs/eval.
+    acceptance_criteria:
+      - run_evaluation is defined. Cost is not an invented price list.
+    deliverables:
+      - src/claynext/models/evaluation/runner.py
+    evidence:
+      - src/claynext/models/evaluation/runner.py
+      - tests/python/test_evaluation.py
+    notes: This setup session did not re-run the test script.
+
+  - id: JOB-105
+    title: Voice-training dry-run scaffold
+    epic: voice-training
+    priority: P0
+    assigned_by: project-owner
+    owner: model-training
+    reviewer: tts-engineer
+    status: DONE
+    dependencies: []
+    skills:
+      - model-training
+    scope:
+      - src/claynext/voice_training/
+    requirements:
+      - Ingestion, rights checks, and a trainer that dry-runs without a hosted job.
+    acceptance_criteria:
+      - tts_trainer supports dry_run. Hosted fine-tune remains JOB-011 BLOCKED.
+    deliverables:
+      - src/claynext/voice_training/training/tts_trainer.py
+      - docs/voice_training/README.md
+      - docs/guides/m4-mac-mini-start.md
+    evidence:
+      - src/claynext/voice_training/training/tts_trainer.py
+      - src/claynext/voice_training/ingestion/rights_validator.py
+      - tests/python/test_voice_training.py
+    notes: Scaffold only. This setup session did not train a model or re-run tests.
+
+  - id: JOB-002
+    title: Cursor rules and agent role files
+    epic: agent-foundation
+    priority: P0
+    assigned_by: project-owner
+    owner: cto
+    reviewer: qa-engineer
+    status: DONE
+    dependencies: []
+    skills:
+      - task-planning
+    scope:
+      - .cursor/rules/
+      - .cursor/agents/
+      - .cursor/skills/
+    requirements:
+      - Always-on governance and CTO rules. Glob rules for architecture, Rust, Python AI, Khmer, data, TTS, UI, tests, and secrets.
+      - Role files for the eleven owners. Skills for audit, planning, Rust, Khmer, data, training, TTS, review, and validation.
+    acceptance_criteria:
+      - Existing rust-python-architecture.mdc and claynext-* skills were left in place.
+      - New rules are .mdc with description and alwaysApply or globs.
+    deliverables:
+      - .cursor/rules/00-project-governance.mdc
+      - .cursor/rules/01-cto-orchestration.mdc
+      - .cursor/agents/cto.md
+      - .cursor/skills/repository-audit/SKILL.md
+    evidence:
+      - .cursor/rules/00-project-governance.mdc
+      - .cursor/rules/10-security-licensing.mdc
+      - .cursor/agents/qa-engineer.md
+      - .cursor/skills/release-validation/SKILL.md
+    notes: Operating rules are the .mdc files. Role markdown is not a native subagent registration by itself.
+
+  - id: JOB-003
+    title: Job registry
+    epic: agent-foundation
+    priority: P0
+    assigned_by: project-owner
+    owner: cto
+    reviewer: qa-engineer
+    status: DONE
+    dependencies:
+      - JOB-002
+    skills:
+      - task-planning
+    scope:
+      - .agents/jobs/
+      - .agents/templates/
+      - .agents/handoffs/
+      - .agents/reports/
+      - .agents/decisions/
+    requirements:
+      - Backlog of remaining real work, empty active list, completed list of shipped modules.
+    acceptance_criteria:
+      - JOB-001 and JOB-004 through JOB-010 are READY or later, not marked done.
+      - JOB-011 hosted fine-tune is BLOCKED.
+      - active.yaml has no jobs.
+    deliverables:
+      - .agents/jobs/backlog.yaml
+      - .agents/jobs/active.yaml
+      - .agents/jobs/completed.yaml
+      - .agents/templates/task.yaml
+      - .agents/templates/handoff.md
+    evidence:
+      - .agents/jobs/backlog.yaml
+      - .agents/jobs/completed.yaml
+      - .agents/templates/handoff.md
+    notes: Registry only. No product feature was implemented with this job.
