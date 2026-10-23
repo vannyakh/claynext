@@ -546,6 +546,7 @@ class ASREngine:
                 "vad_filter": bool(vad_filter),
                 "beam_size": max(1, min(10, int(beam_size))),
                 "word_timestamps": bool(word_timestamps),
+                "log_progress": False,
             }
             # Cover the whole movie, then drop low-confidence junk below.
             transcribe_kwargs["condition_on_previous_text"] = False
@@ -564,32 +565,36 @@ class ASREngine:
                 segments_iter, info = model.transcribe(wav_path, **transcribe_kwargs)
             except TypeError:
                 transcribe_kwargs.pop("clip_timestamps", None)
+                transcribe_kwargs.pop("log_progress", None)
                 segments_iter, info = model.transcribe(wav_path, **transcribe_kwargs)
             rows: List[Dict[str, Any]] = []
-            for i, seg in enumerate(segments_iter, start=1):
-                text = (seg.text or "").strip()
-                if not text:
-                    continue
-                avg_lp = float(getattr(seg, "avg_logprob", 0.0) or 0.0)
-                no_speech = float(getattr(seg, "no_speech_prob", 0.0) or 0.0)
-                if not transcript_keep(text, avg_logprob=avg_lp, no_speech_prob=no_speech):
-                    continue
-                row_item: Dict[str, Any] = {
-                    "id": i,
-                    "start": _fmt_ts(seg.start or 0),
-                    "end": _fmt_ts(seg.end or 0),
-                    "speaker": "",
-                    "text": text,
-                    "confidence": transcript_confidence(avg_lp, no_speech),
-                }
-                if word_timestamps and hasattr(seg, "words") and seg.words:
-                    row_item["words"] = [
-                        {"word": w.word, "start": w.start, "end": w.end, "prob": getattr(w, "probability", 1.0)}
-                        for w in seg.words
-                    ]
-                rows.append(row_item)
-                if progress_callback and i % 4 == 0:
-                    progress_callback(min(90, 35 + i), f"Transcribed {i} line(s)…")
+            from claynext.utils.library_progress import library_stage
+
+            with library_stage("Transcribing"):
+                for i, seg in enumerate(segments_iter, start=1):
+                    text = (seg.text or "").strip()
+                    if not text:
+                        continue
+                    avg_lp = float(getattr(seg, "avg_logprob", 0.0) or 0.0)
+                    no_speech = float(getattr(seg, "no_speech_prob", 0.0) or 0.0)
+                    if not transcript_keep(text, avg_logprob=avg_lp, no_speech_prob=no_speech):
+                        continue
+                    row_item: Dict[str, Any] = {
+                        "id": i,
+                        "start": _fmt_ts(seg.start or 0),
+                        "end": _fmt_ts(seg.end or 0),
+                        "speaker": "",
+                        "text": text,
+                        "confidence": transcript_confidence(avg_lp, no_speech),
+                    }
+                    if word_timestamps and hasattr(seg, "words") and seg.words:
+                        row_item["words"] = [
+                            {"word": w.word, "start": w.start, "end": w.end, "prob": getattr(w, "probability", 1.0)}
+                            for w in seg.words
+                        ]
+                    rows.append(row_item)
+                    if progress_callback and i % 4 == 0:
+                        progress_callback(min(90, 35 + i), f"Transcribed {i} line(s)…")
 
         if not rows:
             raise RuntimeError("No speech found in this media.")

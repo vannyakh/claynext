@@ -42,6 +42,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from claynext.utils.stderr_filter import install_ffmpeg_mf_stderr_filter
+
+    install_ffmpeg_mf_stderr_filter()
     parser = build_parser()
     args = parser.parse_args(argv)
     func = getattr(args, "func", None)

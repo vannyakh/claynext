@@ -8,6 +8,7 @@ import threading
 from pathlib import Path
 
 from claynext.utils.paths import BASE_DIR
+from claynext.utils.process_env import child_environ
 
 logger = logging.getLogger("claynext.adapters.rust")
 
@@ -67,6 +68,7 @@ def _run_rust(
         check=check,
         timeout=timeout,
         creationflags=creationflags,
+        env=child_environ(),
     )
 
 
@@ -93,6 +95,7 @@ def _run_rust_stream(
         errors="replace",
         bufsize=1,
         creationflags=creationflags,
+        env=child_environ(),
     )
     stderr_parts: list[str] = []
 

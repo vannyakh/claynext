@@ -1,4 +1,4 @@
-"""Filter benign FFmpeg / Media Foundation probe noise on Windows stderr."""
+"""Filter benign stderr: codec probes, malloc-stack noise, and tqdm bars."""
 from __future__ import annotations
 
 import os
@@ -6,22 +6,10 @@ import sys
 import threading
 from typing import TextIO
 
-# Qt Multimedia's FFmpeg backend probes h264_mf / hevc_mf at startup.
-# Many PCs have H.264 MF but no HEVC MF — FFmpeg then prints ERROR lines that
-# look like failures even though the app falls back cleanly.
-_DROP_FRAGMENTS = (
-    b"hevc_mf @",
-    b"could not find any MFT for the given media type",
-    b"could not create MFT",
-    b"[h264_mf @",  # informational "MFT name: 'H264 Encoder MFT'"
-)
+from claynext.utils.console_noise import sanitize_console_bytes, sanitize_console_text
 
 _installed = False
 _real_stderr_fd: int | None = None
-
-
-def _should_drop(line: bytes) -> bool:
-    return any(frag in line for frag in _DROP_FRAGMENTS)
 
 
 def _pump_filtered(read_fd: int, write_fd: int) -> None:
@@ -36,10 +24,13 @@ def _pump_filtered(read_fd: int, write_fd: int) -> None:
                 while b"\n" in buf:
                     line, buf = buf.split(b"\n", 1)
                     line += b"\n"
-                    if not _should_drop(line):
-                        os.write(write_fd, line)
-            if buf and not _should_drop(buf):
-                os.write(write_fd, buf)
+                    kept = sanitize_console_bytes(line)
+                    if kept:
+                        os.write(write_fd, kept)
+            if buf:
+                kept = sanitize_console_bytes(buf)
+                if kept:
+                    os.write(write_fd, kept)
     except Exception:
         pass
 
@@ -53,16 +44,11 @@ class _FilteredTextIO:
     def write(self, s: str) -> int:
         if not s:
             return 0
-        data = s.encode("utf-8", errors="replace") if isinstance(s, str) else s
-        if _should_drop(data if isinstance(data, bytes) else str(data).encode()):
+        text = s if isinstance(s, str) else s.decode("utf-8", "replace")
+        cleaned = sanitize_console_text(text)
+        if not cleaned:
             return len(s)
-        # Drop only matching lines when multi-line batches arrive.
-        if "\n" in s:
-            kept = [ln for ln in s.splitlines(keepends=True) if not _should_drop(ln.encode("utf-8", "replace"))]
-            if not kept:
-                return len(s)
-            return self._real.write("".join(kept))
-        return self._real.write(s)
+        return self._real.write(cleaned)
 
     def flush(self) -> None:
         self._real.flush()
@@ -78,7 +64,11 @@ class _FilteredTextIO:
 
 
 def install_ffmpeg_mf_stderr_filter() -> None:
-    """Install once before QApplication — hides missing HEVC MF probe noise."""
+    """Install once before QApplication.
+
+    Hides missing HEVC probe lines, the macOS malloc-stack warning, and raw
+    tqdm meters. Library progress is reported through the job status callback.
+    """
     global _installed, _real_stderr_fd
     if _installed:
         return
@@ -110,4 +100,14 @@ def install_ffmpeg_mf_stderr_filter() -> None:
         thread.start()
     except Exception:
         # Console redirect unavailable (e.g. some frozen builds) — Python filter still helps.
+        pass
+
+    # After the filter is up, so unsetting the variable cannot print the warning.
+    try:
+        from claynext.utils.library_progress import install_quiet_tqdm
+        from claynext.utils.process_env import scrub_malloc_stack_logging
+
+        scrub_malloc_stack_logging()
+        install_quiet_tqdm()
+    except Exception:
         pass
