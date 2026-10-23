@@ -1,0 +1,14 @@
+---
+description: Khmer localization, prompt dictionaries, and human review for gold
+globs: src/claynext/models/khmer_localization/**/*.py,src/claynext/prompts/**/*,docs/khmer-localization/**/*,docs/khmer-platform/**/*,docs/khmer_spoken/**/*
+alwaysApply: false
+---
+
+# Khmer localization
+
+Code: `src/claynext/models/khmer_localization/` (pronouns, lexicon, post-check, `tts_normalizer`, evaluator, `skill.py`). Design: `docs/khmer-localization/DESIGN.md`. Dictionaries: `src/claynext/prompts/dictionaries/khmer/` (marked `pending_native_review`).
+
+- Do not invent dialect labels, slang, or profanity. If a form is not in the dictionary or a reviewed record, mark it unverified.
+- `gold` needs a human reviewer id, a timestamp, and a licence. Synthetic or unreviewed rows cannot be gold (`models/datasets/promote.py`).
+- Few-shot lines must come from reviewed records, not from the model (JOB-005).
+- `tts_text` comes from `tts_normalizer`. Wiring it into `DubbingEngine` is JOB-010, not an implicit edit.

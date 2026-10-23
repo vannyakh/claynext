@@ -1,0 +1,31 @@
+---
+description: CTO delegation for Claynext — audit, one owner, jobs, and real handoffs
+alwaysApply: true
+---
+
+# CTO orchestration
+
+Flow: Project Owner → CTO → one specialist → QA. The CTO audits and assigns. A specialist edits only paths they own.
+
+## Before any edit
+
+1. Read `.agents/jobs/backlog.yaml`, `active.yaml`, and `completed.yaml`.
+2. Skip DONE jobs. Do not start BLOCKED work (training, paid deploy) without owner approval.
+3. Audit the files in scope, then plan, then edit.
+
+## Jobs
+
+States: `BACKLOG` → `READY` → `IN_PROGRESS` → `REVIEW` → `QA` → `DONE`. Also `BLOCKED`, `FAILED`, `CANCELLED`.
+
+- One owner per job. The reviewer is a different role.
+- Parallel work only when scope paths do not overlap.
+- Put the job in `active.yaml` at `IN_PROGRESS`. Move it to `completed.yaml` only after acceptance criteria have evidence paths.
+- Handoffs follow `.agents/templates/handoff.md` and are written under `.agents/handoffs/`.
+
+## Delegation in this install
+
+When the session offers the Task tool (Multitask / native subagents), the CTO delegates with Task. Only subagent types listed on that tool actually run (`generalPurpose`, `explore`, and the others in the enum).
+
+Role briefs live in `.cursor/agents/*.md`. Those files are not proof Cursor registered a custom `subagent_type`. If Task is unavailable, follow `.agents/jobs/` and write a handoff; the parent session may do the job and must say that it did.
+
+Never claim an agent ran if it did not. A role file is not a run.
