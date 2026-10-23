@@ -97,7 +97,12 @@ class Worker(QRunnable):
                 self.signals.started.emit()
             except RuntimeError:
                 return
-            res = self.fn(*self.args, **self.kwargs)
+            from claynext.utils.library_progress import bind_job_progress
+
+            with bind_job_progress(self.kwargs.get("progress_callback")) as wrapped:
+                if "progress_callback" in self.kwargs:
+                    self.kwargs["progress_callback"] = wrapped
+                res = self.fn(*self.args, **self.kwargs)
             if self._progress_pending is not None:
                 self._flush_progress(self._progress_pending)
             try:

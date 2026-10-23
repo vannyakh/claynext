@@ -21,6 +21,12 @@ def _tts_engine():
     return TTSEngine
 
 
+def _dev_install_command() -> str:
+    from claynext.models.features import dev_environment_sync_command
+
+    return dev_environment_sync_command()
+
+
 def collect_job_gaps(
     *,
     voice_id: str | None = None,
@@ -48,7 +54,7 @@ def collect_job_gaps(
                     "label": "VoxCPM2",
                     "kind": "package",
                     "blocking": True,
-                    "command": "uv sync --extra voxcpm",
+                    "command": _dev_install_command(),
                     "detail": (
                         "Selected voice needs VoxCPM2 (openbmb/VoxCPM2).\n"
                         "Install the voxcpm extra, then restart Claynext."
@@ -90,7 +96,7 @@ def collect_job_gaps(
                     "label": "OmniVoice",
                     "kind": "package",
                     "blocking": True,
-                    "command": "uv sync --extra omnivoice",
+                    "command": _dev_install_command(),
                     "detail": (
                         "Selected voice needs OmniVoice (k2-fsa/OmniVoice).\n"
                         "Install the omnivoice extra, then restart Claynext."
@@ -151,7 +157,7 @@ def collect_job_gaps(
                     "label": "Faster-Whisper ASR",
                     "kind": "package",
                     "blocking": True,
-                    "command": "uv sync",
+                    "command": _dev_install_command(),
                     "detail": "Local transcription needs faster-whisper. Sync dependencies, then retry.",
                     "repo": "",
                 }
@@ -166,7 +172,7 @@ def collect_job_gaps(
                     "label": "WhisperX",
                     "kind": "package",
                     "blocking": False,
-                    "command": "uv sync --extra whisperx",
+                    "command": _dev_install_command(),
                     "detail": "Prefer WhisperX is on, but WhisperX is not installed. Dub will use Faster-Whisper.",
                     "repo": "",
                 }
@@ -179,7 +185,7 @@ def collect_job_gaps(
                 "label": "Demucs stem bed",
                 "kind": "package",
                 "blocking": True,
-                "command": "uv sync --extra demucs",
+                "command": _dev_install_command(),
                 "detail": (
                     "Stem separation is set to Demucs, but no Demucs backend is installed.\n"
                     "Install Demucs (or Demucs MLX on Apple Silicon), or switch stems to Auto / FFmpeg."
@@ -204,6 +210,7 @@ def format_gaps_message(gaps: list[dict[str, Any]]) -> str:
     if not gaps:
         return ""
     lines = ["This job needs pieces that are not ready yet:\n"]
+    commands: list[str] = []
     for g in gaps:
         mark = "•" if g.get("blocking") else "○"
         lines.append(f"{mark} {g.get('label')}")
@@ -212,17 +219,24 @@ def format_gaps_message(gaps: list[dict[str, Any]]) -> str:
             for part in detail.splitlines():
                 lines.append(f"  {part}")
         cmd = str(g.get("command") or "").strip()
-        if cmd:
-            lines.append(f"  Install: {cmd}")
+        if cmd and cmd not in commands:
+            commands.append(cmd)
         repo = str(g.get("repo") or "").strip()
         if repo and g.get("kind") == "model":
             lines.append(f"  Model: {repo}")
+        lines.append("")
+    if commands:
+        lines.append("Install:")
+        lines.extend(commands)
         lines.append("")
     lines.append("Install or download the missing environment, then try again.")
     return "\n".join(lines).strip()
 
 
 def primary_install_command(gaps: list[dict[str, Any]]) -> str:
+    """Command for every package gap: one inexact sync of the full extra set."""
+    if any(str(g.get("kind") or "") == "package" and str(g.get("command") or "").strip() for g in gaps):
+        return _dev_install_command()
     for g in gaps:
         cmd = str(g.get("command") or "").strip()
         if cmd:

@@ -454,7 +454,7 @@ class ScriptEditTools:
             self.log.success("Common-Voice gender · TTS voices matched per character")
         else:
             self.log.success(
-                "Gender auto-detect (text cues) · install uv sync --extra gender for audio model"
+                "Gender auto-detect (text cues) · install the gender extra from Settings → Features"
             )
 
     def _on_gender_detect_error(self, err):

@@ -114,7 +114,10 @@ def build_dubbing_plan(
     ping(12, f"WhisperX {whisper_model_name} on {device} ({compute_type})…")
     asr_model = whisperx.load_model(whisper_model_name, device, compute_type=compute_type)
     ping(20, "Transcribing vocal stem…")
-    transcription_result = asr_model.transcribe(audio, batch_size=batch_size)
+    from claynext.utils.library_progress import library_stage
+
+    with library_stage("Transcribing"):
+        transcription_result = asr_model.transcribe(audio, batch_size=batch_size)
     detected_lang = transcription_result.get("language", "en")
     del asr_model
     gc.collect()
@@ -130,14 +133,15 @@ def build_dubbing_plan(
         align_model, align_metadata = whisperx.load_align_model(
             language_code=detected_lang, device=device
         )
-        aligned_result = whisperx.align(
-            transcription_result["segments"],
-            align_model,
-            align_metadata,
-            audio,
-            device,
-            return_char_alignments=False,
-        )
+        with library_stage("Aligning"):
+            aligned_result = whisperx.align(
+                transcription_result["segments"],
+                align_model,
+                align_metadata,
+                audio,
+                device,
+                return_char_alignments=False,
+            )
         del align_model
         gc.collect()
         try:
@@ -152,11 +156,12 @@ def build_dubbing_plan(
 
     ping(62, "PyAnnote speaker diarization…")
     diarize_model = DiarizationPipeline(use_auth_token=token, device=device)
-    diarize_segments = diarize_model(
-        audio,
-        min_speakers=min_speakers,
-        max_speakers=max_speakers,
-    )
+    with library_stage("Diarizing"):
+        diarize_segments = diarize_model(
+            audio,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+        )
     final_result = whisperx.assign_word_speakers(diarize_segments, aligned_result)
     del diarize_model
     gc.collect()

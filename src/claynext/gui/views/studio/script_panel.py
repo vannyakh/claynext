@@ -102,15 +102,21 @@ def _format_script_error(hint: str) -> str:
     text = str(hint or "").strip()
     low = text.lower()
     if "omnivoice" in low and ("not installed" in low or "extra omnivoice" in low):
+        from claynext.models.features import dev_environment_sync_command
+
         return (
             "OmniVoice is not installed.\n"
-            "Run: uv sync --extra omnivoice\n"
+            "Settings → Features → Install all missing\n"
+            f"{dev_environment_sync_command()}\n"
             "Or pick Edge / Kitten voices in Settings and retry."
         )
     if "voxcpm" in low and ("not installed" in low or "extra voxcpm" in low):
+        from claynext.models.features import dev_environment_sync_command
+
         return (
             "VoxCPM2 is not installed.\n"
-            "Run: uv sync --extra voxcpm\n"
+            "Settings → Features → Install all missing\n"
+            f"{dev_environment_sync_command()}\n"
             "Or pick Edge / Kitten voices in Settings and retry."
         )
     if "choose an edge" in low or "no voice" in low:

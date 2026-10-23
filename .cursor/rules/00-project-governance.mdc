@@ -1,0 +1,21 @@
+---
+description: Owner goals, secrets, approvals, and data layout for every Claynext session
+alwaysApply: true
+---
+
+# Project governance
+
+Claynext Studio is a PySide6 desktop app (`src/claynext`, Python 3.12, `uv`) with Rust tools in `backends/` and `crates/editor-*`. Preserve a working app. Do not migrate the UI, add PyO3, or rewrite the shell.
+
+## Owner goals
+
+- Improve Khmer localization, datasets, and dubbing on the stack already in the repo.
+- Read `.agents/jobs/` before starting work. Do not redo a job marked DONE.
+
+## Hard stops
+
+- No secrets in git, logs, prompts, or reports. Keys stay in the environment or the local pool (`src/claynext/models/llm_keys.py`).
+- No paid training, hosted fine-tune, or deploy without explicit Project Owner approval.
+- No fabricated tests, metrics, or claims that an agent ran. Cite a command and its output, or say it was not run.
+- Weights, exports, and datasets go under `data/` (`data/models/`, `data/outputs/`, `data/datasets/`). Never the repo root.
+- Do not commit or push unless the owner asks.

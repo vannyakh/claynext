@@ -1,0 +1,394 @@
+# Shipped work and this foundation pass. Evidence is file paths, not a test log from this session.
+jobs:
+  - id: JOB-101
+    title: Dialogue dataset manager
+    epic: khmer-platform
+    priority: P0
+    assigned_by: project-owner
+    owner: dataset-engineer
+    reviewer: qa-engineer
+    status: DONE
+    dependencies: []
+    skills:
+      - dataset-engineering
+    scope:
+      - src/claynext/models/datasets/
+      - src/claynext/cli/cmd_dataset.py
+    requirements:
+      - Import, validate, dedupe, split, version, review sheet, promote, SFT export.
+    acceptance_criteria:
+      - Modules exist. Backlog doc marks the matching acceptance tests pass.
+    deliverables:
+      - src/claynext/models/datasets/
+      - src/claynext/cli/cmd_dataset.py
+      - docs/khmer-platform/03-backlog-and-acceptance.md
+    evidence:
+      - src/claynext/models/datasets/store.py
+      - src/claynext/models/datasets/promote.py
+      - src/claynext/cli/cmd_dataset.py
+      - tests/python/test_datasets.py
+    notes: This setup session did not re-run the test script.
+
+  - id: JOB-102
+    title: LLM gateway and chat_text
+    epic: khmer-platform
+    priority: P0
+    assigned_by: project-owner
+    owner: ai-lead
+    reviewer: qa-engineer
+    status: DONE
+    dependencies: []
+    skills:
+      - code-review
+    scope:
+      - src/claynext/models/llm_gateway/
+      - src/claynext/models/llm_chat.py
+    requirements:
+      - Structured chat with retries and traces. chat_text stays the caller entry.
+    acceptance_criteria:
+      - Gateway package and chat_text exist. Backlog items 1 and 3 marked done.
+    deliverables:
+      - src/claynext/models/llm_gateway/
+      - src/claynext/models/llm_chat.py
+    evidence:
+      - src/claynext/models/llm_gateway/base.py
+      - src/claynext/models/llm_chat.py
+      - tests/python/test_llm_gateway.py
+    notes: This setup session did not re-run the test script.
+
+  - id: JOB-103
+    title: Khmer localization skill
+    epic: khmer-platform
+    priority: P0
+    assigned_by: project-owner
+    owner: khmer-linguist
+    reviewer: ai-lead
+    status: DONE
+    dependencies: []
+    skills:
+      - khmer-localization
+    scope:
+      - src/claynext/models/khmer_localization/
+      - src/claynext/prompts/dictionaries/khmer/
+    requirements:
+      - Pronouns, post-check, evaluator, and tts_normalizer on the gateway path when opted in.
+    acceptance_criteria:
+      - Skill package exists. Dictionaries remain pending native review.
+    deliverables:
+      - src/claynext/models/khmer_localization/skill.py
+      - docs/khmer-localization/DESIGN.md
+    evidence:
+      - src/claynext/models/khmer_localization/skill.py
+      - src/claynext/prompts/dictionaries/khmer/pronouns.yaml
+      - tests/python/test_khmer_localization.py
+    notes: This setup session did not re-run the test script.
+
+  - id: JOB-104
+    title: Evaluation runner
+    epic: khmer-platform
+    priority: P0
+    assigned_by: project-owner
+    owner: ai-lead
+    reviewer: khmer-linguist
+    status: DONE
+    dependencies: []
+    skills:
+      - khmer-localization
+    scope:
+      - src/claynext/models/evaluation/runner.py
+    requirements:
+      - Score a dataset test split and write a report under data/outputs/eval.
+    acceptance_criteria:
+      - run_evaluation is defined. Cost is not an invented price list.
+    deliverables:
+      - src/claynext/models/evaluation/runner.py
+    evidence:
+      - src/claynext/models/evaluation/runner.py
+      - tests/python/test_evaluation.py
+    notes: This setup session did not re-run the test script.
+
+  - id: JOB-105
+    title: Voice-training dry-run scaffold
+    epic: voice-training
+    priority: P0
+    assigned_by: project-owner
+    owner: model-training
+    reviewer: tts-engineer
+    status: DONE
+    dependencies: []
+    skills:
+      - model-training
+    scope:
+      - src/claynext/voice_training/
+    requirements:
+      - Ingestion, rights checks, and a trainer that dry-runs without a hosted job.
+    acceptance_criteria:
+      - tts_trainer supports dry_run. Hosted fine-tune remains JOB-011 BLOCKED.
+    deliverables:
+      - src/claynext/voice_training/training/tts_trainer.py
+      - docs/voice_training/README.md
+      - docs/guides/m4-mac-mini-start.md
+    evidence:
+      - src/claynext/voice_training/training/tts_trainer.py
+      - src/claynext/voice_training/ingestion/rights_validator.py
+      - tests/python/test_voice_training.py
+    notes: Scaffold only. This setup session did not train a model or re-run tests.
+
+  - id: JOB-002
+    title: Cursor rules and agent role files
+    epic: agent-foundation
+    priority: P0
+    assigned_by: project-owner
+    owner: cto
+    reviewer: qa-engineer
+    status: DONE
+    dependencies: []
+    skills:
+      - task-planning
+    scope:
+      - .cursor/rules/
+      - .cursor/agents/
+      - .cursor/skills/
+    requirements:
+      - Always-on governance and CTO rules. Glob rules for architecture, Rust, Python AI, Khmer, data, TTS, UI, tests, and secrets.
+      - Role files for the eleven owners. Skills for audit, planning, Rust, Khmer, data, training, TTS, review, and validation.
+    acceptance_criteria:
+      - Existing rust-python-architecture.mdc and claynext-* skills were left in place.
+      - New rules are .mdc with description and alwaysApply or globs.
+    deliverables:
+      - .cursor/rules/00-project-governance.mdc
+      - .cursor/rules/01-cto-orchestration.mdc
+      - .cursor/agents/cto.md
+      - .cursor/skills/repository-audit/SKILL.md
+    evidence:
+      - .cursor/rules/00-project-governance.mdc
+      - .cursor/rules/10-security-licensing.mdc
+      - .cursor/agents/qa-engineer.md
+      - .cursor/skills/release-validation/SKILL.md
+    notes: Operating rules are the .mdc files. Role markdown is not a native subagent registration by itself.
+
+  - id: JOB-003
+    title: Job registry
+    epic: agent-foundation
+    priority: P0
+    assigned_by: project-owner
+    owner: cto
+    reviewer: qa-engineer
+    status: DONE
+    dependencies:
+      - JOB-002
+    skills:
+      - task-planning
+    scope:
+      - .agents/jobs/
+      - .agents/templates/
+      - .agents/handoffs/
+      - .agents/reports/
+      - .agents/decisions/
+    requirements:
+      - Backlog of remaining real work, empty active list, completed list of shipped modules.
+    acceptance_criteria:
+      - JOB-001 and JOB-004 through JOB-010 are READY or later, not marked done.
+      - JOB-011 hosted fine-tune is BLOCKED.
+      - active.yaml has no jobs.
+    deliverables:
+      - .agents/jobs/backlog.yaml
+      - .agents/jobs/active.yaml
+      - .agents/jobs/completed.yaml
+      - .agents/templates/task.yaml
+      - .agents/templates/handoff.md
+    evidence:
+      - .agents/jobs/backlog.yaml
+      - .agents/jobs/completed.yaml
+      - .agents/templates/handoff.md
+    notes: Registry only. No product feature was implemented with this job.
+
+  - id: JOB-013
+    title: Audit of LLM training and inference modules
+    epic: khmer-llm-benchmark
+    priority: P0
+    assigned_by: project-owner
+    owner: architecture-lead
+    reviewer: cto
+    status: DONE
+    dependencies: []
+    skills:
+      - repository-audit
+    scope:
+      - docs/khmer-platform/04-llm-training-benchmark-audit.md
+    requirements:
+      - Name real modules and the gaps. Do not rewrite 01-current-architecture.md.
+    acceptance_criteria:
+      - The note cites datasets, llm_gateway, evaluation.runner, the LoRA stub, and the missing gold set.
+    deliverables:
+      - docs/khmer-platform/04-llm-training-benchmark-audit.md
+    evidence:
+      - docs/khmer-platform/04-llm-training-benchmark-audit.md
+    notes: Written in the CTO session. No architecture-lead Task was launched.
+
+  - id: JOB-014
+    title: Benchmark row schema, split lock, and family leakage
+    epic: khmer-llm-benchmark
+    priority: P0
+    assigned_by: cto
+    owner: dataset-engineer
+    reviewer: benchmark-lead
+    status: DONE
+    dependencies: []
+    skills:
+      - dataset-engineering
+    scope:
+      - src/claynext/models/benchmarks/schema.py
+      - src/claynext/models/benchmarks/leakage.py
+    requirements:
+      - Refuse a test row whose dialogue family is in train. Refuse synthetic-only gold. Lock the test split.
+    acceptance_criteria:
+      - tests/python/test_llm_benchmark.py covers leakage, synthetic gold, and the split lock.
+    deliverables:
+      - src/claynext/models/benchmarks/schema.py
+      - src/claynext/models/benchmarks/leakage.py
+    evidence:
+      - src/claynext/models/benchmarks/schema.py
+      - src/claynext/models/benchmarks/leakage.py
+      - tests/python/test_llm_benchmark.py
+    notes: Implemented in the CTO session. No dataset-engineer Task was launched.
+
+  - id: JOB-015
+    title: Provider-neutral benchmark runner
+    epic: khmer-llm-benchmark
+    priority: P0
+    assigned_by: cto
+    owner: ai-lead
+    reviewer: architecture-lead
+    status: DONE
+    dependencies:
+      - JOB-014
+    skills:
+      - code-review
+    scope:
+      - src/claynext/models/benchmarks/runner.py
+      - src/claynext/models/benchmarks/providers.py
+      - src/claynext/models/benchmarks/prompt.py
+      - src/claynext/models/evaluation/runner.py
+    requirements:
+      - One translator interface for a callable, the gateway, Gemini, and a local model id.
+      - Record prompt version and decoding. Reuse run_evaluation. Judge text must not include the model id.
+    acceptance_criteria:
+      - A fake translator produces a report with quality_score null and promotion not_promoted.
+    deliverables:
+      - src/claynext/models/benchmarks/runner.py
+      - src/claynext/models/benchmarks/providers.py
+    evidence:
+      - src/claynext/models/benchmarks/runner.py
+      - tests/python/test_llm_benchmark.py
+    notes: Implemented in the CTO session. No ai-lead Task was launched.
+
+  - id: JOB-016
+    title: Metric structures, human rubric, and promotion gate
+    epic: khmer-llm-benchmark
+    priority: P0
+    assigned_by: cto
+    owner: benchmark-lead
+    reviewer: khmer-linguist
+    status: DONE
+    dependencies:
+      - JOB-015
+    skills:
+      - khmer-localization
+      - code-review
+    scope:
+      - src/claynext/models/benchmarks/metrics/
+      - src/claynext/models/benchmarks/rubric.py
+      - src/claynext/models/benchmarks/promotion.py
+      - src/claynext/models/benchmarks/leaderboard.py
+    requirements:
+      - Metrics return structures. Human fields stay null when nobody has scored.
+      - Promotion refuses unless the human gates, baseline improvement, licence, and CTO plus QA flags are present.
+    acceptance_criteria:
+      - Default promotion decision is not_promoted. No built-in price list.
+    deliverables:
+      - src/claynext/models/benchmarks/promotion.py
+      - src/claynext/models/benchmarks/metrics/
+    evidence:
+      - src/claynext/models/benchmarks/promotion.py
+      - tests/python/test_llm_benchmark.py
+    notes: Implemented in the CTO session. No benchmark-lead Task was launched. benchmark-lead is a role file, not a native subagent.
+
+  - id: JOB-017
+    title: LoRA, SFT, QLoRA, and DPO dry-run configs
+    epic: khmer-llm-benchmark
+    priority: P0
+    assigned_by: cto
+    owner: model-training
+    reviewer: qa-engineer
+    status: DONE
+    dependencies: []
+    skills:
+      - model-training
+    scope:
+      - src/claynext/models/training/
+    requirements:
+      - Snapshot seed and config. Cancel and resume shapes. Refuse a real GPU start without approval, and refuse 7B/8B/14B on 16 GB even with approval.
+    acceptance_criteria:
+      - start() returns started false for the shipped configs.
+    deliverables:
+      - src/claynext/models/training/trainer.py
+      - src/claynext/models/training/configs/
+    evidence:
+      - src/claynext/models/training/trainer.py
+      - tests/python/test_llm_training_config.py
+    notes: Dry-run only. No GPU training. Implemented in the CTO session. No model-training Task was launched.
+
+  - id: JOB-018
+    title: Benchmark and training-config unit tests
+    epic: khmer-llm-benchmark
+    priority: P0
+    assigned_by: cto
+    owner: qa-engineer
+    reviewer: cto
+    status: DONE
+    dependencies:
+      - JOB-014
+      - JOB-016
+      - JOB-017
+    skills:
+      - release-validation
+    scope:
+      - tests/python/test_llm_benchmark.py
+      - tests/python/test_llm_training_config.py
+    requirements:
+      - Fakes only. Cover leakage, synthetic gold, promotion refusal, runner shape, and config dry-run.
+    acceptance_criteria:
+      - Both scripts were run with PYTHONPATH=src .venv/bin/python and exited 0.
+    deliverables:
+      - tests/python/test_llm_benchmark.py
+      - tests/python/test_llm_training_config.py
+    evidence:
+      - tests/python/test_llm_benchmark.py
+      - tests/python/test_llm_training_config.py
+      - .agents/handoffs/2026-10-22-llm-benchmark-milestone.md
+    notes: CTO session ran the scripts. No qa-engineer Task was launched. 7/7 and 5/5 passed.
+
+  - id: JOB-023
+    title: Capped raw Gemini probe
+    epic: khmer-llm-benchmark
+    priority: P1
+    assigned_by: project-owner
+    owner: ai-lead
+    reviewer: cto
+    status: DONE
+    dependencies: []
+    skills:
+      - code-review
+    scope:
+      - src/claynext/models/benchmarks/probe.py
+      - data/outputs/benchmarks/2026-10-22-capped-probe/
+    requirements:
+      - At most 20 pending rows, temperature 0, one prompt version. Stop on 503 or no free key. Do not call the file a quality score.
+    acceptance_criteria:
+      - The report has not_a_gold_benchmark true, quality_score null, and records the stop error.
+    deliverables:
+      - data/outputs/benchmarks/2026-10-22-capped-probe/gemini-raw-probe.json
+    evidence:
+      - data/outputs/benchmarks/2026-10-22-capped-probe/gemini-raw-probe.json
+    notes: Eight pending pronoun rows were requested. Zero completed. Stop error was no available Gemini key (pool cooldown about 169s). The cooldown was not waited out. OpenAI ready count was 0, so OpenAI was not called.

@@ -15,10 +15,10 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     list_p.add_argument("--json", action="store_true", help="Machine-readable output")
     list_p.set_defaults(func=run_list)
 
-    inst = sp.add_parser("install", help="Run uv sync --extra <name>")
+    inst = sp.add_parser("install", help="Install one extra, or all optional extras")
     inst.add_argument(
         "extra",
-        help="Extra id or feature id (demucs, demucs-mlx, voxcpm, omnivoice, whisperx, gender)",
+        help="Extra id, feature id, or 'all' (demucs, demucs-mlx, voxcpm, omnivoice, whisperx, gender)",
     )
     inst.add_argument("-q", "--quiet", action="store_true")
     inst.set_defaults(func=run_install)
@@ -44,18 +44,31 @@ def run_list(args: argparse.Namespace) -> int:
 
 
 def run_install(args: argparse.Namespace) -> int:
-    from claynext.models.features import FEATURE_REGISTRY, install_uv_extra
+    from claynext.models.features import FEATURE_REGISTRY, install_dev_environment, install_uv_extra
 
     key = str(args.extra or "").strip()
+    progress = make_progress(args.quiet)
+    if key == "all":
+        try:
+            result = install_dev_environment(progress_callback=progress, apply_preferences=True)
+        except Exception as exc:
+            die(str(exc))
+        failed = list(result.get("failed") or [])
+        if failed:
+            detail = "; ".join(
+                f"{item.get('extra')}: {item.get('error')}" for item in failed
+            )
+            die(detail or "Some extras could not be installed.")
+        print(f"installed · {result.get('command') or 'development environment'}")
+        return 0
     extra = key
     for item in FEATURE_REGISTRY:
         if key in {item["id"], item["extra"]}:
             extra = item["extra"]
             break
-    progress = make_progress(args.quiet)
     try:
-        install_uv_extra(extra, progress_callback=progress)
+        result = install_uv_extra(extra, progress_callback=progress)
     except Exception as exc:
         die(str(exc))
-    print(f"installed · uv sync --extra {extra}")
+    print(f"installed · {result.get('command') or extra}")
     return 0

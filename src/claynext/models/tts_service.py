@@ -867,10 +867,13 @@ class TTSEngine:
         model_name: str = VOXCPM_DEFAULT_MODEL,
         progress_callback: Callable | None = None,
     ) -> Any:
-        """Lazy-load a VoxCPM model (optional dependency: `uv sync --extra voxcpm`)."""
+        """Lazy-load a VoxCPM model (optional dependency: the voxcpm extra)."""
         if not TTSEngine.voxcpm_available():
+            from claynext.models.features import dev_environment_sync_command
+
             raise RuntimeError(
-                "VoxCPM2 is not installed. Run: uv sync --extra voxcpm\n"
+                "VoxCPM2 is not installed.\n"
+                f"Install the development extras:\n{dev_environment_sync_command()}\n"
                 "Needs the voxcpm 2 package and PyTorch ≥ 2.5 "
                 "(Apple Silicon, Windows, or Linux). "
                 "The speech checkpoint is openbmb/VoxCPM2."
@@ -945,7 +948,10 @@ class TTSEngine:
         if reference_wav and os.path.isfile(reference_wav):
             kwargs["reference_wav_path"] = reference_wav
 
-        wav = _call_voxcpm(model, **kwargs)
+        from claynext.utils.library_progress import library_stage
+
+        with library_stage("Speaking"):
+            wav = _call_voxcpm(model, **kwargs)
         import soundfile as sf
 
         rate = int(getattr(getattr(model, "tts_model", None), "sample_rate", None) or 48000)
@@ -981,10 +987,13 @@ class TTSEngine:
         model_name: str = OMNIVOICE_DEFAULT_MODEL,
         progress_callback: Callable | None = None,
     ) -> Any:
-        """Lazy-load OmniVoice (optional dependency: `uv sync --extra omnivoice`)."""
+        """Lazy-load OmniVoice (optional dependency: the omnivoice extra)."""
         if not TTSEngine.omnivoice_available():
+            from claynext.models.features import dev_environment_sync_command
+
             raise RuntimeError(
-                "OmniVoice is not installed. Run: uv sync --extra omnivoice\n"
+                "OmniVoice is not installed.\n"
+                f"Install the development extras:\n{dev_environment_sync_command()}\n"
                 "Needs the omnivoice package and PyTorch ≥ 2.4 "
                 "(Apple Silicon, Windows, or Linux). "
                 "The speech checkpoint is k2-fsa/OmniVoice."
