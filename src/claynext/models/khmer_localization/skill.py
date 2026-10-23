@@ -57,6 +57,7 @@ class KhmerDialogueSession(TranslationSkillSession):
         store: LocalizationStore | None = None,
         characters: Iterable[dict[str, Any]] = (),
         inventory: PronounInventory | None = None,
+        provider: Any = None,
     ):
         super().__init__(
             skill, segments=segments, source_lang=source_lang, target_lang=target_lang,
@@ -69,8 +70,23 @@ class KhmerDialogueSession(TranslationSkillSession):
         self.store.seed_from_characters(characters)
         self.store.seed_from_segments(segments)
         self.resolver = PronounResolver(self.inventory, self.store.config)
+        self.provider = provider
         self._plans: dict[str, tuple[PronounDecision, LevelDecision, dict[str, Any]]] = {}
         self._lines: dict[str, dict[str, Any]] = {}
+
+    def translate_chunk(self, prompt: str, *, temperature: float = 0.3) -> dict[str, Any]:
+        """One skill prompt through the attached gateway. The trace id is kept on the run."""
+        from claynext.models.llm_chat import chat_through
+
+        if self.provider is None:
+            raise RuntimeError("Khmer gateway is not attached")
+        text = chat_through(self.provider, prompt, temperature=temperature)
+        from claynext.models.llm_chat import last_chat
+
+        response = last_chat()
+        trace_id = response.trace_id if response is not None else ""
+        model = response.model if response is not None else ""
+        return {"text": text, "trace_id": trace_id, "model": model, "temperature": temperature}
 
     # ── planning ────────────────────────────────────────────────────────
     def _listener(self, seg: dict[str, Any]) -> tuple[str, bool]:
@@ -250,9 +266,11 @@ class KhmerDialogueSession(TranslationSkillSession):
     def report(self) -> dict[str, Any]:
         out = super().report()
         lines = list(self.lines().values())
+        traces = [str(call.get("trace_id") or "") for call in out.get("calls") or [] if call.get("trace_id")]
         out["khmer_localization"] = {
             "dictionary_version": self.inventory.version,
             "store": str(self.store.path or ""),
+            "trace_ids": traces,
             "summary": {
                 "lines": len(lines),
                 "needs_review": sum(1 for r in lines if r["needs_review"]),
@@ -280,11 +298,13 @@ def open_session(
     run_dir: str | Path | None = None,
     count_units: CountUnits | None = None,
     characters: Iterable[dict[str, Any]] = (),
+    provider: Any = None,
 ) -> KhmerDialogueSession:
     skill = get_registry().get(SKILL_ID, SKILL_SPEC)
     return KhmerDialogueSession(
         skill, segments=segments, source_lang=source_lang, target_lang=target_lang,
         glossary=glossary, run_dir=run_dir, count_units=count_units, characters=characters,
+        provider=provider,
     )
 
 

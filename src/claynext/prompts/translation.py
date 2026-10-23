@@ -243,6 +243,7 @@ class TranslationSkillSession:
         prompt: RenderedPrompt | None,
         result: ValidationResult | None,
         error: str = "",
+        trace_id: str = "",
     ) -> None:
         entry = {
             "backend": backend,
@@ -254,6 +255,7 @@ class TranslationSkillSession:
             "validation": result.summary() if result else None,
             "fallback": result is None or not result.ok,
             "error": error[:300],
+            "trace_id": str(trace_id or ""),
         }
         with self._lock:
             self._calls.append(entry)

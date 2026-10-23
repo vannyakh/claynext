@@ -14,16 +14,16 @@ Milestone = Dataset Manager + Provider Gateway + Localization Engine wired to a 
 | 6 | A filled review sheet sets `reviewed`/`rejected`, adds the human correction as preferred candidate, never sets gold | pass |
 | 6b | Review sheet export has `reviewed_at`; apply prefers the sheet timestamp; promote blocks gold for unreviewed synthetic or unlicensed records and allows it for reviewed, licensed human-authored records | pass |
 | 7 | Gateway: structured output validated, invalid output retried, 5xx/timeout retried, 4xx not, cancellation honoured, keys never in traces/errors | pass (fakes) |
-| 8 | Engine translates the KSLD test split through the gateway with pronoun plan + post-check, run log carries trace ids | backlog |
-| 9 | Eval report per dataset version × provider × prompt version: pronoun accuracy (evaluator), post-check violations, cost | backlog |
+| 8 | Engine translates the KSLD test split through the gateway with pronoun plan + post-check, run log carries trace ids | pass (fakes) |
+| 9 | Eval report per dataset version × provider × prompt version: pronoun accuracy (evaluator), post-check violations, cost | pass (fakes) |
 | 10 | At least one reviewed slice (≥100 records) from native review | blocked on humans |
 
 ## Prioritized backlog
 
 P0 (finish milestone)
-1. Wire `khmer_localization` skill calls through `llm_gateway` (opt-in provider), log `trace_id` per chunk.
-2. Evaluation runner: dataset test split → engine → evaluator + post-check → report JSON under `data/outputs/eval/`.
-3. `llm_chat.chat_text` on the gateway (same signature) so existing callers get retries and tracing.
+1. ~~Wire `khmer_localization` skill calls through `llm_gateway` (opt-in provider), log `trace_id` per chunk.~~ done: `skill_khmer_gateway=1` or a provider on the session.
+2. ~~Evaluation runner: dataset test split → engine → evaluator + post-check → report JSON under `data/outputs/eval/`.~~ done: `run_evaluation`.
+3. ~~`llm_chat.chat_text` on the gateway (same signature) so existing callers get retries and tracing.~~ done: `chat_text` / `chat_through`; `last_chat()` holds the trace.
 4. ~~Review sheet export (`claynext dataset review-export`)~~ done: includes a `reviewed_at` column.
 
 P1
