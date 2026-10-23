@@ -47,11 +47,11 @@ class GeminiTeacherProvider:
         self.models = models
 
     def available(self) -> bool:
+        """True when an enabled pool key or env key exists, even if every key is cooling."""
         try:
             from claynext.models.llm_keys import get_key_pool
 
-            pool = get_key_pool()
-            return bool(pool.secrets("gemini") or pool.ready_count("gemini") > 0)
+            return get_key_pool().has_enabled("gemini")
         except Exception:
             return False
 
@@ -82,7 +82,7 @@ class GeminiTeacherProvider:
             return GeminiTeacherResult(
                 ok=False,
                 skipped=True,
-                error="No Gemini API key configured (GEMINI_API_KEY / Google AI Studio keys).",
+                error="No Gemini API key configured (Settings → API Keys).",
             )
         try:
             from claynext.models.translate_service import TranslateEngine
@@ -214,6 +214,10 @@ class GeminiTeacherProvider:
                         f"{model}: rate limited", parse_retry_after(exc.headers, detail)
                     ) from exc
                 raise RuntimeError(f"{model}: {exc.code} {detail[:400]}") from exc
+            except (TimeoutError, urllib.error.URLError) as exc:
+                # A connect failure or a read timeout is one key, not the pool.
+                # Cool it and let the pool use another key. 503 is handled above.
+                raise RateLimitError(f"{model}: no response", 15.0) from exc
             return (
                 raw.get("candidates", [{}])[0]
                 .get("content", {})
@@ -222,7 +226,7 @@ class GeminiTeacherProvider:
             )
 
         return get_key_pool().call_with_rotation(
-            "gemini", _do, progress=progress_callback, max_cooldown_waits=3
+            "gemini", _do, progress=progress_callback, max_cooldown_waits=1
         )
 
     @staticmethod
