@@ -1,9 +1,9 @@
 """Alert when optional packages or model weights are missing before a job runs."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThreadPool
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from claynext.gui.worker import Worker
 from claynext.models.env_preflight import (
     format_gaps_message,
     has_blocking_gaps,
@@ -22,17 +23,39 @@ from claynext.models.env_preflight import (
 )
 
 
+class _EnvironmentDialog(QDialog):
+    """Modal environment alert. Close and Escape wait while an install is running."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._installing = False
+        self._installed_ok = False
+
+    def reject(self) -> None:  # type: ignore[override]
+        if self._installing:
+            return
+        super().reject()
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        if self._installing:
+            event.ignore()
+            return
+        super().closeEvent(event)
+
+
 def alert_missing_environment(
     parent,
     gaps: list[dict[str, Any]],
     *,
     title: str = "Environment required",
+    recheck: Callable[[], list[dict[str, Any]]] | None = None,
 ) -> bool:
     """
     Show a download / install alert for missing environment pieces.
 
-    Returns True if the caller may proceed (no gaps, or only soft gaps and user continues).
-    Returns False when the user cancels or a blocking package is missing.
+    Returns True if the caller may proceed (no gaps, install succeeded, or only
+    soft gaps and the user continues).
+    Returns False when the user cancels or a blocking package is still missing.
     """
     if not gaps:
         return True
@@ -46,10 +69,10 @@ def alert_missing_environment(
         if g.get("kind") == "model" and g.get("repo")
     ]
 
-    dlg = QDialog(parent)
+    dlg = _EnvironmentDialog(parent)
     dlg.setWindowTitle(title)
     dlg.setModal(True)
-    dlg.setMinimumWidth(440)
+    dlg.setMinimumWidth(560)
     lay = QVBoxLayout(dlg)
     lay.setContentsMargins(16, 16, 16, 14)
     lay.setSpacing(12)
@@ -72,20 +95,34 @@ def alert_missing_environment(
 
     row = QHBoxLayout()
     row.setSpacing(8)
+    action_buttons: list[QPushButton] = []
+    btn_install: QPushButton | None = None
     if cmd:
+        btn_install = QPushButton("Install all")
+        btn_install.setObjectName("btn_primary")
+        btn_install.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_install.setToolTip("Installs every optional extra and keeps them installed together.")
+        row.addWidget(btn_install)
+        action_buttons.append(btn_install)
         btn_copy = QPushButton("Copy install command")
+        btn_copy.setObjectName("btn_secondary")
         btn_copy.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_copy.clicked.connect(lambda: _copy_cmd(cmd, btn_copy))
         row.addWidget(btn_copy)
+        action_buttons.append(btn_copy)
     if model_repos:
         btn_dl = QPushButton("Download model…")
+        btn_dl.setObjectName("btn_secondary")
         btn_dl.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_dl.clicked.connect(lambda: _open_models(parent, dlg))
         row.addWidget(btn_dl)
+        action_buttons.append(btn_dl)
     btn_settings = QPushButton("Open Features")
+    btn_settings.setObjectName("btn_secondary")
     btn_settings.setCursor(Qt.CursorShape.PointingHandCursor)
     btn_settings.clicked.connect(lambda: _open_features(parent, dlg))
     row.addWidget(btn_settings)
+    action_buttons.append(btn_settings)
     row.addStretch(1)
     lay.addLayout(row)
 
@@ -99,8 +136,22 @@ def alert_missing_environment(
     buttons.accepted.connect(dlg.accept)
     buttons.rejected.connect(dlg.reject)
     lay.addWidget(buttons)
+    if btn_install is not None:
+        btn_install.clicked.connect(
+            lambda: _start_install_all(
+                dlg,
+                btn_install,
+                buttons,
+                action_buttons,
+                detail,
+                head,
+                recheck,
+            )
+        )
 
     result = dlg.exec()
+    if getattr(dlg, "_installed_ok", False):
+        return True
     if blocking:
         return False
     return result == QDialog.DialogCode.Accepted
@@ -118,13 +169,99 @@ def ensure_job_environment(
     """Collect gaps for this job and alert when anything is missing."""
     from claynext.models.env_preflight import collect_job_gaps
 
-    gaps = collect_job_gaps(
-        voice_id=voice_id,
-        secondary_voice_id=secondary_voice_id,
-        asr_model=asr_model,
-        check_stems=check_stems,
-    )
-    return alert_missing_environment(parent, gaps, title=title)
+    def _recheck() -> list[dict[str, Any]]:
+        return collect_job_gaps(
+            voice_id=voice_id,
+            secondary_voice_id=secondary_voice_id,
+            asr_model=asr_model,
+            check_stems=check_stems,
+        )
+
+    return alert_missing_environment(parent, _recheck(), title=title, recheck=_recheck)
+
+
+def _start_install_all(
+    dlg: QDialog,
+    btn_install: QPushButton,
+    buttons: QDialogButtonBox,
+    action_buttons: list[QPushButton],
+    detail: QLabel,
+    head: QLabel,
+    recheck: Callable[[], list[dict[str, Any]]] | None,
+) -> None:
+    if getattr(dlg, "_installing", False):
+        return
+    dlg._installing = True
+    buttons.setEnabled(False)
+    for btn in action_buttons:
+        btn.setEnabled(False)
+    btn_install.setText("Installing…")
+
+    def _task(progress_callback=None):
+        from claynext.models.features import install_dev_environment
+
+        return install_dev_environment(progress_callback=progress_callback, apply_preferences=True)
+
+    worker = Worker(_task)
+    dlg._install_worker = worker
+
+    def _progress(pct: int, _msg: str) -> None:
+        if not getattr(dlg, "_installing", False):
+            return
+        btn_install.setText(f"Installing {max(0, min(100, int(pct)))}%")
+
+    def _restore_actions() -> None:
+        dlg._installing = False
+        buttons.setEnabled(True)
+        for btn in action_buttons:
+            btn.setEnabled(True)
+        btn_install.setText("Install all")
+
+    def _done(result: object) -> None:
+        payload = result if isinstance(result, dict) else {}
+        failed = list(payload.get("failed") or [])
+        still = list(payload.get("still_missing") or [])
+        if failed or still:
+            _restore_actions()
+            lines = ["Some pieces could not be installed:"]
+            seen: set[str] = set()
+            for item in failed:
+                name = str(item.get("extra") or "extra")
+                if name in seen:
+                    continue
+                seen.add(name)
+                err = str(item.get("error") or "install failed")
+                lines.append(f"• {name}: {err}")
+            for name in still:
+                if name in seen:
+                    continue
+                lines.append(f"• {name}: still not importable")
+            if "whisperx" in seen or "whisperx" in {str(name) for name in still}:
+                lines.append("Dub can continue with Faster-Whisper if WhisperX is the piece that failed.")
+            detail.setText(detail.text() + "\n\n" + "\n".join(lines))
+            return
+        if recheck is not None:
+            try:
+                fresh = recheck()
+            except Exception:
+                fresh = []
+            if has_blocking_gaps(fresh):
+                _restore_actions()
+                detail.setText(format_gaps_message(fresh))
+                head.setText("Required environment is not ready. Install the missing package, then retry.")
+                return
+        dlg._installing = False
+        dlg._installed_ok = True
+        dlg.accept()
+
+    def _error(err: str, _tb: str) -> None:
+        _restore_actions()
+        detail.setText(detail.text() + f"\n\nInstall failed:\n{err}")
+
+    worker.signals.progress.connect(_progress)
+    worker.signals.result.connect(_done)
+    worker.signals.error.connect(_error)
+    QThreadPool.globalInstance().start(worker)
 
 
 def _copy_cmd(cmd: str, btn: QPushButton | None = None):
@@ -141,6 +278,8 @@ def _settings_host(parent):
 
 
 def _open_features(parent, dlg: QDialog):
+    if getattr(dlg, "_installing", False):
+        return
     dlg.reject()
     host = _settings_host(parent)
     if host is not None and hasattr(host, "open_settings_dialog"):
@@ -159,6 +298,8 @@ def _open_features(parent, dlg: QDialog):
 
 
 def _open_models(parent, dlg: QDialog):
+    if getattr(dlg, "_installing", False):
+        return
     dlg.reject()
     host = _settings_host(parent)
     if host is not None and hasattr(host, "open_settings_dialog"):

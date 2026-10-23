@@ -130,7 +130,7 @@ FEATURE_REGISTRY: list[dict[str, Any]] = [
         "label": "Demucs MLX",
         "category": "audio",
         "extra": "demucs-mlx",
-        "hint": "Apple Silicon stem isolation (vocals / music / effects). uv sync --extra demucs-mlx",
+        "hint": "Apple Silicon stem isolation (vocals / music / effects).",
         "detect": _detect_demucs_mlx,
         "supported": _mlx_platform_ok,
     },
@@ -157,7 +157,7 @@ FEATURE_REGISTRY: list[dict[str, Any]] = [
         "label": "VoxCPM2",
         "category": "tts",
         "extra": "voxcpm",
-        "hint": "Local speech with openbmb/VoxCPM2. uv sync --extra voxcpm",
+        "hint": "Local speech with openbmb/VoxCPM2.",
         "detect": _detect_voxcpm,
         "supported": torch_wheels_available,
     },
@@ -166,7 +166,7 @@ FEATURE_REGISTRY: list[dict[str, Any]] = [
         "label": "OmniVoice",
         "category": "tts",
         "extra": "omnivoice",
-        "hint": "Local speech with k2-fsa/OmniVoice. uv sync --extra omnivoice",
+        "hint": "Local speech with k2-fsa/OmniVoice.",
         "detect": _detect_omnivoice,
         "supported": torch_wheels_available,
     },
@@ -175,7 +175,7 @@ FEATURE_REGISTRY: list[dict[str, Any]] = [
         "label": "WhisperX + diarization",
         "category": "asr",
         "extra": "whisperx",
-        "hint": "Aligned ASR with speaker diarization. uv sync --extra whisperx",
+        "hint": "Aligned ASR with speaker diarization.",
         "detect": _detect_whisperx,
         "supported": torch_wheels_available,
     },
@@ -184,7 +184,7 @@ FEATURE_REGISTRY: list[dict[str, Any]] = [
         "label": "Common-Voice Gender (ASR)",
         "category": "asr",
         "extra": "gender",
-        "hint": "Wav2Vec2 audio gender for dub casting. uv sync --extra gender",
+        "hint": "Wav2Vec2 audio gender for dub casting.",
         "detect": _detect_gender_audio,
         "supported": torch_wheels_available,
     },
@@ -313,8 +313,8 @@ def stem_status_label() -> str:
     if backend == "separator":
         return "Stem bed · UVR vocals / effects"
     if mode == "demucs":
-        return "Stem bed · Demucs required · uv sync --extra demucs-mlx or demucs"
-    return "Stem bed · FFmpeg fallback · uv sync --extra demucs-mlx or demucs"
+        return "Stem bed · Demucs required · Settings → Features → Install all missing"
+    return "Stem bed · FFmpeg fallback · Settings → Features → Install all missing"
 
 
 def save_feature_defaults() -> None:
@@ -325,6 +325,107 @@ def save_feature_defaults() -> None:
 
 # One uv sync at a time. Parallel syncs rewrite the same environment and fail.
 _UV_SYNC = threading.Lock()
+
+
+# Studio prefs an optional extra is allowed to turn on. The value is applied
+# only when DEFAULT_CONFIG already enables that key. Burned-in caption OCR
+# (transcript_ocr) and Prefer VoxCPM (prefer_voxcpm) stay opt-in.
+_EXTRA_BACKED_PREFS: dict[str, str] = {
+    "whisperx": "prefer_whisperx",
+}
+
+
+def dev_environment_extras() -> list[str]:
+    """Optional extras this machine can install, in registry order.
+
+    Names come from ``pyproject.toml`` optional-dependencies and the feature
+    registry. Unsupported extras (for example Demucs MLX off Apple Silicon)
+    are left out.
+    """
+    declared = declared_extras()
+    ordered: list[str] = []
+    for item in FEATURE_REGISTRY:
+        extra_name = str(item.get("extra") or "")
+        if not extra_name or extra_name in ordered or extra_name not in declared:
+            continue
+        try:
+            supported = bool(item["supported"]())
+        except Exception:
+            supported = False
+        if not supported:
+            continue
+        ordered.append(extra_name)
+    return ordered
+
+
+def format_uv_sync_command(extras: list[str]) -> str:
+    """``uv sync --inexact`` with every extra that should stay installed.
+
+    Syncing one extra on its own removes the other extras from the environment.
+    """
+    parts = ["uv", "sync", "--inexact"]
+    for name in extras:
+        parts.extend(["--extra", name])
+    return " ".join(parts)
+
+
+def dev_environment_sync_command() -> str:
+    """Install command for the full optional development environment."""
+    return format_uv_sync_command(dev_environment_extras())
+
+
+def missing_dev_extras() -> list[str]:
+    """Supported extras that are not importable yet."""
+    missing: list[str] = []
+    for extra in dev_environment_extras():
+        status = feature_for_extra(extra)
+        if status and status.get("supported") and not status.get("installed"):
+            missing.append(extra)
+    return missing
+
+
+def dev_environment_preference_keys() -> dict[str, str]:
+    """Safe prefs a full-environment install may turn on.
+
+    A key is included only when the project default is already on and an
+    installable extra backs it. Off-by-default flags are omitted.
+    """
+    supported = set(dev_environment_extras())
+    updates: dict[str, str] = {}
+    for extra, key in _EXTRA_BACKED_PREFS.items():
+        if extra not in supported:
+            continue
+        default = str(DEFAULT_CONFIG.get(key, "0"))
+        if default != "1":
+            continue
+        updates[key] = "1"
+    return updates
+
+
+def apply_dev_environment_preferences(installed: list[str] | None = None) -> dict[str, str]:
+    """Turn on safe, default-on prefs for extras that are actually installed.
+
+    Reads each current setting first. Does not enable burned-in caption OCR
+    or Prefer VoxCPM. Stem mode is left as saved; Auto already uses Demucs
+    when that extra is present.
+    """
+    present = set(installed if installed is not None else dev_environment_extras())
+    applied: dict[str, str] = {}
+    for extra, key in _EXTRA_BACKED_PREFS.items():
+        if extra not in present:
+            continue
+        if key not in dev_environment_preference_keys():
+            continue
+        status = feature_for_extra(extra)
+        if not status or not status.get("installed"):
+            continue
+        value = dev_environment_preference_keys()[key]
+        current = get_feature_setting(key, str(DEFAULT_CONFIG.get(key, "0")))
+        if current == value:
+            continue
+        set_feature_setting(key, value)
+        applied[key] = value
+    return applied
 
 
 def retained_extras(include: str = "") -> list[str]:
@@ -362,6 +463,146 @@ def remember_extras(extras: list[str]) -> None:
     set_feature_setting("installed_extras", ",".join(names))
 
 
+def _uv_binary() -> str:
+    import shutil
+
+    uv = shutil.which("uv")
+    if not uv:
+        raise RuntimeError("uv was not found on PATH. Install uv, then try again.")
+    return uv
+
+
+def _report_progress(progress_callback, pct: int, msg: str) -> None:
+    if progress_callback is None:
+        return
+    try:
+        progress_callback(max(0, min(100, int(pct))), str(msg or ""))
+    except Exception:
+        pass
+
+
+def _refresh_import_state() -> None:
+    import importlib
+
+    importlib.invalidate_caches()
+
+
+def _uv_sync_locked(uv: str, extras: list[str], progress_callback, *, label: str) -> dict[str, Any]:
+    """Run one ``uv sync --inexact`` for ``extras``. Caller holds ``_UV_SYNC``."""
+    import os
+    import re
+    import subprocess
+
+    from claynext.utils.paths import BASE_DIR
+
+    if not extras:
+        raise ValueError("No extras to install")
+
+    _report_progress(progress_callback, 4, f"Starting {label}…")
+    cmd = [uv, "sync", "--inexact"]
+    for name in extras:
+        cmd.extend(["--extra", name])
+    from claynext.utils.process_env import child_environ
+
+    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(BASE_DIR),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=creationflags,
+        env=child_environ(),
+    )
+    assert proc.stdout is not None
+    lines = 0
+    last_msg = f"Installing {label}…"
+    ansi = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+    pct_re = re.compile(r"(\d{1,3})\s*%")
+    for raw in proc.stdout:
+        line = ansi.sub("", raw).strip()
+        if not line:
+            continue
+        lines += 1
+        last_msg = line[:160]
+        pct = min(92, 8 + lines)
+        match = pct_re.search(line)
+        if match:
+            pct = max(pct, min(95, int(match.group(1))))
+        _report_progress(progress_callback, pct, last_msg)
+
+    code = proc.wait()
+    command = format_uv_sync_command(extras)
+    if code != 0:
+        raise RuntimeError(f"{command} failed (exit {code}): {last_msg}")
+    remember_extras(extras)
+    _refresh_import_state()
+    return {
+        "ok": True,
+        "kept": list(extras),
+        "command": command,
+        "failed": [],
+        "still_missing": [],
+    }
+
+
+def _install_extras_best_effort(
+    uv: str,
+    extras: list[str],
+    progress_callback,
+) -> dict[str, Any]:
+    """Install extras one at a time after a combined sync fails. Lock is held."""
+    have: list[str] = []
+    for extra in extras:
+        status = feature_for_extra(extra)
+        if status and status.get("installed"):
+            have.append(extra)
+    failed: list[dict[str, str]] = []
+    for extra in extras:
+        if extra in have:
+            continue
+        try:
+            _uv_sync_locked(uv, have + [extra], progress_callback, label=extra)
+            have.append(extra)
+        except RuntimeError as exc:
+            failed.append({"extra": extra, "error": str(exc)})
+    return {
+        "ok": not failed,
+        "kept": have,
+        "failed": failed,
+        "command": format_uv_sync_command(extras),
+        "still_missing": [item["extra"] for item in failed],
+    }
+
+
+def _finish_install_result(
+    result: dict[str, Any],
+    *,
+    apply_preferences: bool,
+) -> dict[str, Any]:
+    _refresh_import_state()
+    still = missing_dev_extras()
+    failed = list(result.get("failed") or [])
+    known = {str(item.get("extra") or "") for item in failed}
+    for name in still:
+        if name in known:
+            continue
+        failed.append({
+            "extra": name,
+            "error": f"{name} is still not importable after install.",
+        })
+    result["failed"] = failed
+    result["still_missing"] = still
+    result["ok"] = not failed
+    installed = [name for name in result.get("kept") or [] if name not in set(still)]
+    result["applied_preferences"] = (
+        apply_dev_environment_preferences(installed) if apply_preferences else {}
+    )
+    return result
+
+
 def install_uv_extra(extra: str, progress_callback=None) -> dict[str, Any]:
     """
     Install one extra and keep every tool that is already installed.
@@ -369,13 +610,6 @@ def install_uv_extra(extra: str, progress_callback=None) -> dict[str, Any]:
     ``uv sync --extra`` alone removes the other extras, so each Install click
     undoes the last one. ``--inexact`` plus the saved extra list installs once.
     """
-    import os
-    import re
-    import shutil
-    import subprocess
-
-    from claynext.utils.paths import BASE_DIR
-
     extra = (extra or "").strip()
     if not extra:
         raise ValueError("Missing uv extra name")
@@ -383,57 +617,57 @@ def install_uv_extra(extra: str, progress_callback=None) -> dict[str, Any]:
         if extra in {item["id"], item["extra"]} and not bool(item["supported"]()):
             raise RuntimeError(_unsupported_reason(item["id"]))
 
-    uv = shutil.which("uv")
-    if not uv:
-        raise RuntimeError("uv was not found on PATH. Install uv, then try again.")
-
-    def _progress(pct: int, msg: str) -> None:
-        if progress_callback is None:
-            return
-        try:
-            progress_callback(max(0, min(100, int(pct))), str(msg or ""))
-        except Exception:
-            pass
-
-    _progress(2, f"Waiting to install {extra}…")
+    uv = _uv_binary()
+    _report_progress(progress_callback, 2, f"Waiting to install {extra}…")
     with _UV_SYNC:
         keep = retained_extras(extra)
-        _progress(4, f"Starting {extra}…")
-        cmd = [uv, "sync", "--inexact"]
-        for name in keep:
-            cmd.extend(["--extra", name])
-        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        proc = subprocess.Popen(
-            cmd,
-            cwd=str(BASE_DIR),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            creationflags=creationflags,
-        )
-        assert proc.stdout is not None
-        lines = 0
-        last_msg = f"Installing {extra}…"
-        ansi = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
-        pct_re = re.compile(r"(\d{1,3})\s*%")
-        for raw in proc.stdout:
-            line = ansi.sub("", raw).strip()
-            if not line:
-                continue
-            lines += 1
-            last_msg = line[:120]
-            pct = min(92, 8 + lines * 3)
-            m = pct_re.search(line)
-            if m:
-                pct = max(pct, min(95, int(m.group(1))))
-            _progress(pct, last_msg)
+        result = _uv_sync_locked(uv, keep, progress_callback, label=extra)
+    _report_progress(progress_callback, 100, "Installed")
+    result["extra"] = extra
+    return result
 
-        code = proc.wait()
-        if code != 0:
-            raise RuntimeError(f"uv sync --extra {extra} failed (exit {code}): {last_msg}")
-        remember_extras(keep)
-    _progress(100, "Installed")
-    return {"extra": extra, "ok": True, "kept": keep}
+
+def install_dev_environment(progress_callback=None, *, apply_preferences: bool = True) -> dict[str, Any]:
+    """Install every supported optional extra in one ``uv sync --inexact``.
+
+    The command lists every extra that should stay installed, including ones
+    that are already present. If one extra cannot resolve, the rest are
+    installed one at a time and the failure is returned on ``failed``.
+    """
+    extras = dev_environment_extras()
+    if not extras:
+        raise RuntimeError("This platform cannot install the optional development extras.")
+    command = format_uv_sync_command(extras)
+    if not missing_dev_extras():
+        result = _finish_install_result(
+            {
+                "ok": True,
+                "kept": extras,
+                "command": command,
+                "failed": [],
+                "still_missing": [],
+            },
+            apply_preferences=apply_preferences,
+        )
+        _report_progress(progress_callback, 100, "Installed")
+        return result
+
+    uv = _uv_binary()
+    _report_progress(progress_callback, 2, "Waiting to install the development environment…")
+    with _UV_SYNC:
+        extras = dev_environment_extras()
+        command = format_uv_sync_command(extras)
+        try:
+            result = _uv_sync_locked(
+                uv, extras, progress_callback, label="development environment",
+            )
+        except RuntimeError:
+            result = _install_extras_best_effort(uv, extras, progress_callback)
+        result["command"] = command
+    result = _finish_install_result(result, apply_preferences=apply_preferences)
+    if result.get("ok"):
+        _report_progress(progress_callback, 100, "Installed")
+    else:
+        _report_progress(progress_callback, 100, "Installed with gaps")
+    return result
 
