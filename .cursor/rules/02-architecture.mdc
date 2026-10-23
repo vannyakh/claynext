@@ -1,0 +1,19 @@
+---
+description: Adapter and model boundaries on the Khmer platform call path
+globs: src/claynext/adapters/**/*.py,src/claynext/models/**/*.py,docs/khmer-platform/**/*.md
+alwaysApply: false
+---
+
+# Architecture boundaries
+
+Canonical path (always-on detail is in `rust-python-architecture.mdc`):
+
+```text
+GUI/CLI → models → adapters → rust_bridge → backends/* or crates/editor-*
+```
+
+- `src/claynext/models/` orchestrates. It must not import `claynext.adapters.rust_bridge`.
+- `src/claynext/adapters/` is the only Python layer that calls the bridge. Keep a Python fallback when a binary is missing.
+- Platform docs: `docs/khmer-platform/`. Prefer the code and `03-backlog-and-acceptance.md` when `01-current-architecture.md` is older than the tree.
+- Already shipped: `models/datasets/`, `models/llm_gateway/`, `models/khmer_localization/`, `models/evaluation/runner.py` (`run_evaluation`), `voice_training/` (dry-run). Do not rebuild them.
+- New timing, VAD, probe, quota, and caption-scan logic stays in Rust. Network and ML SDKs stay in Python.

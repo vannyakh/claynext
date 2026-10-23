@@ -1,0 +1,16 @@
+---
+description: Versioned datasets and voice-training data — no training without approval
+globs: src/claynext/models/datasets/**/*.py,src/claynext/voice_training/**/*.py,src/claynext/models/khmer_spoken/**/*.py
+alwaysApply: false
+---
+
+# Datasets and training data
+
+Dialogue data: `src/claynext/models/datasets/`, CLI `claynext dataset`, files under `data/datasets/`. Docs: `docs/khmer-platform/`.
+
+Speech data: `src/claynext/voice_training/` (dry-run scaffold). Guides: `docs/voice_training/`, `docs/khmer_spoken/`, `docs/guides/m4-mac-mini-start.md`.
+
+- Version snapshots are immutable. Do not rewrite a hashed version.
+- Training rows need a licence and recorded consent (`voice_training/ingestion/rights_validator.py`). No unclear audio.
+- Import, dedupe, split, review export, promote, and SFT export already exist. Do not rebuild them.
+- Do not start a training or hosted fine-tune unless the owner approved that job. Until then, dry-run only (`voice_training/training/tts_trainer.py`).

@@ -1,0 +1,15 @@
+---
+description: PySide6 Studio UI — workers, Cyber Dark tokens, native chrome
+globs: src/claynext/gui/**/*.py
+alwaysApply: false
+---
+
+# Desktop UI
+
+Keep the PySide6 shell. Do not rewrite it.
+
+- Heavy work uses `Worker` from `src/claynext/core/worker.py` on `QThreadPool`. Change widgets only through signals.
+- Colors and type come from `src/claynext/constants/theme_constants.py`. No ad-hoc QSS colors.
+- Chrome: `CUSTOM_WINDOW_CHROME` in `src/claynext/constants/ui_constants.py`. Windows is frameless; macOS and Linux stay native unless `CLAYNEXT_CUSTOM_CHROME=1`.
+- Widget skill: `.agents/skills/claynext-ui-component/SKILL.md`.
+- A dataset review queue (JOB-006) is read-only first and uses the worker pattern.
