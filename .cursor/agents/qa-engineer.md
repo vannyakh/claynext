@@ -35,4 +35,4 @@ Template plus: command, exit code, and a short log excerpt. Write "not run" when
 
 ## Definition of done
 
-Each acceptance criterion is mapped to a file path or a real command result. `tests/python/test_translate_service.py` is not cited as passed while it still imports pytest. Job moves to `DONE` only after this report exists.
+Each acceptance criterion is mapped to a file path or a real command result. `tests/python/test_translate_service.py` is not cited as passed while it still imports pytest. Benchmark checks are `tests/python/test_llm_benchmark.py` and `tests/python/test_llm_training_config.py` via `PYTHONPATH=src .venv/bin/python`. Job moves to `DONE` only after this report exists.

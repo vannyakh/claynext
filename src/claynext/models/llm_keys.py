@@ -144,7 +144,28 @@ def parse_retry_after(headers: Any = None, body: str = "") -> float:
     return retry_after
 
 
+# Body phrases that mean "try the next key" even when the status is not 429.
+_OVERLOAD_MARKERS = (
+    "resource_exhausted",
+    "rate limit",
+    "too many requests",
+    "unavailable",
+    "overloaded",
+    "high demand",
+)
+# One wait, never hours. This matches the longest cooldown mark_rate_limited stores.
+COOLDOWN_WAIT_CAP = 180.0
+
+
 def is_rate_limit(status: int, body: str = "") -> bool:
+    """True for 429, 503, and overload text. Those roll to the next key."""
+    if status in (429, 503):
+        return True
+    lowered = (body or "").lower()
+    if any(marker in lowered for marker in _OVERLOAD_MARKERS):
+        return True
+    if "quota" in lowered and "exceed" in lowered:
+        return True
     from claynext.adapters.ai import get_ai_adapter
 
     limited, _ = get_ai_adapter().parse_retry_after(status, body=body)
@@ -316,6 +337,35 @@ class ApiKeyPool:
             [e for env in _ENV_KEYS.get(provider, ()) if (e := os.environ.get(env, "").strip())]
         )
 
+    def _enabled_rows(self, provider: str) -> list[dict[str, Any]]:
+        """Enabled stored keys, including ones that are still cooling."""
+        rows = []
+        for row in self.list_keys(provider):
+            enabled = row.get("enabled", 0)
+            on = enabled if isinstance(enabled, bool) else int(enabled or 0) == 1
+            if not on:
+                continue
+            if (row.get("secret") or "").strip():
+                rows.append(row)
+        return rows
+
+    def has_enabled(self, provider: str) -> bool:
+        """True when a pool key or env key exists. Cooling does not count as missing."""
+        if self._enabled_rows(provider):
+            return True
+        return any(os.environ.get(env, "").strip() for env in _ENV_KEYS.get(provider, ()))
+
+    def first_secret(self, provider: str) -> str:
+        """Ready secret, else an enabled cooling secret, else the env key."""
+        ready = self.secrets(provider)
+        if ready:
+            return ready[0]
+        for row in self._enabled_rows(provider):
+            secret = (row.get("secret") or "").strip()
+            if secret:
+                return secret
+        return ""
+
     def _ready_rows(self, provider: str) -> list[dict[str, Any]]:
         rows = []
         now = _now()
@@ -425,61 +475,82 @@ class ApiKeyPool:
         max_cooldown_waits: int = 3,
     ) -> Any:
         """
-        Call fn(secret). On RateLimitError rotate keys. Wait for cooldown a few
-        times if the whole pool is cooling — keeps long translate jobs moving.
+        Call fn(secret). Skip a cooling key and use another enabled key.
+        On RateLimitError (429 or 503) rotate. If every key is cooling, wait
+        for the soonest cooldown once, then continue. Do not spin for hours.
         """
+        del max_wait, max_cooldown_waits  # one capped wait; a 45s slice used to give up early
         tried: set[int] = set()
         waits_used = 0
+        rejected = 0
         while True:
             row = self.acquire(provider)
             if row is None:
-                wait = self.soonest_cooldown(provider)
-                if wait > 0 and waits_used < max_cooldown_waits:
-                    pause = min(max_wait, wait + 0.35)
+                enabled = self._enabled_rows(provider)
+                wait = self.soonest_cooldown(provider) if enabled else 0.0
+                if enabled and wait > 0 and waits_used < 1:
+                    pause = min(COOLDOWN_WAIT_CAP, max(0.5, wait + 0.35))
                     if progress:
                         progress(
                             0,
-                            f"Rate limited — waiting {pause:.0f}s then rotating keys "
-                            f"({waits_used + 1}/{max_cooldown_waits})…",
+                            f"All {provider} keys are cooling — waiting {pause:.0f}s once, then continuing…",
                         )
                     time.sleep(pause)
                     waits_used += 1
                     tried.clear()
                     continue
-                env_keys = []
-                for env in _ENV_KEYS.get(provider, ()):
-                    val = os.environ.get(env, "").strip()
-                    if val:
-                        env_keys.append(val)
-                if env_keys:
-                    last_err = None
+                if not enabled:
+                    env_keys: list[str] = []
+                    for env in _ENV_KEYS.get(provider, ()):
+                        val = os.environ.get(env, "").strip()
+                        if val and val not in env_keys:
+                            env_keys.append(val)
+                    last_err: RateLimitError | None = None
                     for secret in env_keys:
                         try:
                             return fn(secret)
                         except RateLimitError as exc:
                             last_err = exc
                             continue
+                        except InvalidKeyError:
+                            rejected += 1
+                            continue
+                    if rejected:
+                        raise RuntimeError(f"All {provider} keys were rejected.")
                     if last_err:
                         raise last_err
-                raise RuntimeError(
-                    f"No available {provider} API keys. Add keys in Settings → API Keys."
-                )
+                    raise RuntimeError(
+                        f"No available {provider} API keys. Add keys in Settings → API Keys."
+                    )
+                if rejected:
+                    raise RuntimeError(f"All {provider} keys were rejected.")
+                raise RuntimeError(f"All {provider} keys are cooling or rate-limited.")
 
             key_id = int(row["id"])
-            if key_id in tried and waits_used >= max_cooldown_waits:
-                raise RuntimeError(f"All {provider} keys are rate-limited right now.")
             if key_id in tried:
-                # Already tried this key in this wave — wait for a cooler key.
-                wait = self.soonest_cooldown(provider)
-                if wait > 0 and waits_used < max_cooldown_waits:
-                    pause = min(max_wait, wait + 0.35)
-                    if progress:
-                        progress(0, f"Rotating keys — brief pause {pause:.0f}s…")
-                    time.sleep(pause)
-                    waits_used += 1
-                    tried.clear()
-                    continue
-                raise RuntimeError(f"All {provider} keys are rate-limited right now.")
+                # A preferred key can cool off and be chosen again before a worn
+                # key is tried. Use any ready key that this call has not used yet.
+                untried = [
+                    item for item in self._ready_rows(provider)
+                    if int(item["id"]) not in tried
+                ]
+                if untried:
+                    row = untried[0]
+                    key_id = int(row["id"])
+                    get_store().update_api_key_state(key_id, last_used_at=_now().isoformat())
+                elif waits_used < 1:
+                    wait = self.soonest_cooldown(provider)
+                    if wait > 0:
+                        pause = min(COOLDOWN_WAIT_CAP, max(0.5, wait + 0.35))
+                        if progress:
+                            progress(0, f"All {provider} keys are cooling — waiting {pause:.0f}s once…")
+                        time.sleep(pause)
+                        waits_used += 1
+                        tried.clear()
+                        continue
+                    raise RuntimeError(f"All {provider} keys are cooling or rate-limited.")
+                else:
+                    raise RuntimeError(f"All {provider} keys are cooling or rate-limited.")
 
             tried.add(key_id)
             take_llm_usage()
@@ -504,6 +575,7 @@ class ApiKeyPool:
                     progress(0, "Rate limit hit — rotating to the next API key…")
                 continue
             except InvalidKeyError:
+                rejected += 1
                 get_store().set_api_key_enabled(key_id, False)
                 if progress:
                     progress(0, "Disabled an invalid API key — trying the next one…")

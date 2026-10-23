@@ -18,6 +18,8 @@ Extend `src/claynext/models/` orchestration and `llm_gateway` without a second p
 - `src/claynext/models/llm_chat.py`, `llm_keys.py`, `llm_providers.py`, `ai_provider.py`
 - `src/claynext/models/translate_service.py`, `movie_translate.py`
 - `src/claynext/models/evaluation/runner.py` (pipeline wiring only)
+- `src/claynext/models/benchmarks/providers.py`
+- `src/claynext/models/benchmarks/probe.py` (capped raw calls only; metric definitions stay with benchmark-lead)
 
 ## Does not own
 
@@ -38,4 +40,4 @@ State which provider path changed, how keys are redacted, and the test file to r
 
 ## Definition of done
 
-Models still call adapters, not `rust_bridge`. Traces have no secrets. Existing `chat_text` signature stays compatible unless the job says otherwise.
+Models still call adapters, not `rust_bridge`. Traces have no secrets. Existing `chat_text` signature stays compatible unless the job says otherwise. Benchmark translation and judge prompts do not contain the model id. A capped probe stays labeled `not_a_gold_benchmark` when the rows are not human-reviewed gold.

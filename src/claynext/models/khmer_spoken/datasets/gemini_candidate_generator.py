@@ -76,7 +76,12 @@ def generate_candidates_batch(
             progress_callback=progress_callback,
         )
         if result.skipped or not result.ok:
-            errors.append(f"{ex.id}: {result.error or 'failed'}")
+            message = f"{ex.id}: {result.error or 'failed'}"
+            errors.append(message)
+            lowered = message.lower()
+            # The pool already rotated and waited once. Do not walk the rest of the batch.
+            if "all gemini keys" in lowered or "were rejected" in lowered:
+                break
             skipped_rows += 1
             continue
 

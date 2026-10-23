@@ -221,8 +221,9 @@ jobs:
     requirements:
       - Blocked until the Project Owner approves a training spend and a licensed gold set exists.
       - Dry-run scaffolding already exists. Do not call a hosted tuning API before approval.
+      - The 2026-10-22 decision under .agents/decisions/ approves a capped benchmark probe and a local dry-run only. It does not unblock this job.
     acceptance_criteria:
-      - Status stays BLOCKED until an owner decision is filed under .agents/decisions/.
+      - Status stays BLOCKED until a decision explicitly approves hosted fine-tune spend. The 2026-10-22 capped-benchmark decision does not.
     deliverables: []
 
   - id: JOB-012
@@ -246,4 +247,92 @@ jobs:
       - When started, add claynext-ai near-dups and keep the Python fallback in the adapter.
     acceptance_criteria:
       - Not scheduled while dedupe of current sets stays fast.
+    deliverables: []
+
+  - id: JOB-019
+    title: Hosted gold benchmark against GPT and Gemini
+    epic: khmer-llm-benchmark
+    priority: P1
+    assigned_by: project-owner
+    owner: ai-lead
+    reviewer: benchmark-lead
+    status: BLOCKED
+    dependencies:
+      - JOB-021
+    skills:
+      - code-review
+      - khmer-localization
+    scope:
+      - src/claynext/models/benchmarks/
+      - src/claynext/models/llm_gateway/
+    requirements:
+      - Blocked until a locked human-reviewed gold set exists and the owner funds a scored hosted run.
+      - The 2026-10-22 capped probe completed zero rows and is not a quality score.
+      - Do not score gemini_teacher rows as gold.
+    acceptance_criteria:
+      - A report may claim a quality score only when every row passes is_gold_reference and human gates are present.
+      - Status stays BLOCKED until that set exists.
+    deliverables: []
+
+  - id: JOB-020
+    title: Local 7B, 8B, or 14B LoRA fine-tune
+    epic: khmer-llm-benchmark
+    priority: P2
+    assigned_by: project-owner
+    owner: model-training
+    reviewer: performance-engineer
+    status: BLOCKED
+    dependencies: []
+    skills:
+      - model-training
+    scope:
+      - src/claynext/models/training/
+    requirements:
+      - Blocked on this 16 GB M4. Configs exist and start() refuses these size classes.
+      - Do not install peft or call Vertex. JOB-011 stays blocked for hosted fine-tune.
+    acceptance_criteria:
+      - Status stays BLOCKED until the owner approves a machine that can hold the run.
+    deliverables: []
+
+  - id: JOB-021
+    title: Human-reviewed Khmer movie gold set
+    epic: khmer-llm-benchmark
+    priority: P0
+    assigned_by: project-owner
+    owner: khmer-linguist
+    reviewer: dataset-engineer
+    status: BLOCKED
+    dependencies: []
+    skills:
+      - khmer-localization
+      - dataset-engineering
+    scope:
+      - src/claynext/models/benchmarks/schema.py
+      - data/datasets/
+    requirements:
+      - Blocked on native reviewers. Pronoun cases are pending_native_review.
+      - The 55 gemini_teacher rows are not gold, including the version whose notes still say pending.
+    acceptance_criteria:
+      - Gold rows have a human reviewer id, timestamp, deployable licence, and origin human_authored or human_reviewed.
+    deliverables: []
+
+  - id: JOB-022
+    title: DPO from human preference pairs
+    epic: khmer-llm-benchmark
+    priority: P2
+    assigned_by: cto
+    owner: model-training
+    reviewer: khmer-linguist
+    status: BLOCKED
+    dependencies:
+      - JOB-021
+    skills:
+      - model-training
+    scope:
+      - src/claynext/models/training/configs/dpo_3b.yaml
+    requirements:
+      - Blocked until human preference pairs exist. The YAML preference_path stays empty.
+      - Synthetic-only pairs are not preferences.
+    acceptance_criteria:
+      - Status stays BLOCKED until a human preference file is named in a decision.
     deliverables: []

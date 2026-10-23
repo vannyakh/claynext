@@ -16,4 +16,4 @@ deliverables: []
 # status: BACKLOG | READY | IN_PROGRESS | REVIEW | QA | DONE | BLOCKED | FAILED | CANCELLED
 # owner: a file stem under .cursor/agents/ (cto, architecture-lead, rust-lead, ai-lead,
 #   khmer-linguist, dataset-engineer, model-training, tts-engineer, ui-engineer,
-#   qa-engineer, devops-engineer)
+#   qa-engineer, devops-engineer, benchmark-lead, performance-engineer)

@@ -24,6 +24,7 @@ Keep `uv` and Cargo builds reproducible on the developer machine. No hosted depl
 - Application features
 - GUI
 - Linguistic data
+- Latency, tokens per second, and VRAM fit — performance-engineer
 - Cloud project creation, GPU rental, or key provisioning
 
 ## Required skills

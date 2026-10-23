@@ -202,3 +202,193 @@ jobs:
       - .agents/jobs/completed.yaml
       - .agents/templates/handoff.md
     notes: Registry only. No product feature was implemented with this job.
+
+  - id: JOB-013
+    title: Audit of LLM training and inference modules
+    epic: khmer-llm-benchmark
+    priority: P0
+    assigned_by: project-owner
+    owner: architecture-lead
+    reviewer: cto
+    status: DONE
+    dependencies: []
+    skills:
+      - repository-audit
+    scope:
+      - docs/khmer-platform/04-llm-training-benchmark-audit.md
+    requirements:
+      - Name real modules and the gaps. Do not rewrite 01-current-architecture.md.
+    acceptance_criteria:
+      - The note cites datasets, llm_gateway, evaluation.runner, the LoRA stub, and the missing gold set.
+    deliverables:
+      - docs/khmer-platform/04-llm-training-benchmark-audit.md
+    evidence:
+      - docs/khmer-platform/04-llm-training-benchmark-audit.md
+    notes: Written in the CTO session. No architecture-lead Task was launched.
+
+  - id: JOB-014
+    title: Benchmark row schema, split lock, and family leakage
+    epic: khmer-llm-benchmark
+    priority: P0
+    assigned_by: cto
+    owner: dataset-engineer
+    reviewer: benchmark-lead
+    status: DONE
+    dependencies: []
+    skills:
+      - dataset-engineering
+    scope:
+      - src/claynext/models/benchmarks/schema.py
+      - src/claynext/models/benchmarks/leakage.py
+    requirements:
+      - Refuse a test row whose dialogue family is in train. Refuse synthetic-only gold. Lock the test split.
+    acceptance_criteria:
+      - tests/python/test_llm_benchmark.py covers leakage, synthetic gold, and the split lock.
+    deliverables:
+      - src/claynext/models/benchmarks/schema.py
+      - src/claynext/models/benchmarks/leakage.py
+    evidence:
+      - src/claynext/models/benchmarks/schema.py
+      - src/claynext/models/benchmarks/leakage.py
+      - tests/python/test_llm_benchmark.py
+    notes: Implemented in the CTO session. No dataset-engineer Task was launched.
+
+  - id: JOB-015
+    title: Provider-neutral benchmark runner
+    epic: khmer-llm-benchmark
+    priority: P0
+    assigned_by: cto
+    owner: ai-lead
+    reviewer: architecture-lead
+    status: DONE
+    dependencies:
+      - JOB-014
+    skills:
+      - code-review
+    scope:
+      - src/claynext/models/benchmarks/runner.py
+      - src/claynext/models/benchmarks/providers.py
+      - src/claynext/models/benchmarks/prompt.py
+      - src/claynext/models/evaluation/runner.py
+    requirements:
+      - One translator interface for a callable, the gateway, Gemini, and a local model id.
+      - Record prompt version and decoding. Reuse run_evaluation. Judge text must not include the model id.
+    acceptance_criteria:
+      - A fake translator produces a report with quality_score null and promotion not_promoted.
+    deliverables:
+      - src/claynext/models/benchmarks/runner.py
+      - src/claynext/models/benchmarks/providers.py
+    evidence:
+      - src/claynext/models/benchmarks/runner.py
+      - tests/python/test_llm_benchmark.py
+    notes: Implemented in the CTO session. No ai-lead Task was launched.
+
+  - id: JOB-016
+    title: Metric structures, human rubric, and promotion gate
+    epic: khmer-llm-benchmark
+    priority: P0
+    assigned_by: cto
+    owner: benchmark-lead
+    reviewer: khmer-linguist
+    status: DONE
+    dependencies:
+      - JOB-015
+    skills:
+      - khmer-localization
+      - code-review
+    scope:
+      - src/claynext/models/benchmarks/metrics/
+      - src/claynext/models/benchmarks/rubric.py
+      - src/claynext/models/benchmarks/promotion.py
+      - src/claynext/models/benchmarks/leaderboard.py
+    requirements:
+      - Metrics return structures. Human fields stay null when nobody has scored.
+      - Promotion refuses unless the human gates, baseline improvement, licence, and CTO plus QA flags are present.
+    acceptance_criteria:
+      - Default promotion decision is not_promoted. No built-in price list.
+    deliverables:
+      - src/claynext/models/benchmarks/promotion.py
+      - src/claynext/models/benchmarks/metrics/
+    evidence:
+      - src/claynext/models/benchmarks/promotion.py
+      - tests/python/test_llm_benchmark.py
+    notes: Implemented in the CTO session. No benchmark-lead Task was launched. benchmark-lead is a role file, not a native subagent.
+
+  - id: JOB-017
+    title: LoRA, SFT, QLoRA, and DPO dry-run configs
+    epic: khmer-llm-benchmark
+    priority: P0
+    assigned_by: cto
+    owner: model-training
+    reviewer: qa-engineer
+    status: DONE
+    dependencies: []
+    skills:
+      - model-training
+    scope:
+      - src/claynext/models/training/
+    requirements:
+      - Snapshot seed and config. Cancel and resume shapes. Refuse a real GPU start without approval, and refuse 7B/8B/14B on 16 GB even with approval.
+    acceptance_criteria:
+      - start() returns started false for the shipped configs.
+    deliverables:
+      - src/claynext/models/training/trainer.py
+      - src/claynext/models/training/configs/
+    evidence:
+      - src/claynext/models/training/trainer.py
+      - tests/python/test_llm_training_config.py
+    notes: Dry-run only. No GPU training. Implemented in the CTO session. No model-training Task was launched.
+
+  - id: JOB-018
+    title: Benchmark and training-config unit tests
+    epic: khmer-llm-benchmark
+    priority: P0
+    assigned_by: cto
+    owner: qa-engineer
+    reviewer: cto
+    status: DONE
+    dependencies:
+      - JOB-014
+      - JOB-016
+      - JOB-017
+    skills:
+      - release-validation
+    scope:
+      - tests/python/test_llm_benchmark.py
+      - tests/python/test_llm_training_config.py
+    requirements:
+      - Fakes only. Cover leakage, synthetic gold, promotion refusal, runner shape, and config dry-run.
+    acceptance_criteria:
+      - Both scripts were run with PYTHONPATH=src .venv/bin/python and exited 0.
+    deliverables:
+      - tests/python/test_llm_benchmark.py
+      - tests/python/test_llm_training_config.py
+    evidence:
+      - tests/python/test_llm_benchmark.py
+      - tests/python/test_llm_training_config.py
+      - .agents/handoffs/2026-10-22-llm-benchmark-milestone.md
+    notes: CTO session ran the scripts. No qa-engineer Task was launched. 7/7 and 5/5 passed.
+
+  - id: JOB-023
+    title: Capped raw Gemini probe
+    epic: khmer-llm-benchmark
+    priority: P1
+    assigned_by: project-owner
+    owner: ai-lead
+    reviewer: cto
+    status: DONE
+    dependencies: []
+    skills:
+      - code-review
+    scope:
+      - src/claynext/models/benchmarks/probe.py
+      - data/outputs/benchmarks/2026-10-22-capped-probe/
+    requirements:
+      - At most 20 pending rows, temperature 0, one prompt version. Stop on 503 or no free key. Do not call the file a quality score.
+    acceptance_criteria:
+      - The report has not_a_gold_benchmark true, quality_score null, and records the stop error.
+    deliverables:
+      - data/outputs/benchmarks/2026-10-22-capped-probe/gemini-raw-probe.json
+    evidence:
+      - data/outputs/benchmarks/2026-10-22-capped-probe/gemini-raw-probe.json
+    notes: Eight pending pronoun rows were requested. Zero completed. Stop error was no available Gemini key (pool cooldown about 169s). The cooldown was not waited out. OpenAI ready count was 0, so OpenAI was not called.

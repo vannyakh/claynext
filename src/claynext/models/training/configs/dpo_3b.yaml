@@ -1,0 +1,41 @@
+# DPO config. Preference pairs must be human-reviewed. Synthetic-only pairs are not accepted.
+# Stays a dry-run until a human preference file exists. 7B/8B/14B bases are not trainable
+# on this 16 GB M4. The 3B size class is recorded here and is still not started.
+schema_version: "1.0.0"
+method: dpo
+base_model_size_class: "3b"
+base_model_id: unspecified-open-weight-3b
+seed: 13
+dry_run_default: true
+approval_required: true
+tune_on_test: false
+train_split: train
+held_out_split: test
+lora:
+  r: 8
+  alpha: 16
+  dropout: 0.05
+  target_modules:
+    - q_proj
+    - v_proj
+sft:
+  learning_rate: null
+  epochs: null
+  max_steps: null
+  per_device_batch_size: 1
+  grad_accumulation: 8
+qlora:
+  enabled: false
+  bits: null
+dpo:
+  enabled: true
+  beta: 0.1
+  preference_path: null
+hardware:
+  machine: apple-m4
+  ram_gb: 16
+  gpu_train_allowed: false
+cancel:
+  supported: true
+resume:
+  supported: true

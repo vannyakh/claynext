@@ -47,16 +47,28 @@ _EXPRESSIONS = {
 
 
 def jev_available() -> bool:
-    return bool(_api_key())
+    return jev_key_configured()
+
+
+def jev_key_configured() -> bool:
+    """True when a TypeSafe key is stored or set in the environment. Does not print it."""
+    try:
+        from claynext.models.llm_keys import get_key_pool
+
+        if get_key_pool().has_enabled("typesafe"):
+            return True
+    except Exception:
+        pass
+    return bool(os.environ.get("TYPESAFE_API_KEY", "").strip())
 
 
 def _api_key() -> str:
     try:
         from claynext.models.llm_keys import get_key_pool
 
-        secrets = get_key_pool().secrets("typesafe")
-        if secrets:
-            return secrets[0]
+        secret = get_key_pool().first_secret("typesafe")
+        if secret:
+            return secret
     except Exception:
         pass
     return os.environ.get("TYPESAFE_API_KEY", "").strip()
@@ -354,3 +366,149 @@ def weak_translation_ids(
         for found in pool.map(_one, batches):
             weak |= set(found or ())
     return weak
+
+
+def rank_khmer_candidates(example: Any, *, ask: Callable | None = None) -> dict[str, Any]:
+    """Rank or drop Gemini candidates on one dialogue row.
+
+    Jev judges. It does not write a new translation and it does not change
+    approved text, review status, licence, or reviewer notes. No key, or a
+    failed call, leaves the row untouched. Never raises.
+    """
+    try:
+        return _rank_khmer_candidates(example, ask=ask or _ask)
+    except Exception:
+        return {"applied": False, "reason": "error"}
+
+
+def _rank_khmer_candidates(example: Any, *, ask: Callable) -> dict[str, Any]:
+    if not jev_key_configured():
+        return {"applied": False, "reason": "no_key"}
+    candidates = [cand for cand in list(getattr(example, "candidates", []) or []) if str(getattr(cand, "text", "") or "").strip()]
+    if len(candidates) < 2:
+        return {"applied": False, "reason": "too_few"}
+    source = str(getattr(example, "source_text", "") or "")[:500]
+    speaker = str(getattr(example, "speaker_id", "") or "speaker")
+    listener = str(getattr(example, "listener_id", "") or "listener")
+    relation = str(getattr(example, "relationship", "") or "unspecified")
+    lines = []
+    for index, cand in enumerate(candidates):
+        lines.append({
+            "index": index,
+            "text": str(cand.text)[:500],
+            "style": str(getattr(cand, "style", "") or ""),
+        })
+    questions: dict[str, dict] = {}
+    criteria: dict[str, str] = {}
+    for index, line in enumerate(lines):
+        text = line["text"]
+        questions[f"meaning_{index}"] = {
+            "type": "noul",
+            "instructions": (
+                f"The Khmer line “{text}” says the same thing as the source “{source}” "
+                f"for a film dub."
+            ),
+        }
+        questions[f"natural_{index}"] = {
+            "type": "noul",
+            "instructions": (
+                f"The Khmer line “{text}” is natural spoken Khmer an actor can say "
+                f"for the source “{source}”, not a word-for-word glossary."
+            ),
+        }
+        questions[f"pronoun_{index}"] = {
+            "type": "noul",
+            "instructions": (
+                f"The Khmer line “{text}” uses pronouns and address that fit "
+                f"{speaker} talking to {listener} ({relation}) "
+                f"while keeping the meaning of “{source}”."
+            ),
+        }
+        criteria[str(index)] = (
+            f"Best line is “{text}”. It keeps the meaning of “{source}” "
+            f"and fits {speaker} speaking to {listener}."
+        )
+    questions["best"] = {
+        "type": "choice",
+        "instructions": (
+            f"Which Khmer line best keeps the meaning of the source “{source}”, "
+            f"fits {speaker} talking to {listener}, and sounds natural to say?"
+        ),
+        "criteria": criteria,
+    }
+    answers = ask(
+        {
+            "task": "Rank Khmer dub candidates. Do not write a new line.",
+            "source": source,
+            "speaker": speaker,
+            "listener": listener,
+            "relationship": relation,
+            "lines": lines,
+        },
+        questions,
+    )
+    if not answers:
+        return {"applied": False, "reason": "no_answer"}
+
+    scores: list[dict[str, Any]] = []
+    for index, line in enumerate(lines):
+        meaning = _noul_value(answers.get(f"meaning_{index}"))
+        natural = _noul_value(answers.get(f"natural_{index}"))
+        pronoun = _noul_value(answers.get(f"pronoun_{index}"))
+        failed = (
+            meaning is None
+            or natural is None
+            or pronoun is None
+            or meaning < _MEANING_FLOOR
+            or natural < _NATURAL_FLOOR
+            or pronoun < _MEANING_FLOOR
+        )
+        scores.append({
+            "index": index,
+            "text": line["text"],
+            "meaning": meaning,
+            "natural": natural,
+            "pronoun": pronoun,
+            "keep": not failed,
+        })
+    kept = [row for row in scores if row["keep"]]
+    choice = answers.get("best") or {}
+    choice_id = str(choice.get("choice") or "")
+    choice_conf = float(choice.get("confidence") or 0)
+    preferred: dict[str, Any] | None = None
+    if (
+        choice.get("type") == "choice"
+        and choice_conf >= _CHOICE_FLOOR
+        and choice_id.isdigit()
+    ):
+        picked = next((row for row in kept if row["index"] == int(choice_id)), None)
+        if picked is not None:
+            preferred = picked
+    if preferred is None and kept:
+        preferred = max(
+            kept,
+            key=lambda row: float(row["meaning"] or 0) + float(row["natural"] or 0) + float(row["pronoun"] or 0),
+        )
+    record = {
+        "applied": preferred is not None,
+        "provider": "typesafe",
+        "model": _MODEL,
+        "preferred_index": None if preferred is None else preferred["index"],
+        "preferred_text": "" if preferred is None else preferred["text"],
+        "choice": choice_id,
+        "choice_confidence": choice_conf,
+        "scores": scores,
+    }
+    metadata = getattr(example, "metadata", None)
+    if isinstance(metadata, dict):
+        metadata["jev"] = record
+    return record
+
+
+def _noul_value(answer: Any) -> float | None:
+    if not isinstance(answer, dict) or answer.get("type") != "noul":
+        return None
+    try:
+        return float(answer.get("noul"))
+    except (TypeError, ValueError):
+        return None

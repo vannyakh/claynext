@@ -17,6 +17,7 @@ Prepare trainable speech data and dry-run metadata. Do not launch a paid or host
 - `src/claynext/voice_training/` (ingestion, rights, training stubs, evaluation harness)
 - `docs/voice_training/`, `docs/guides/m4-mac-mini-start.md`
 - `src/claynext/models/khmer_spoken/training/`
+- `src/claynext/models/training/` (SFT, LoRA, QLoRA, and DPO configs; dry-run trainer)
 
 ## Does not own
 
@@ -36,4 +37,4 @@ Record `dry_run: true` or the owner approval quote, the output directory under `
 
 ## Definition of done
 
-Default path remains dry-run (`voice_training/training/tts_trainer.py`). No fine-tune API was called. Rights validator still rejects missing consent.
+Default path remains dry-run (`voice_training/training/tts_trainer.py` and `models/training/trainer.py`). `start(..., approval=False)` does not launch a GPU job. 7B, 8B, and 14B configs stay refused on the 16 GB M4 even if approval is passed. JOB-011 hosted fine-tune stays blocked. No fine-tune API was called. Rights validator still rejects missing consent.

@@ -18,6 +18,8 @@ Extend the existing localization skill with forms that are already sourced. Leav
 - `src/claynext/prompts/dictionaries/khmer/`
 - `src/claynext/prompts/skills/khmer_natural_dialogue/`
 - `docs/khmer-localization/`
+- `src/claynext/models/benchmarks/rubric.py` (rubric wording, with benchmark-lead)
+- Pronoun-metric policy in `src/claynext/models/benchmarks/metrics/pronouns.py`
 
 ## Does not own
 
@@ -37,4 +39,4 @@ List dictionary files touched, whether each entry is `pending_native_review`, an
 
 ## Definition of done
 
-No new dialect, slang, or profanity without a cited source. Gold promotion still requires reviewer id, timestamp, and licence. Tests cited only if actually run (`tests/python/test_khmer_localization.py`).
+No new dialect, slang, or profanity without a cited source. Gold promotion still requires reviewer id, timestamp, and licence. Pending pronoun cases and the spoken Gemini drafts are not gold. Human rubric fields stay empty until reviewers submit them. Tests cited only if actually run (`tests/python/test_khmer_localization.py` or `test_llm_benchmark.py`).
