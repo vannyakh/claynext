@@ -1,0 +1,45 @@
+# SFT + LoRA config for a 3B-class open-weight model.
+# This machine is an Apple M4 with 16 GB RAM.
+# 7B, 8B, and 14B fine-tunes are not possible here.
+# 3B LoRA is validated only. The trainer will not start it: it is not a tiny adapter.
+# Local Ollama inference ids already on the machine (do not assume they are loaded;
+# do not fine-tune them here):
+#   aya-expanse:8b, qwen2.5:7b, qwen3-vl:8b-thinking, qwen3:8b
+schema_version: "1.0.0"
+method: sft_lora
+base_model_size_class: "3b"
+base_model_id: unspecified-open-weight-3b
+seed: 13
+dry_run_default: true
+approval_required: true
+tune_on_test: false
+train_split: train
+held_out_split: test
+lora:
+  r: 8
+  alpha: 16
+  dropout: 0.05
+  target_modules:
+    - q_proj
+    - v_proj
+sft:
+  learning_rate: 0.0002
+  epochs: 1
+  max_steps: null
+  per_device_batch_size: 1
+  grad_accumulation: 8
+qlora:
+  enabled: false
+  bits: null
+dpo:
+  enabled: false
+  beta: null
+  preference_path: null
+hardware:
+  machine: apple-m4
+  ram_gb: 16
+  gpu_train_allowed: false
+cancel:
+  supported: true
+resume:
+  supported: true
