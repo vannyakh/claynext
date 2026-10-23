@@ -364,7 +364,9 @@ def install_model(
             pass
 
     _progress(2, f"Starting install · {repo_id}")
-    env = os.environ.copy()
+    from claynext.utils.process_env import child_environ
+
+    env = child_environ()
     env["PYTHONUNBUFFERED"] = "1"
     cmd = [sys.executable, "-m", "claynext.models.hf_hub", "--install", repo_id]
     proc = subprocess.Popen(

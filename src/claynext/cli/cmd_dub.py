@@ -65,28 +65,31 @@ def run(args: argparse.Namespace) -> int:
         slug = "".join(ch.lower() if ch.isalnum() else "-" for ch in args.target_lang).strip("-")
         out = str(Path(OUTPUTS_DIR) / f"{video.stem}_dub_{slug}.mp4")
 
+    from claynext.utils.library_progress import bind_job_progress
+
     try:
-        result = DubbingEngine.process_dubbing(
-            video_path=str(video),
-            source_lang=args.source_lang,
-            target_lang=args.target_lang,
-            voice_id=args.voice,
-            secondary_voice_id=args.voice2 or args.voice,
-            background_vol=float(args.bg),
-            output_path=out,
-            asr_model=args.asr_model,
-            asr_language=args.source_lang,
-            translator=args.translator,
-            ollama_model=args.ollama_model,
-            hf_token=args.hf_token or "",
-            sync_mode=args.sync,
-            auto_chain=not args.no_chain,
-            render=not args.timeline_only,
-            translate_fit_duration=not args.no_fit,
-            translate_slang=not args.no_slang,
-            translate_expression=not args.no_expression,
-            progress_callback=progress,
-        )
+        with bind_job_progress(progress) as wrapped:
+            result = DubbingEngine.process_dubbing(
+                video_path=str(video),
+                source_lang=args.source_lang,
+                target_lang=args.target_lang,
+                voice_id=args.voice,
+                secondary_voice_id=args.voice2 or args.voice,
+                background_vol=float(args.bg),
+                output_path=out,
+                asr_model=args.asr_model,
+                asr_language=args.source_lang,
+                translator=args.translator,
+                ollama_model=args.ollama_model,
+                hf_token=args.hf_token or "",
+                sync_mode=args.sync,
+                auto_chain=not args.no_chain,
+                render=not args.timeline_only,
+                translate_fit_duration=not args.no_fit,
+                translate_slang=not args.no_slang,
+                translate_expression=not args.no_expression,
+                progress_callback=wrapped,
+            )
     except Exception as exc:
         die(str(exc))
 

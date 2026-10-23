@@ -209,8 +209,11 @@ def _separate_mlx(wav_path: str, model: str, ping: Ping) -> tuple[dict, int]:
 
     if ping:
         ping(12, f"Demucs MLX · {model} stem separation…")
-    sep = Separator(model=model)
-    _origin, stems = sep.separate_audio_file(wav_path)
+    sep = Separator(model=model, progress=False)
+    from claynext.utils.library_progress import library_stage
+
+    with library_stage("Stem separation"):
+        _origin, stems = sep.separate_audio_file(wav_path)
     rate = int(getattr(sep, "samplerate", None) or getattr(sep, "sample_rate", 44100) or 44100)
     return stems, rate
 
@@ -256,8 +259,11 @@ def _separate_torch(wav_path: str, model: str, ping: Ping) -> tuple[dict, int]:
         apply_process_threads()
     except Exception:
         pass
-    sep = Separator(model=model)
-    _origin, stems = sep.separate_audio_file(Path(wav_path))
+    sep = Separator(model=model, progress=False)
+    from claynext.utils.library_progress import library_stage
+
+    with library_stage("Stem separation"):
+        _origin, stems = sep.separate_audio_file(Path(wav_path))
     rate = int(getattr(sep, "samplerate", 44100) or 44100)
     return stems, rate
 
