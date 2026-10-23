@@ -1,0 +1,41 @@
+# QLoRA config for a 14B-class open-weight model.
+# Not possible on this M4 (16 GB RAM). Refused even with approval.
+# qwen3-vl:8b-thinking is an inference candidate only; it is not a 14B train target.
+schema_version: "1.0.0"
+method: qlora
+base_model_size_class: "14b"
+base_model_id: unspecified-open-weight-14b
+seed: 13
+dry_run_default: true
+approval_required: true
+tune_on_test: false
+train_split: train
+held_out_split: test
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - q_proj
+    - v_proj
+sft:
+  learning_rate: 0.0001
+  epochs: 1
+  max_steps: null
+  per_device_batch_size: 1
+  grad_accumulation: 32
+qlora:
+  enabled: true
+  bits: 4
+dpo:
+  enabled: false
+  beta: null
+  preference_path: null
+hardware:
+  machine: apple-m4
+  ram_gb: 16
+  gpu_train_allowed: false
+cancel:
+  supported: true
+resume:
+  supported: true
