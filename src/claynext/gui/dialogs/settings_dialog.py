@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
+    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
     QLineEdit, QPushButton, QFileDialog, QTabWidget, QWidget, QSpinBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
     QScrollArea, QFrame, QSizePolicy, QAbstractItemView,
@@ -24,11 +24,16 @@ from claynext.gui.worker import Worker
 from claynext.models.features import (
     DEMUCS_MODELS,
     FEATURE_SETTING_KEYS,
+    dev_environment_sync_command,
     get_feature_setting,
+    install_dev_environment,
     install_uv_extra,
     list_features,
+    missing_dev_extras,
     set_feature_setting,
 )
+
+_INSTALL_ALL_ID = "__all__"
 from claynext.controllers.store import get_store
 
 _HEALTH_COLORS = {
@@ -514,6 +519,33 @@ class SettingsDialog(QDialog):
     def _build_features_tab(self) -> QWidget:
         page, lay = self._scroll_page()
 
+        lay.addWidget(self._field_label("Development environment"))
+        env_row = QHBoxLayout()
+        env_row.setSpacing(8)
+        self.btn_install_all = QPushButton("Install all missing")
+        self.btn_install_all.setObjectName("btn_primary")
+        self.btn_install_all.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_install_all.setFixedHeight(28)
+        self.btn_install_all.setToolTip(
+            "Installs every optional extra in one step and keeps them installed together."
+        )
+        self.btn_install_all.clicked.connect(self._install_all_missing)
+        env_row.addWidget(self.btn_install_all)
+        self.btn_copy_env = QPushButton("Copy install command")
+        self.btn_copy_env.setObjectName("btn_secondary")
+        self.btn_copy_env.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_copy_env.setFixedHeight(28)
+        self.btn_copy_env.clicked.connect(self._copy_dev_environment_command)
+        env_row.addWidget(self.btn_copy_env)
+        env_row.addStretch(1)
+        lay.addLayout(env_row)
+        env_hint = QLabel(
+            "WhisperX, Demucs, VoxCPM2, OmniVoice, and the other optional extras install together."
+        )
+        env_hint.setObjectName("settings_section_hint")
+        env_hint.setWordWrap(True)
+        lay.addWidget(env_hint)
+
         lay.addWidget(self._field_label("Tool backends"))
 
         cards_host = QWidget()
@@ -581,12 +613,13 @@ class SettingsDialog(QDialog):
             card = self._make_feature_card(item, last=(i == len(rows) - 1))
             self._features_lay.addWidget(card)
 
-        if self._feature_active:
+        if self._feature_active and self._feature_active != _INSTALL_ALL_ID:
             self._set_feature_row_progress(
                 self._feature_active, self._feature_pct.get(self._feature_active), busy=True,
             )
         for feature_id, _extra, _label in self._feature_queue:
             self._set_feature_row_progress(feature_id, None, busy=True, queued=True)
+        self._refresh_install_all_button()
 
     def _make_feature_card(self, item: dict, *, last: bool = False) -> QFrame:
         row = QFrame()
@@ -665,7 +698,101 @@ class SettingsDialog(QDialog):
         }
         return row
 
+    def _refresh_install_all_button(self):
+        if not hasattr(self, "btn_install_all"):
+            return
+        if self._feature_active == _INSTALL_ALL_ID:
+            self.btn_install_all.setEnabled(False)
+            return
+        missing = missing_dev_extras()
+        if missing and self._feature_active is None:
+            self.btn_install_all.setText("Install all missing")
+            self.btn_install_all.setEnabled(True)
+            return
+        if not missing:
+            self.btn_install_all.setText("Environment ready")
+            self.btn_install_all.setEnabled(False)
+            return
+        self.btn_install_all.setEnabled(False)
+
+    def _copy_dev_environment_command(self):
+        QApplication.clipboard().setText(dev_environment_sync_command())
+        self.btn_copy_env.setText("Copied")
+
+    def _reload_feature_toggles(self):
+        self.chk_prefer_whisperx.setChecked(
+            get_feature_setting("prefer_whisperx", DEFAULT_CONFIG["prefer_whisperx"]) == "1"
+        )
+        self.chk_prefer_voxcpm.setChecked(
+            get_feature_setting("prefer_voxcpm", DEFAULT_CONFIG["prefer_voxcpm"]) == "1"
+        )
+        self.chk_transcript_ocr.setChecked(
+            get_feature_setting("transcript_ocr", DEFAULT_CONFIG["transcript_ocr"]) == "1"
+        )
+
+    def _install_all_missing(self):
+        if self._feature_active:
+            QMessageBox.information(self, "Install", "Wait for the current install to finish.")
+            return
+        if not missing_dev_extras():
+            self._refresh_install_all_button()
+            return
+        self._feature_active = _INSTALL_ALL_ID
+        self.btn_install_all.setEnabled(False)
+        self.btn_install_all.setText("Installing…")
+
+        def _task(progress_callback=None):
+            return install_dev_environment(
+                progress_callback=progress_callback,
+                apply_preferences=True,
+            )
+
+        worker = Worker(_task)
+        worker.signals.progress.connect(self._on_install_all_progress)
+        worker.signals.result.connect(self._on_install_all_done)
+        worker.signals.error.connect(self._on_install_all_error)
+        self.thread_pool.start(worker)
+
+    def _on_install_all_progress(self, percent: int, _msg: str):
+        if self._feature_active != _INSTALL_ALL_ID:
+            return
+        self.btn_install_all.setText(f"Installing {max(0, min(100, int(percent)))}%")
+
+    def _on_install_all_done(self, result: object):
+        self._feature_active = None
+        self._reload_feature_toggles()
+        self._populate_features_cards()
+        self._refresh_stem_status_label()
+        payload = result if isinstance(result, dict) else {}
+        failed = list(payload.get("failed") or [])
+        if failed:
+            lines = []
+            for item in failed:
+                name = str(item.get("extra") or "extra")
+                err = str(item.get("error") or "install failed")
+                lines.append(f"{name}: {err}")
+            QMessageBox.warning(
+                self,
+                "Installed with gaps",
+                "Some optional extras could not be installed.\n\n" + "\n".join(lines),
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "Installed",
+                "The development environment is ready.",
+            )
+        self._pump_feature_queue()
+
+    def _on_install_all_error(self, err_msg: str, _tb: str):
+        self._feature_active = None
+        self._populate_features_cards()
+        QMessageBox.critical(self, "Install failed", str(err_msg or "uv sync failed."))
+        self._pump_feature_queue()
+
     def _install_feature(self, feature_id: str, extra: str, label: str):
+        if self._feature_active == _INSTALL_ALL_ID:
+            return
         if feature_id == self._feature_active or any(fid == feature_id for fid, _e, _n in self._feature_queue):
             return
         from claynext.models.features import feature_status
@@ -768,7 +895,7 @@ class SettingsDialog(QDialog):
         elif backend == "torch":
             text = f"Active bed · Demucs · {model}"
         elif mode == "demucs":
-            text = "Demucs required · uv sync --extra demucs-mlx or demucs"
+            text = "Demucs required · Settings → Features → Install all missing"
         else:
             text = "Fallback bed · FFmpeg · install Demucs for AI isolation"
         self.lbl_stem_status.setText(text)
