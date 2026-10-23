@@ -163,6 +163,9 @@ class DialogueExample:
     def preferred_khmer(self) -> str:
         if self.approved_text:
             return self.approved_text
+        ranked = self._jev_preferred_text()
+        if ranked:
+            return ranked
         for style in ("natural", "character", "slang", "literal"):
             for cand in self.candidates:
                 if cand.style == style and cand.text:
@@ -170,6 +173,22 @@ class DialogueExample:
         if self.candidates and self.candidates[0].text:
             return self.candidates[0].text
         return self.stub_khmer
+
+    def training_khmer(self) -> str:
+        """Line a local export should learn. A Jev pick wins; approved text stays stored."""
+        ranked = self._jev_preferred_text()
+        if ranked:
+            return ranked
+        return self.preferred_khmer()
+
+    def _jev_preferred_text(self) -> str:
+        jev = self.metadata.get("jev") or {}
+        text = str(jev.get("preferred_text") or "").strip()
+        if not jev.get("applied") or not text:
+            return ""
+        if any(cand.text == text for cand in self.candidates):
+            return text
+        return ""
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,15 @@
+{
+  "version": "owner-approved-20261022",
+  "created_at": "2026-10-22T09:47:40+00:00",
+  "schema_version": "0.1.0",
+  "count": 55,
+  "rejected_count": 45,
+  "path": "/Users/server2/Documents/Project/claynext/data/khmer_spoken/versions/owner-approved-20261022/dialogue.jsonl",
+  "notes": "Gold export requires native Khmer human review (verified_by + verified_at). Synthetic ≠ gold.",
+  "platforms": {
+    "ai_studio_teacher": "candidates_only",
+    "vertex_sft": "separate_client",
+    "local_lora": "separate_entrypoint",
+    "voice_training": "see claynext.voice_training / data/voice_datasets"
+  }
+}
