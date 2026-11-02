@@ -43,4 +43,24 @@ Benchmark and training code in this milestone stays in `models/`. It does not im
 
 ## Hardware
 
-Apple M4, 16 GB RAM. During this session `ollama ps` showed no model loaded. Installed names included `aya-expanse:8b`, `qwen2.5:7b`, and `qwen3:8b`. Free pages were about 150 MB and the machine was already swapping, so an 8B generation was not started. 7B/8B/14B fine-tunes do not fit.
+Apple M4, 16 GB RAM. During this session `ollama ps` showed no model loaded. Installed names included `aya-expanse:8b`, `qwen2.5:7b`, and `qwen3:8b`. Free pages were about 150 MB and the machine was already swapping, so an 8B generation was not started. 7B/8B/14B fine-tunes do not fit. `trainer.start` also refuses a 3B run on this machine, including when approval is set.
+
+## 500-row plan (2026-10-23)
+
+The owner replaced the 80/20 held-out plan with a larger spoken pool. `data/khmer_spoken/versions/heldout-locked-20261023-kp081-100/` is still 80 train / 20 test and is not deleted. The new rule is in `models/benchmarks/spoken_split.py` and `data/khmer_spoken/versions/spoken-500-train100-spec-20261023/split.json`.
+
+When 500 spoken rows exist, train is exactly 100 rows. The other 400 are locked and must not be used to train or tune. Assignment is by dialogue family with seed 13, so a family is not split across the two sides. Until kp-101–kp-500 exist, that spec says the locked pool is incomplete and must not be treated as the 1,000–2,000 native gold benchmark.
+
+The 100 Jev-ranked rows already on disk are synthetic/`gemini_teacher` with licence `unknown`. They stay `not_promoted`. They are not the KSLD gold set. Targets that are still unmet: 10,000–30,000 reviewed training examples, and 1,000–2,000 native-reviewed benchmark rows. A capped probe is not a promotion.
+
+`models/benchmarks/comparison.py` is the A–E report shape (untuned, prompted baseline, LoRA/QLoRA, DPO if present, hosted GPT/Gemini). Quality, latency, VRAM, cost, and regression risk stay null until measured. Cost comes from a caller-supplied price or a provider trace. The judge prompt does not include the model name. The report does not promote and does not declare a winner.
+
+GPU training stays blocked on this 16 GB machine. DPO stays blocked until human preference pairs exist. Hosted scoring stays blocked until a native gold set exists. Filling kp-101 onward is a separate process and is not started from this spec. One observed batch exited after writing candidates for kp-101 through kp-120. The locked pool is still incomplete.
+
+## Scale cut (2026-10-23)
+
+The owner set the forward targets at 10,000–30,000 dataset rows and a 1,000–2,000 held-out benchmark, and named 3B, 7B/8B, and 14B. That message allows Gemini candidate generation on the existing key pool and Jev ranking when a typesafe key is already stored. It does not allow a Vertex fine-tune or a local weight update. `trainer.start` still refuses 3B, 7B, 8B, and 14B on this 16 GB M4, including when approval is passed. No 7B or 14B weights were downloaded.
+
+`plan_spoken_split` is unchanged: train cap 100, target 500. Its version directories were not deleted. The forward id rule is `plan_scale_holdout`. Once a file has at least 1,000 kp ids, the last 1,000 are locked and earlier ids are the train pool for a later adapter. Until that lock exists, every id outside the lowest 100 stays locked. The cut is frozen in `data/khmer_spoken/versions/scale-lock1000-20261023/` and must not slide if more rows are appended later.
+
+This turn stopped at 2,000 source rows in `data/khmer_spoken/workspace/spoken_scale.jsonl` (kp-001–kp-2000). Writing 10,000 unique lines in one pass would have been thinner copies of the same templates. Train ids are kp-001–kp-1000. Locked ids are kp-1001–kp-2000. `spoken_500.jsonl` is still the 500-row file. New lines are original synthetic English, licence `unknown`, `pending_native_review`, not gold. The locked 1,000 rows are not the native-reviewed benchmark. 10,000–30,000 reviewed training rows and 1,000–2,000 native-reviewed benchmark rows remain targets. No chrF, COMET, or human score was measured. Promotion stays `not_promoted`. Gemini is the teacher and Jev is the ranker. Neither one updates weights.

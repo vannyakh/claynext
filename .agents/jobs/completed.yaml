@@ -392,3 +392,48 @@ jobs:
     evidence:
       - data/outputs/benchmarks/2026-10-22-capped-probe/gemini-raw-probe.json
     notes: Eight pending pronoun rows were requested. Zero completed. Stop error was no available Gemini key (pool cooldown about 169s). The cooldown was not waited out. OpenAI ready count was 0, so OpenAI was not called.
+
+  - id: JOB-024
+    title: 500-row spoken split and model comparison shape
+    epic: khmer-llm-benchmark
+    priority: P0
+    assigned_by: project-owner
+    owner: benchmark-lead
+    reviewer: cto
+    status: DONE
+    dependencies:
+      - JOB-014
+      - JOB-016
+      - JOB-018
+    skills:
+      - dataset-engineering
+      - code-review
+    scope:
+      - src/claynext/models/benchmarks/spoken_split.py
+      - src/claynext/models/benchmarks/comparison.py
+      - tests/python/test_llm_benchmark.py
+      - docs/khmer-platform/04-llm-training-benchmark-audit.md
+      - data/khmer_spoken/versions/spoken-500-train100-spec-20261023/split.json
+    requirements:
+      - When 500 rows exist, train is exactly 100 and the other 400 are locked.
+      - Until kp-101 through kp-500 exist, the spec says the locked pool is incomplete and is not the 1,000–2,000 native gold benchmark.
+      - Dialogue-family safe, seed 13, refuse overlap, cap train at 100. Do not generate dialogue.
+      - Comparison slots A–E keep metrics null until measured, do not promote, and do not claim a win. Cost uses a supplied price or a trace.
+      - Do not relabel the 100 Jev-ranked synthetic rows as gold.
+    acceptance_criteria:
+      - tests/python/test_llm_benchmark.py covers leakage, the train cap, the incomplete spec, synthetic reference, and promotion refusal.
+      - The script was run and exited 0.
+    deliverables:
+      - src/claynext/models/benchmarks/spoken_split.py
+      - src/claynext/models/benchmarks/comparison.py
+      - data/khmer_spoken/versions/spoken-500-train100-spec-20261023/split.json
+    evidence:
+      - src/claynext/models/benchmarks/spoken_split.py
+      - src/claynext/models/benchmarks/comparison.py
+      - tests/python/test_llm_benchmark.py
+      - .agents/handoffs/2026-10-23-spoken-500-split.md
+    notes: >
+      CTO session implemented this. Task was not used. 10/10 passed in
+      test_llm_benchmark.py. test_llm_training_config.py was re-run and stayed 5/5;
+      trainer refusal was not edited. The split JSON is under gitignored data/.
+      No Gemini, OpenAI, or GPU training was started.
