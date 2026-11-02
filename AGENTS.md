@@ -116,3 +116,7 @@ QT_QPA_PLATFORM=offscreen uv run python -c "from claynext.app import main; print
 Index | ID | Label | Accent Color | Description
 :--- | :--- | :--- | :--- | :---
 0 | `studio` | Claynext Studio | `#a855f7` | AI Movie Dubbing & Timeline Editor
+
+## Scope
+
+This Studio repo is media dubbing and translate only. Do not add spoken-dataset collection, benchmark runners, or weight-training packages back under `src/claynext/models/` or `voice_training/`.

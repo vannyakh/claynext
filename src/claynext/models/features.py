@@ -25,8 +25,6 @@ FEATURE_SETTING_KEYS = (
     "skill_dialogue_translation",
     "skill_khmer_natural_dialogue",
     "skill_khmer_gateway",
-    "voice_training_enabled",
-    "khmer_spoken_enabled",
 )
 
 STEM_MODES = ("auto", "demucs", "ffmpeg")

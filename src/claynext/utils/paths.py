@@ -30,9 +30,7 @@ PROJECT_DIR = DATA_DIR / "projects"
 VOICEOVER_DIR = PROJECT_DIR / "voiceover"
 LOGS_DIR = DATA_DIR / "logs"
 FONT_DIR = DATA_DIR / "fonts" / "google"
-DATASETS_DIR = DATA_DIR / "datasets"
-VOICE_DATASETS_DIR = DATA_DIR / "voice_datasets"
-KHMER_SPOKEN_DIR = DATA_DIR / "khmer_spoken"
+# Spoken dataset / training data dirs are out of scope for Studio.
 
 DATA_DIRS = (
     DATA_DIR,
@@ -48,9 +46,6 @@ DATA_DIRS = (
     VOICEOVER_DIR,
     LOGS_DIR,
     FONT_DIR,
-    DATASETS_DIR,
-    VOICE_DATASETS_DIR,
-    KHMER_SPOKEN_DIR,
 )
 
 

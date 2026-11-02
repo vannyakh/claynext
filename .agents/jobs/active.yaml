@@ -1,3 +1,5 @@
+# Studio job board: dubbing/translate scope only.
+# Spoken dataset / LLM training jobs belong in the dedicated LLM lab project.
 # JOB-026 is the only in-progress job. It fills candidates. It does not train weights.
 jobs:
   - id: JOB-026
