@@ -1,2 +1,84 @@
-# Nothing is in progress. Move a READY job here when an owner starts it.
-jobs: []
+# Studio job board: dubbing/translate scope only.
+# Spoken dataset / LLM training jobs belong in the dedicated LLM lab project.
+# JOB-026 is the only in-progress job. It fills candidates. It does not train weights.
+jobs:
+  - id: JOB-026
+    title: Gemini teacher and Jev rank toward 10,000 spoken rows
+    epic: khmer-llm-benchmark
+    priority: P1
+    assigned_by: project-owner
+    owner: model-training
+    reviewer: cto
+    status: IN_PROGRESS
+    dependencies: []
+    skills:
+      - model-training
+      - dataset-engineering
+    scope:
+      - data/khmer_spoken/workspace/spoken_scale.jsonl
+      - data/khmer_spoken/versions/scale-lock1000-20261023/
+      - data/outputs/voice_training/2026-10-23-spoken-500/fill_scale.py
+      - src/claynext/models/benchmarks/spoken_split.py
+    requirements:
+      - Grow source rows toward 10,000. This cut stops at 2,000 because 10,000 unique lines in one pass would be low quality.
+      - Lock the last 1,000 ids (kp-1001–kp-2000). Train pool is kp-001–kp-1000 for a later adapter. Do not train on locked ids.
+      - 1,000–2,000 native-reviewed benchmark rows remain a target. The locked synthetic rows are not that set.
+      - Licence stays unknown. New rows stay pending_native_review. Do not invent CC-BY. Do not mark gold.
+      - Gemini on the existing pool is the teacher. Jev is the ranker when a typesafe key is already stored.
+      - Do not call Vertex. Do not download 7B or 14B weights. Do not weaken trainer.start.
+      - 3B, 7B, 8B, and 14B training stays blocked on this 16 GB M4.
+      - Do not mark DONE until the claimed counts are on disk. 10,000 rows are not on disk.
+    acceptance_criteria:
+      - spoken_scale.jsonl has the source rows it claims, with licence unknown on new rows.
+      - The version manifest records the id rule, not_promoted, and that no weights were written.
+      - A resume command is recorded if candidate fill stops early.
+    deliverables:
+      - data/khmer_spoken/workspace/spoken_scale.jsonl
+      - data/khmer_spoken/versions/scale-lock1000-20261023/manifest.json
+      - data/outputs/voice_training/2026-10-23-spoken-500/fill_scale.py
+    notes: >
+      Source cut is 2,000 rows. Lock stays scale-lock1000-20261023:
+      train kp-001–kp-1000, holdout kp-1001–kp-2000. The file has not grown past 2,000.
+      On 2026-10-26, pids 20809 and 26002 were not running. The Friday log ends FILL_DONE
+      at kp-720 (300 rows, no stop_reason). Snapshot before the new fill: 720 rows with
+      Gemini candidates and a matching Jev line, no gaps kp-001–kp-720, next empty kp-721,
+      280 train-pool rows still empty, holdout candidates 0. Licence unknown.
+      Translation SFT export: data/khmer_spoken/versions/translate-sft-spoken-20261026/sft.jsonl
+      (720 train rows, Jev target, split=train). started false. No weights.
+      New owner sidecar: data/khmer_spoken/versions/owner-approval-sidecar-20261026/
+      covers kp-637–kp-720 only. The 20261023 sidecar (kp-101–kp-636) was not overwritten.
+      Live spoken_scale.jsonl was not edited by the export. Gold remains kp-001–kp-100.
+      Fill pid 58618 (ppid 1) is writing the remaining train pool only:
+      --limit 280 --max-minutes 80 --write-split. Limit is 280 so the batch stops at kp-1000.
+      First new row kp-721. Log: data/outputs/voice_training/2026-10-23-spoken-500/fill_scale.log.
+      Do not start another fill while pid 58618 is alive. No 3B/7B/8B/14B weights were trained.
+      Owner quote "approvals next." recorded in
+      data/khmer_spoken/versions/owner-approval-sidecar-20261026-next/
+      for kp-721–kp-733 (13 rows). Licence unknown. Not gold. Not promoted.
+      Live spoken_scale.jsonl was not edited. Prior sidecars were not overwritten.
+      The pending note stays on each live row and is copied into the sidecar history.
+      Pid 58618 was still filling past that snapshot. Later rows are not in this sidecar.
+      Owner quote "if licence is still unknown i approve you do sometihnk and continue trained."
+      is recorded as a training-use grant while licence stays unknown, not as CC-BY or any
+      other external licence. Grant: data/khmer_spoken/versions/owner-licence-grant-20261026/
+      covers train ids kp-001–kp-758 (758 rows with a Jev line at the snapshot). Holdout
+      kp-1001–kp-2000 was not included and was not changed. Live spoken_scale.jsonl was not
+      edited by the grant. New SFT file, leaving the open 720-line sft.jsonl in place:
+      data/khmer_spoken/versions/translate-sft-spoken-20261026-b/sft-train-approved.jsonl
+      (758 rows, khmer=Jev line, licence unknown, owner_training_approved true, split=train).
+      trainer.start was called with approval true on the 3B SFT config and on the 7B/8B,
+      14B, and DPO configs. Each refused: this M4 has 16 GB RAM; 3B/7B/8B/14B fine-tunes
+      are not started. started false. No weights. Pid 58618 was still alive (limit 280,
+      through the train pool only). No second fill was started. Promotion stays not_promoted.
+      On 2026-10-26 the workspace file, not a later FILL_DONE log line, showed the train
+      pool full: train_filled 1000, train_empty 0, holdout_filled 0. The 1,000-row train
+      cut is frozen. Sidecar data/khmer_spoken/versions/owner-approval-sidecar-20261026-kp1000/
+      records training-export approval for kp-734–kp-1000 (267 rows). Prior sidecars were
+      not overwritten. Licence grant data/khmer_spoken/versions/owner-licence-grant-20261026-kp1000/
+      covers kp-001–kp-1000 while licence stays unknown. SFT
+      data/khmer_spoken/versions/translate-sft-spoken-20261026-c/sft-train-approved.jsonl
+      has 1000 train rows. The open 720-line sft.jsonl and the 758-row export were not
+      rewritten. Live spoken_scale.jsonl review fields were not edited. Holdout was not
+      filled. fill_scale.py was not started. trainer.start was not called. No weights.
+      JOB-026 stays IN_PROGRESS because 10,000 reviewed rows are still the target.
+      Handoff: .agents/handoffs/2026-10-26-spoken-train1000.md.

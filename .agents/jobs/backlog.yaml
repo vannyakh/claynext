@@ -1,5 +1,5 @@
 # Ready and blocked work. DONE jobs are in completed.yaml.
-# Nothing here is in progress. See active.yaml.
+# JOB-026 is IN_PROGRESS in active.yaml. GPU and gold jobs below stay BLOCKED.
 jobs:
   - id: JOB-001
     title: Architecture map of the current call path
@@ -222,6 +222,7 @@ jobs:
       - Blocked until the Project Owner approves a training spend and a licensed gold set exists.
       - Dry-run scaffolding already exists. Do not call a hosted tuning API before approval.
       - The 2026-10-22 decision under .agents/decisions/ approves a capped benchmark probe and a local dry-run only. It does not unblock this job.
+      - The 2026-10-23 owner message allows Gemini candidate generation and Jev ranking on the existing keys. It does not approve a Vertex or hosted weight fine-tune of a 3B, 7B, 8B, or 14B model.
     acceptance_criteria:
       - Status stays BLOCKED until a decision explicitly approves hosted fine-tune spend. The 2026-10-22 capped-benchmark decision does not.
     deliverables: []
@@ -267,15 +268,18 @@ jobs:
       - src/claynext/models/llm_gateway/
     requirements:
       - Blocked until a locked human-reviewed gold set exists and the owner funds a scored hosted run.
-      - The 2026-10-22 capped probe completed zero rows and is not a quality score.
+      - The 2026-10-22 capped probe completed zero rows and is not a quality score. A capped probe is not a promotion.
       - Do not score gemini_teacher rows as gold.
+      - The 500-row spoken plan is not that gold set. The 100 Jev-ranked rows are synthetic/gemini_teacher with licence unknown.
+      - The 2026-10-23 scale cut locks kp-1001–kp-2000 as a synthetic holdout. That is not the native-reviewed benchmark.
+      - The native benchmark target remains 1,000–2,000 reviewed rows.
     acceptance_criteria:
       - A report may claim a quality score only when every row passes is_gold_reference and human gates are present.
       - Status stays BLOCKED until that set exists.
     deliverables: []
 
   - id: JOB-020
-    title: Local 7B, 8B, or 14B LoRA fine-tune
+    title: Local 3B, 7B, 8B, or 14B fine-tune
     epic: khmer-llm-benchmark
     priority: P2
     assigned_by: project-owner
@@ -288,8 +292,11 @@ jobs:
     scope:
       - src/claynext/models/training/
     requirements:
-      - Blocked on this 16 GB M4. Configs exist and start() refuses these size classes.
+      - Blocked on this 16 GB M4. Configs exist and start() refuses 3B, 7B, 8B, and 14B even with approval.
+      - The 500/100 spoken plan does not unblock a GPU run on this machine.
+      - The 2,000-row scale file does not unblock a GPU run. trainer.start still refuses 3B, 7B, 8B, and 14B on this 16 GB M4.
       - Do not install peft or call Vertex. JOB-011 stays blocked for hosted fine-tune.
+      - Gemini and Jev on the scale file are a teacher and a ranker, not a weight update.
     acceptance_criteria:
       - Status stays BLOCKED until the owner approves a machine that can hold the run.
     deliverables: []
@@ -311,7 +318,10 @@ jobs:
       - data/datasets/
     requirements:
       - Blocked on native reviewers. Pronoun cases are pending_native_review.
-      - The 55 gemini_teacher rows are not gold, including the version whose notes still say pending.
+      - The 100 Jev-ranked rows are synthetic/gemini_teacher, licence unknown, and are not the KSLD gold benchmark of 1,000–2,000 native-reviewed scenes.
+      - 10,000–30,000 reviewed training examples remain a target. The scale file has 2,000 synthetic source rows, not a reviewed set.
+      - A separate fill process wrote kp-101 through kp-120 and stopped with kp-121 still empty. Those drafts are not gold while they are synthetic or gemini_teacher.
+      - kp-501–kp-2000 are also synthetic, licence unknown, and pending_native_review. They are not gold.
     acceptance_criteria:
       - Gold rows have a human reviewer id, timestamp, deployable licence, and origin human_authored or human_reviewed.
     deliverables: []
@@ -333,6 +343,62 @@ jobs:
     requirements:
       - Blocked until human preference pairs exist. The YAML preference_path stays empty.
       - Synthetic-only pairs are not preferences.
+      - The 500/100 split does not create preference pairs.
+      - The 2,000-row scale cut does not create preference pairs. Jev ranks are not human preferences.
     acceptance_criteria:
       - Status stays BLOCKED until a human preference file is named in a decision.
     deliverables: []
+
+  - id: JOB-025
+    title: Resume spoken rows kp-121 through kp-500
+    epic: khmer-llm-benchmark
+    priority: P1
+    assigned_by: project-owner
+    owner: dataset-engineer
+    reviewer: cto
+    status: BACKLOG
+    dependencies: []
+    skills:
+      - dataset-engineering
+    scope:
+      - data/outputs/voice_training/2026-10-23-spoken-500/fill_kp101.py
+      - data/khmer_spoken/versions/train100-locked400-20261023/
+    requirements:
+      - Owned by the session that already runs fill_kp101.py. This CTO session did not start it and must not start a second Gemini or OpenAI run.
+      - A batch was observed and then exited. It filled kp-101 through kp-120 (pending_native_review, gemini_teacher, licence unknown). The log said next_id kp-121 and still_empty 380. Weights were not written and training was not started.
+      - Do not relabel those rows gold. The locked pool is still not the 1,000–2,000 native gold benchmark.
+    acceptance_criteria:
+      - kp-121 through kp-500 exist as spoken rows, or the resume records why it stopped.
+      - Promotion stays not_promoted while origin is synthetic or gemini_teacher and licence is unknown.
+    deliverables: []
+    notes: >
+      Not DONE. kp-121–kp-500 exist as source rows and still have no candidates in spoken_500.jsonl.
+      Candidate fill continues on data/khmer_spoken/workspace/spoken_scale.jsonl under JOB-026.
+      Do not start a second Gemini process against the same rows.
+
+  - id: JOB-026
+    title: Gemini teacher and Jev rank toward 10,000 spoken rows
+    epic: khmer-llm-benchmark
+    priority: P1
+    assigned_by: project-owner
+    owner: model-training
+    reviewer: cto
+    status: IN_PROGRESS
+    dependencies: []
+    skills:
+      - model-training
+      - dataset-engineering
+    scope:
+      - data/khmer_spoken/workspace/spoken_scale.jsonl
+      - data/khmer_spoken/versions/scale-lock1000-20261023/
+      - data/outputs/voice_training/2026-10-23-spoken-500/fill_scale.py
+    requirements:
+      - Source cut is 2,000 rows, not 10,000. The last 1,000 ids are locked. Earlier ids are the train pool and are not cleared for weight training.
+      - Gemini and Jev may spend the existing keys. Vertex fine-tune and local 3B/7B/8B/14B training stay blocked.
+      - The live record is also in active.yaml. Do not start a second fill.
+    acceptance_criteria:
+      - Counts in the manifest match files on disk. This job is not DONE at 2,000 source rows while 10,000 remains the target and candidates are still empty from kp-121.
+    deliverables:
+      - data/khmer_spoken/versions/scale-lock1000-20261023/manifest.json
+    notes: >
+      IN_PROGRESS in active.yaml. No weights were written. Promotion stays not_promoted.
